@@ -58,6 +58,11 @@ const routes = [
         name: 'xero-connect',
         component: () => import('pages/XeroConnect.vue'),
       },
+      {
+        path: 'planning-analytics',
+        name: 'planning-analytics',
+        component: () => import('pages/PlanningAnalytics.vue'),
+      },
     ],
   },
   {

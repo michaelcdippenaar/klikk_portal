@@ -4,7 +4,7 @@ export function getApiBaseUrl() {
   if (typeof window !== 'undefined' && window.location.port === '8080') {
     return `${window.location.protocol}//${window.location.hostname}:8001`;
   }
-  return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+  return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001';
 }
 export const API_BASE_URL = getApiBaseUrl();
 
@@ -45,6 +45,13 @@ export const API_ENDPOINTS = {
   RECONCILE: '/xero/validation/reconcile/',
   COMPARE_PROFIT_LOSS: '/xero/validation/compare-profit-loss/',
   BALANCE_SHEET: '/xero/validation/balance-sheet/',
+
+  // Planning Analytics
+  PA_PIPELINE_RUN: '/api/planning-analytics/pipeline/run/',
+  PA_TM1_EXECUTE: '/api/planning-analytics/tm1/execute/',
+  PA_TM1_TEST_CONNECTION: '/api/planning-analytics/tm1/test-connection/',
+  PA_TM1_CONFIG: '/api/planning-analytics/tm1/config/',
+  PA_TM1_PROCESSES: '/api/planning-analytics/tm1/processes/',
 
   // Investec
   INVESTEC_UPLOAD: '/api/investec/upload/',

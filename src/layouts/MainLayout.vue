@@ -161,6 +161,25 @@
           </q-item-section>
         </q-item>
 
+        <q-separator spaced />
+
+        <q-item-label header class="text-grey-8">
+          Planning Analytics
+        </q-item-label>
+
+        <q-item
+          clickable
+          v-ripple
+          :to="{ name: 'planning-analytics' }"
+        >
+          <q-item-section avatar>
+            <q-icon name="insights" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>Pipeline</q-item-label>
+          </q-item-section>
+        </q-item>
+
       </q-list>
     </q-drawer>
 
