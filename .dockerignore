@@ -1,0 +1,14 @@
+node_modules
+dist
+.quasar
+.git
+.gitignore
+*.log
+.env
+.env.local
+.env.*.local
+README.md
+SETUP.md
+.editorconfig
+.prettierrc
+.eslintrc.js
