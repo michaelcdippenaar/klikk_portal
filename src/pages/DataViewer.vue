@@ -398,11 +398,16 @@
                     </template>
                   </q-input>
                 </template>
-                <template v-slot:body-cell-amount="props">
+                <template v-slot:body-cell-debit="props">
                   <q-td :props="props">
-                    <span :class="amountClass(props.value)">
-                      {{ formatAmount(props.value) }}
-                    </span>
+                    <span v-if="props.value != null && props.value != 0">{{ formatAmount(props.value) }}</span>
+                    <span v-else class="text-grey-5">-</span>
+                  </q-td>
+                </template>
+                <template v-slot:body-cell-credit="props">
+                  <q-td :props="props">
+                    <span v-if="props.value != null && props.value != 0" class="text-negative">{{ formatAmount(Math.abs(props.value)) }}</span>
+                    <span v-else class="text-grey-5">-</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-balance_to_date="props">
@@ -591,11 +596,16 @@
                 flat
                 bordered
               >
-                <template v-slot:body-cell-amount="props">
+                <template v-slot:body-cell-debit="props">
                   <q-td :props="props">
-                    <span :class="amountClass(props.value)">
-                      {{ formatAmount(props.value) }}
-                    </span>
+                    <span v-if="props.value != null && props.value != 0">{{ formatAmount(props.value) }}</span>
+                    <span v-else class="text-grey-5">-</span>
+                  </q-td>
+                </template>
+                <template v-slot:body-cell-credit="props">
+                  <q-td :props="props">
+                    <span v-if="props.value != null && props.value != 0" class="text-negative">{{ formatAmount(Math.abs(props.value)) }}</span>
+                    <span v-else class="text-grey-5">-</span>
                   </q-td>
                 </template>
               </q-table>
@@ -672,7 +682,8 @@ const trailBalanceColumns = [
   { name: 'contact_name', label: 'Contact', field: 'contact_name', align: 'left', sortable: true },
   { name: 'tracking1', label: 'Tracking 1', field: 'tracking1', align: 'left', sortable: true },
   { name: 'tracking2', label: 'Tracking 2', field: 'tracking2', align: 'left', sortable: true },
-  { name: 'amount', label: 'Amount', field: 'amount', align: 'right', sortable: true },
+  { name: 'debit', label: 'Debit', field: 'debit', align: 'right', sortable: true },
+  { name: 'credit', label: 'Credit', field: 'credit', align: 'right', sortable: true },
   { name: 'balance_to_date', label: 'Balance to Date (BS)', field: 'balance_to_date', align: 'right', sortable: true },
 ];
 
@@ -709,13 +720,18 @@ const lineItemsColumns = [
   { name: 'account_name', label: 'Account', field: 'account_name', align: 'left', sortable: true },
   { name: 'contact_name', label: 'Contact', field: 'contact_name', align: 'left', sortable: true },
   { name: 'description', label: 'Description', field: 'description', align: 'left' },
-  { name: 'amount', label: 'Amount', field: 'amount', align: 'right', sortable: true },
+  { name: 'debit', label: 'Debit', field: 'debit', align: 'right', sortable: true },
+  { name: 'credit', label: 'Credit', field: 'credit', align: 'right', sortable: true },
   { name: 'transaction_source_type', label: 'Source', field: 'transaction_source_type', align: 'left', sortable: true },
 ];
 
-// Detail view: individual rows (no xero_pnl columns here)
 const trailBalanceRows = computed(() => {
-  return dataStore.trailBalance?.results || [];
+  const results = dataStore.trailBalance?.results || [];
+  return results.map((r) => ({
+    ...r,
+    debit: r.debit != null ? Number(r.debit) : null,
+    credit: r.credit != null ? Number(r.credit) : null,
+  }));
 });
 
 // Recon view: group by tracking1 + account + year + month
@@ -784,7 +800,12 @@ const trailBalanceData = computed(() => {
 });
 
 const lineItemsRows = computed(() => {
-  return dataStore.lineItems?.results || [];
+  const results = dataStore.lineItems?.results || [];
+  return results.map((r) => ({
+    ...r,
+    debit: r.debit != null ? Number(r.debit) : null,
+    credit: r.credit != null ? Number(r.credit) : null,
+  }));
 });
 
 const lineItemsData = computed(() => {
