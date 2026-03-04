@@ -244,6 +244,7 @@
           <q-card>
             <q-card-section>
               <div class="text-h6">Trail Balance</div>
+              <div class="text-caption text-grey-7 q-mb-sm">Balance to Date is calculated for balance sheet accounts (ASSET, LIABILITY, EQUITY) only.</div>
               <div class="row q-gutter-md q-mt-md items-end">
                 <q-input
                   v-model="trailBalanceFilters.contact_name"
@@ -672,7 +673,7 @@ const trailBalanceColumns = [
   { name: 'tracking1', label: 'Tracking 1', field: 'tracking1', align: 'left', sortable: true },
   { name: 'tracking2', label: 'Tracking 2', field: 'tracking2', align: 'left', sortable: true },
   { name: 'amount', label: 'Amount', field: 'amount', align: 'right', sortable: true },
-  { name: 'balance_to_date', label: 'Balance to Date', field: 'balance_to_date', align: 'right', sortable: true },
+  { name: 'balance_to_date', label: 'Balance to Date (BS)', field: 'balance_to_date', align: 'right', sortable: true },
 ];
 
 // Recon view columns (grouped by tracking+account+year+month)

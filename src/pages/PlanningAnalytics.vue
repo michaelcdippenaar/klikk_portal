@@ -90,7 +90,7 @@
               <q-checkbox v-model="pipelineOpts.loadAll" label="Load all data (ignore last update)" dense class="q-mr-md" />
               <q-checkbox v-model="pipelineOpts.rebuildTrailBalance" label="Rebuild trail balance" dense class="q-mr-md" />
               <q-checkbox v-model="pipelineOpts.excludeManualJournals" label="Exclude manual journals" dense class="q-mr-md" />
-              <q-checkbox v-model="pipelineOpts.calculatePnlYtd" label="Calculate P&L YTD (balance to date)" dense />
+              <q-checkbox v-model="pipelineOpts.calculatePnlYtd" label="Calculate Balance Sheet YTD (balance to date)" dense />
             </q-card-section>
           </q-card>
 
