@@ -107,92 +107,6 @@
         </template>
       </ProcessCard>
 
-      <!-- Import P&L by Tracking -->
-      <ProcessCard
-        title="Import P&L by Tracking"
-        description="Pull Xero P&L report for every tracking option and store per-account/month values for comparison"
-        :loading="loading.pnlByTracking"
-        :result="results.pnlByTracking"
-        show-form
-      >
-        <template #form>
-          <div class="row q-gutter-md">
-            <q-input
-              v-model="pnlTrackingOptions.fromDate"
-              label="From Date (YYYY-MM-DD)"
-              outlined
-              dense
-              style="min-width: 180px"
-              hint="Default: 12 months ago"
-            />
-            <q-input
-              v-model="pnlTrackingOptions.toDate"
-              label="To Date (YYYY-MM-DD)"
-              outlined
-              dense
-              style="min-width: 180px"
-              hint="Default: today"
-            />
-          </div>
-        </template>
-        <template #actions>
-          <q-btn
-            label="Import P&L by Tracking"
-            color="primary"
-            :loading="loading.pnlByTracking"
-            @click="runPnlByTracking"
-          />
-        </template>
-      </ProcessCard>
-
-      <!-- Reconcile Reports -->
-      <ProcessCard
-        title="Reconcile Reports"
-        description="Compare Xero P&L and Balance Sheet reports to constructed trail balance"
-        :loading="loading.reconcile"
-        :result="results.reconcile"
-        show-form
-      >
-        <template #form>
-          <div class="row q-gutter-md">
-            <q-input
-              v-model.number="reconcileOptions.financialYear"
-              label="Financial Year"
-              type="number"
-              outlined
-              dense
-              style="min-width: 150px"
-            />
-            <q-input
-              v-model.number="reconcileOptions.fiscalYearStartMonth"
-              label="Fiscal Year Start Month"
-              type="number"
-              min="1"
-              max="12"
-              outlined
-              dense
-              style="min-width: 150px"
-            />
-            <q-input
-              v-model.number="reconcileOptions.tolerance"
-              label="Tolerance"
-              type="number"
-              step="0.01"
-              outlined
-              dense
-              style="min-width: 150px"
-            />
-          </div>
-        </template>
-        <template #actions>
-          <q-btn
-            label="Run Reconciliation"
-            color="primary"
-            :loading="loading.reconcile"
-            @click="runReconcile"
-          />
-        </template>
-      </ProcessCard>
     </div>
   </q-page>
 </template>
@@ -213,8 +127,6 @@ const processApiLabels = {
   data: 'Sync Transactions & Journals',
   journals: 'Process Journals',
   'trail-balance': 'Build Trail Balance',
-  'pnl-by-tracking': 'Import P&L by Tracking',
-  reconcile: 'Reconcile Reports',
 };
 
 async function fetchApiCallStats() {
@@ -234,8 +146,6 @@ const loading = reactive({
   data: false,
   journals: false,
   trailBalance: false,
-  pnlByTracking: false,
-  reconcile: false,
 });
 
 const results = reactive({
@@ -243,8 +153,6 @@ const results = reactive({
   data: null,
   journals: null,
   trailBalance: null,
-  pnlByTracking: null,
-  reconcile: null,
 });
 
 const dataOptions = reactive({
@@ -256,16 +164,6 @@ const trailBalanceOptions = reactive({
   excludeManual: false,
 });
 
-const pnlTrackingOptions = reactive({
-  fromDate: '',
-  toDate: '',
-});
-
-const reconcileOptions = reactive({
-  financialYear: new Date().getFullYear(),
-  fiscalYearStartMonth: 7,
-  tolerance: 0.01,
-});
 
 async function runMetadata() {
   loading.metadata = true;
@@ -328,36 +226,4 @@ async function runTrailBalance() {
   }
 }
 
-async function runPnlByTracking() {
-  loading.pnlByTracking = true;
-  results.pnlByTracking = null;
-  try {
-    const result = await processStore.runProcess('pnl-by-tracking', {
-      tenantId: dataStore.selectedTenant,
-      from_date: pnlTrackingOptions.fromDate || undefined,
-      to_date: pnlTrackingOptions.toDate || undefined,
-    });
-    results.pnlByTracking = result;
-    await fetchApiCallStats();
-  } finally {
-    loading.pnlByTracking = false;
-  }
-}
-
-async function runReconcile() {
-  loading.reconcile = true;
-  results.reconcile = null;
-  try {
-    const result = await processStore.runProcess('reconcile', {
-      tenantId: dataStore.selectedTenant,
-      financial_year: reconcileOptions.financialYear,
-      fiscal_year_start_month: reconcileOptions.fiscalYearStartMonth,
-      tolerance: reconcileOptions.tolerance,
-    });
-    results.reconcile = result;
-    await fetchApiCallStats();
-  } finally {
-    loading.reconcile = false;
-  }
-}
 </script>

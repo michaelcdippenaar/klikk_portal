@@ -8,10 +8,59 @@
     </div>
 
     <div v-else>
+
+      <!-- Import P&L by Tracking -->
+      <q-card class="q-mb-md">
+        <q-card-section>
+          <div class="text-h6">Import P&amp;L by Tracking</div>
+          <div class="text-caption text-grey-7">Pull Xero P&amp;L totals per tracking category for comparison with trail balance</div>
+        </q-card-section>
+        <q-card-section>
+          <div class="row q-gutter-md items-end">
+            <q-input
+              v-model="pnlTrackingForm.fromDate"
+              label="From Date (YYYY-MM-DD)"
+              outlined
+              dense
+              style="min-width: 180px"
+              hint="Default: 12 months ago"
+            />
+            <q-input
+              v-model="pnlTrackingForm.toDate"
+              label="To Date (YYYY-MM-DD)"
+              outlined
+              dense
+              style="min-width: 180px"
+              hint="Default: today"
+            />
+            <q-btn
+              label="Import P&amp;L by Tracking"
+              color="secondary"
+              :loading="pnlTrackingLoading"
+              @click="runPnlByTracking"
+            />
+          </div>
+        </q-card-section>
+        <q-card-section v-if="pnlTrackingLoading" class="text-center">
+          <q-spinner color="secondary" size="2em" />
+          <span class="q-ml-sm text-grey-7">Importing...</span>
+        </q-card-section>
+        <q-card-section v-if="pnlTrackingResult && !pnlTrackingLoading">
+          <q-badge :color="pnlTrackingResult.success ? 'positive' : 'negative'" class="q-mb-sm">
+            {{ pnlTrackingResult.success ? 'Success' : 'Error' }}
+          </q-badge>
+          <div v-if="pnlTrackingResult.success && pnlTrackingResult.result" class="q-mt-xs text-caption">
+            {{ pnlTrackingResult.result.message || 'Import complete' }}
+          </div>
+          <div v-else-if="pnlTrackingResult.error" class="text-negative">{{ pnlTrackingResult.error }}</div>
+        </q-card-section>
+      </q-card>
+
       <!-- Reconciliation Form -->
       <q-card class="q-mb-md">
         <q-card-section>
           <div class="text-h6">Run Reconciliation</div>
+          <div class="text-caption text-grey-7">Compare Xero P&amp;L and Balance Sheet reports to constructed trail balance</div>
         </q-card-section>
         <q-card-section>
           <div class="row q-gutter-md items-end">
@@ -139,7 +188,7 @@
                 </div>
 
               </div>
-              <div v-else class="text-grey-6">No Profit & Loss data available.</div>
+              <div v-else class="text-grey-6">No Profit &amp; Loss data available.</div>
             </q-tab-panel>
 
             <!-- Balance Sheet Tab -->
@@ -226,7 +275,7 @@
 
                 <!-- P&L Period Exceptions -->
                 <div v-if="pnlExceptionPeriods.length" class="q-mb-md">
-                  <div class="text-subtitle1 q-mb-xs">P&L — Periods with Mismatches</div>
+                  <div class="text-subtitle1 q-mb-xs">P&amp;L — Periods with Mismatches</div>
                   <q-table
                     :rows="pnlExceptionPeriods"
                     :columns="pnlPeriodColumns"
@@ -250,6 +299,48 @@
                       </q-td>
                     </template>
                   </q-table>
+                </div>
+
+                <!-- P&L Accounts that mismatch per period -->
+                <div v-if="pnlPeriodExceptionAccounts.length" class="q-mb-md">
+                  <div class="text-subtitle1 q-mb-sm">P&amp;L — Accounts that mismatch per period</div>
+                  <q-list bordered>
+                    <q-expansion-item
+                      v-for="item in pnlPeriodExceptionAccounts"
+                      :key="item.period"
+                      :label="`Period ${item.period} (${item.period_date}) — ${item.accounts.length} account(s) out`"
+                      header-class="text-weight-medium"
+                      default-opened
+                    >
+                      <q-card flat bordered>
+                        <q-table
+                          :rows="item.accounts"
+                          :columns="pnlAccountExceptionColumns"
+                          row-key="account_code"
+                          dense
+                          flat
+                          bordered
+                          :pagination="{ rowsPerPage: 0 }"
+                          hide-pagination
+                        >
+                          <template v-slot:body-cell-status="props">
+                            <q-td :props="props">
+                              <q-badge
+                                :color="props.row.status === 'mismatch' ? 'negative' : 'warning'"
+                              >
+                                {{ props.row.status }}
+                              </q-badge>
+                            </q-td>
+                          </template>
+                          <template v-slot:body-cell-difference="props">
+                            <q-td :props="props">
+                              <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
+                            </q-td>
+                          </template>
+                        </q-table>
+                      </q-card>
+                    </q-expansion-item>
+                  </q-list>
                 </div>
 
                 <!-- BS Account Exceptions -->
@@ -299,6 +390,30 @@ import { useProcessStore } from '../stores/processes';
 const dataStore = useDataStore();
 const processStore = useProcessStore();
 
+// --- P&L by Tracking ---
+const pnlTrackingLoading = ref(false);
+const pnlTrackingResult = ref(null);
+const pnlTrackingForm = reactive({
+  fromDate: '',
+  toDate: '',
+});
+
+async function runPnlByTracking() {
+  pnlTrackingLoading.value = true;
+  pnlTrackingResult.value = null;
+  try {
+    const result = await processStore.runProcess('pnl-by-tracking', {
+      tenantId: dataStore.selectedTenant,
+      from_date: pnlTrackingForm.fromDate || undefined,
+      to_date: pnlTrackingForm.toDate || undefined,
+    });
+    pnlTrackingResult.value = result;
+  } finally {
+    pnlTrackingLoading.value = false;
+  }
+}
+
+// --- Reconciliation ---
 const loading = ref(false);
 const reconciliationResult = ref(null);
 const activeTab = ref('pnl');
@@ -347,6 +462,24 @@ const pnlExceptionPeriods = computed(() => {
   return pnlPeriodRows.value.filter(r => r.mismatches > 0 || r.missing_in_db > 0 || r.missing_in_xero > 0);
 });
 
+const pnlPeriodExceptionAccounts = computed(() => {
+  const comparison = reconciliationResult.value?.profit_loss?.comparison;
+  const periodExceptions = comparison?.period_exceptions || {};
+  const periodStats = comparison?.period_stats || {};
+  return Object.keys(periodExceptions)
+    .sort((a, b) => parseInt(a) - parseInt(b))
+    .map(periodKey => {
+      const periodIdx = parseInt(periodKey);
+      const stats = periodStats[periodKey];
+      return {
+        period: periodIdx + 1,
+        period_date: stats?.period_date || `Period ${periodIdx + 1}`,
+        accounts: periodExceptions[periodKey] || [],
+      };
+    })
+    .filter(p => p.accounts.length > 0);
+});
+
 // --- Balance Sheet computed ---
 
 const bsValidation = computed(() => {
@@ -359,6 +492,15 @@ const bsDetailColumns = [
   { name: 'account_type', label: 'Type', field: 'account_type', align: 'left', sortable: true },
   { name: 'xero_value', label: 'Xero Value', field: 'xero_value', align: 'right', sortable: true, format: v => formatNum(v) },
   { name: 'db_value', label: 'DB Value', field: 'db_value', align: 'right', sortable: true, format: v => formatNum(v) },
+  { name: 'difference', label: 'Difference', field: 'difference', align: 'right', sortable: true },
+  { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
+];
+
+const pnlAccountExceptionColumns = [
+  { name: 'account_code', label: 'Code', field: 'account_code', align: 'left', sortable: true },
+  { name: 'account_name', label: 'Account', field: 'account_name', align: 'left', sortable: true },
+  { name: 'xero_value', label: 'Xero', field: 'xero_value', align: 'right', sortable: true, format: v => formatNum(v) },
+  { name: 'db_value', label: 'DB', field: 'db_value', align: 'right', sortable: true, format: v => formatNum(v) },
   { name: 'difference', label: 'Difference', field: 'difference', align: 'right', sortable: true },
   { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
 ];

@@ -53,6 +53,22 @@ export const API_ENDPOINTS = {
   PA_TM1_CONFIG: '/api/planning-analytics/tm1/config/',
   PA_TM1_PROCESSES: '/api/planning-analytics/tm1/processes/',
 
+  // AI Agent
+  AI_AGENT_HEALTH: '/api/ai-agent/health/',
+  AI_AGENT_STATUS: '/api/ai-agent/status/',
+  AI_AGENT_PROJECTS: '/api/ai-agent/projects/',
+  AI_AGENT_SESSIONS: '/api/ai-agent/sessions/',
+  AI_AGENT_SESSION_RUN_SUFFIX: '/run/',
+  AI_AGENT_SESSION_RUN_WITH_TOOLS_SUFFIX: '/run-with-tools/',
+  AI_AGENT_SYSTEM_DOCS: '/api/ai-agent/system-docs/',
+  AI_AGENT_SYSTEM_DOCS_GENERATE: '/api/ai-agent/system-docs/generate/',
+  AI_AGENT_PROJECT_IMPORT_TM1_DOCS_SUFFIX: '/import-tm1-docs/',
+  AI_AGENT_TM1_CONFIG: '/api/ai-agent/tm1/config/',
+  AI_AGENT_TM1_PROXY: '/api/ai-agent/tm1/proxy/',
+  AI_AGENT_TM1_TEST_CONNECTION: '/api/ai-agent/tm1/test-connection/',
+
+  AI_AGENT_GLOSSARY_REFRESH: '/api/ai-agent/glossary/refresh/',
+
   // Investec
   INVESTEC_UPLOAD: '/api/investec/upload/',
   INVESTEC_TRANSACTIONS: '/api/investec/transactions/',

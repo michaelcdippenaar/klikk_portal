@@ -63,6 +63,11 @@ const routes = [
         name: 'planning-analytics',
         component: () => import('pages/PlanningAnalytics.vue'),
       },
+      {
+        path: 'ai-agent',
+        name: 'ai-agent',
+        component: () => import('pages/AiAgent.vue'),
+      },
     ],
   },
   {

@@ -180,6 +180,19 @@
           </q-item-section>
         </q-item>
 
+        <q-item
+          clickable
+          v-ripple
+          :to="{ name: 'ai-agent' }"
+        >
+          <q-item-section avatar>
+            <q-icon name="smart_toy" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>AI Agent (MVP)</q-item-label>
+          </q-item-section>
+        </q-item>
+
       </q-list>
     </q-drawer>
 

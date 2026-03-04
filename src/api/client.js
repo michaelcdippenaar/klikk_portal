@@ -23,38 +23,63 @@ apiClient.interceptors.request.use(
   }
 );
 
+// Token-refresh queue: when multiple requests 401 at the same time,
+// only one refresh is attempted; the rest wait for it to finish.
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+function onTokenRefreshed(newToken) {
+  refreshSubscribers.forEach((cb) => cb(newToken));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb) {
+  refreshSubscribers.push(cb);
+}
+
 // Response interceptor - handle 401 and token refresh
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // If 401 and not already retrying, try to refresh token
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          addRefreshSubscriber((newToken) => {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            resolve(apiClient(originalRequest));
+          });
+        });
+      }
+
+      isRefreshing = true;
+
       try {
-        // Import store dynamically to avoid circular dependency issues
         const { useAuthStore } = await import('../stores/auth');
         const authStore = useAuthStore();
         await authStore.refreshToken();
-        
-        // Retry original request with new token
-        const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-        originalRequest.headers.Authorization = `Bearer ${token}`;
+
+        const newToken = localStorage.getItem(STORAGE_KEYS.TOKEN);
+        onTokenRefreshed(newToken);
+
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
-        // Refresh failed, logout user
+        refreshSubscribers = [];
         try {
           const { useAuthStore } = await import('../stores/auth');
           const authStore = useAuthStore();
           authStore.logout();
         } catch (e) {
-          // If store fails, just clear localStorage
           localStorage.removeItem(STORAGE_KEYS.TOKEN);
           localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
         }
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
 
