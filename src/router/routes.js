@@ -54,6 +54,11 @@ const routes = [
         component: () => import('pages/InvestecShareCodes.vue'),
       },
       {
+        path: 'investec/account',
+        name: 'investec-account',
+        component: () => import('pages/InvestecAccount.vue'),
+      },
+      {
         path: 'xero-connect',
         name: 'xero-connect',
         component: () => import('pages/XeroConnect.vue'),

@@ -80,6 +80,10 @@ export const API_ENDPOINTS = {
   INVESTEC_EXPORT_COMPANIES: '/api/investec/export/companies/',
   INVESTEC_EXPORT_SHARE_NAMES: '/api/investec/export/share-names/',
   INVESTEC_EXPORT_TRANSACTIONS: '/api/investec/export/transactions/',
+  INVESTEC_BANK_ACCOUNTS: '/api/investec/bank/accounts/',
+  INVESTEC_BANK_TRANSACTIONS: '/api/investec/bank/transactions/',
+  INVESTEC_BANK_SYNC_STATUS: '/api/investec/bank/sync-status/',
+  INVESTEC_BANK_SYNC: '/api/investec/bank/sync/',
 };
 
 // Storage Keys

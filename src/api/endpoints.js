@@ -300,3 +300,46 @@ export async function getInvestecExportTransactions() {
 export function getInvestecExportDownloadUrl(filename) {
   return `${API_BASE_URL}/media/investec/exports/${filename}`;
 }
+
+/**
+ * Get Investec Private Bank accounts (for account filter dropdown)
+ */
+export async function getInvestecBankAccounts() {
+  const response = await apiClient.get(API_ENDPOINTS.INVESTEC_BANK_ACCOUNTS);
+  return response.data;
+}
+
+/**
+ * Search Investec Private Bank transactions.
+ * Params: description, amount, date_from, date_to, account (id or number), limit, offset
+ */
+export async function getInvestecBankTransactions(params = {}) {
+  const response = await apiClient.get(API_ENDPOINTS.INVESTEC_BANK_TRANSACTIONS, {
+    params: {
+      description: params.description || undefined,
+      amount: params.amount || undefined,
+      date_from: params.date_from || undefined,
+      date_to: params.date_to || undefined,
+      account: params.account || undefined,
+      limit: params.limit ?? 100,
+      offset: params.offset ?? 0,
+    },
+  });
+  return response.data;
+}
+
+/**
+ * Get last Investec bank sync time (for "Update from API" tab).
+ */
+export async function getInvestecBankSyncStatus() {
+  const response = await apiClient.get(API_ENDPOINTS.INVESTEC_BANK_SYNC_STATUS);
+  return response.data;
+}
+
+/**
+ * Trigger Investec bank sync from API (incremental from last sync). Returns created/updated and new last_synced_at.
+ */
+export async function triggerInvestecBankSync() {
+  const response = await apiClient.post(API_ENDPOINTS.INVESTEC_BANK_SYNC);
+  return response.data;
+}

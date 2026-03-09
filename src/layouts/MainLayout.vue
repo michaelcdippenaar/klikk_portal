@@ -131,7 +131,7 @@
             <q-icon name="pie_chart" />
           </q-item-section>
           <q-item-section>
-            <q-item-label>Holdings</q-item-label>
+            <q-item-label>Share holdings</q-item-label>
           </q-item-section>
         </q-item>
 
@@ -144,7 +144,7 @@
             <q-icon name="list_alt" />
           </q-item-section>
           <q-item-section>
-            <q-item-label>Transactions</q-item-label>
+            <q-item-label>Share transactions</q-item-label>
           </q-item-section>
         </q-item>
 
@@ -158,6 +158,19 @@
           </q-item-section>
           <q-item-section>
             <q-item-label>Share codes</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item
+          clickable
+          v-ripple
+          :to="{ name: 'investec-account' }"
+        >
+          <q-item-section avatar>
+            <q-icon name="account_balance" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>Account</q-item-label>
           </q-item-section>
         </q-item>
 

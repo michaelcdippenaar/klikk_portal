@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec - Holdings</div>
+    <div class="text-h5 q-mb-md">Investec - Share holdings</div>
 
     <div class="text-subtitle1 q-mb-sm">Upload portfolio</div>
     <q-card class="q-mb-lg" style="max-width: 400px">

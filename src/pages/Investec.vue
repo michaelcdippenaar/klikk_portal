@@ -24,7 +24,7 @@
     <div class="row q-col-gutter-md q-mb-lg">
       <q-card class="col-12 col-md-4">
         <q-card-section>
-          <div class="text-subtitle2 q-mb-sm">Transactions</div>
+          <div class="text-subtitle2 q-mb-sm">Share transactions</div>
           <q-file
             v-model="uploadFiles.transactions"
             label="Excel file"
@@ -118,8 +118,8 @@
       </q-card>
     </div>
 
-    <!-- Transactions table -->
-    <div class="text-subtitle1 q-mb-sm">Transactions</div>
+    <!-- Share transactions table -->
+    <div class="text-subtitle1 q-mb-sm">Share transactions</div>
     <q-card class="q-mb-lg">
       <q-card-section>
         <div class="row q-col-gutter-sm q-mb-md">

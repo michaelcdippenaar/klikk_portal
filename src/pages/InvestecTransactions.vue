@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec - Transactions</div>
+    <div class="text-h5 q-mb-md">Investec - Share transactions</div>
 
     <div class="text-subtitle1 q-mb-sm">Upload transactions</div>
     <div class="row q-col-gutter-md q-mb-lg">
@@ -36,7 +36,7 @@
       </q-card>
     </div>
 
-    <div class="text-subtitle1 q-mb-sm">Transactions</div>
+    <div class="text-subtitle1 q-mb-sm">Share transactions</div>
     <q-card class="q-mb-lg">
       <q-card-section>
         <div class="row q-col-gutter-sm q-mb-md">
