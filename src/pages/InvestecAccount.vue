@@ -50,7 +50,7 @@
             clearable
             type="date"
             class="col-12 col-sm-6 col-md-2"
-            @update:model-value="fetchTransactions"
+            @update:model-value="onFilterChange"
           />
           <q-input
             v-model="filters.date_to"
@@ -60,7 +60,7 @@
             clearable
             type="date"
             class="col-12 col-sm-6 col-md-2"
-            @update:model-value="fetchTransactions"
+            @update:model-value="onFilterChange"
           />
           <q-select
             v-model="filters.account"
@@ -73,14 +73,21 @@
             map-options
             options-dense
             class="col-12 col-sm-6 col-md-3"
-            @update:model-value="fetchTransactions"
+            @update:model-value="onFilterChange"
           />
-          <div class="col-12 col-sm-6 col-md-2 flex items-center">
+          <div class="col-12 col-sm-6 col-md-2 flex items-center q-gutter-sm">
             <q-btn
               label="Search"
               color="primary"
               :loading="loadingTable"
-              @click="fetchTransactions"
+              @click="onFilterChange"
+            />
+            <q-btn
+              label="Download Excel"
+              color="primary"
+              outline
+              :loading="loadingExport"
+              @click="downloadExcel"
             />
           </div>
         </div>
@@ -175,12 +182,14 @@ import {
   getInvestecBankTransactions,
   getInvestecBankSyncStatus,
   triggerInvestecBankSync,
+  downloadInvestecBankTransactionsExcel,
 } from '../api/endpoints';
 
 const activeTab = ref('transactions');
 const lastSyncedAt = ref(null);
 const loadingSync = ref(false);
 const syncResult = ref(null);
+const loadingExport = ref(false);
 
 const columns = [
   { name: 'posting_date', label: 'Posting date', field: 'posting_date', align: 'left', sortable: true },
@@ -197,6 +206,7 @@ const transactions = ref([]);
 const transactionCount = ref(0);
 const accounts = ref([]);
 const loadingTable = ref(false);
+let fetchAbortController = null;
 
 const filters = reactive({
   description: '',
@@ -222,7 +232,10 @@ const accountOptions = computed(() => {
 let searchTimeout = null;
 function debouncedSearch() {
   if (searchTimeout) clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(fetchTransactions, 300);
+  searchTimeout = setTimeout(() => {
+    pagination.offset = 0;
+    fetchTransactions();
+  }, 300);
 }
 
 function formatDate(val) {
@@ -242,6 +255,29 @@ function amountClass(type) {
   if (type === 'DEBIT') return 'text-negative';
   if (type === 'CREDIT') return 'text-positive';
   return '';
+}
+
+function onFilterChange() {
+  pagination.offset = 0;
+  fetchTransactions();
+}
+
+async function downloadExcel() {
+  loadingExport.value = true;
+  try {
+    await downloadInvestecBankTransactionsExcel({
+      description: filters.description || undefined,
+      amount: filters.amount || undefined,
+      date_from: filters.date_from || undefined,
+      date_to: filters.date_to || undefined,
+      account: filters.account || undefined,
+    });
+  } catch (err) {
+    console.error(err);
+    // Optionally show a notification
+  } finally {
+    loadingExport.value = false;
+  }
 }
 
 async function fetchAccounts() {
@@ -295,6 +331,11 @@ async function runSync() {
 }
 
 async function fetchTransactions() {
+  if (fetchAbortController) {
+    fetchAbortController.abort();
+  }
+  const thisController = new AbortController();
+  fetchAbortController = thisController;
   loadingTable.value = true;
   try {
     const data = await getInvestecBankTransactions({
@@ -305,14 +346,20 @@ async function fetchTransactions() {
       date_from: filters.date_from || undefined,
       date_to: filters.date_to || undefined,
       account: filters.account || undefined,
+      signal: thisController.signal,
     });
     transactions.value = data.results || [];
     transactionCount.value = data.count ?? 0;
   } catch (err) {
+    if (err.code === 'ERR_CANCELED' || err.name === 'CanceledError') {
+      return;
+    }
     transactions.value = [];
     transactionCount.value = 0;
     console.error(err);
   } finally {
+    if (thisController.signal.aborted) return;
+    if (fetchAbortController === thisController) fetchAbortController = null;
     loadingTable.value = false;
   }
 }

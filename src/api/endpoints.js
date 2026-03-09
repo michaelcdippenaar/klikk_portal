@@ -311,7 +311,8 @@ export async function getInvestecBankAccounts() {
 
 /**
  * Search Investec Private Bank transactions.
- * Params: description, amount, date_from, date_to, account (id or number), limit, offset
+ * Params: description, amount, date_from, date_to, account (id or number), limit, offset.
+ * Optional signal for request cancellation (e.g. AbortController.signal).
  */
 export async function getInvestecBankTransactions(params = {}) {
   const response = await apiClient.get(API_ENDPOINTS.INVESTEC_BANK_TRANSACTIONS, {
@@ -324,8 +325,40 @@ export async function getInvestecBankTransactions(params = {}) {
       limit: params.limit ?? 100,
       offset: params.offset ?? 0,
     },
+    signal: params.signal ?? undefined,
   });
   return response.data;
+}
+
+/**
+ * Download Investec bank transaction search results as Excel.
+ * Pass same params as getInvestecBankTransactions (description, amount, date_from, date_to, account).
+ * Triggers browser download of .xlsx file.
+ */
+export async function downloadInvestecBankTransactionsExcel(params = {}) {
+  const response = await apiClient.get(API_ENDPOINTS.INVESTEC_BANK_TRANSACTIONS_EXPORT, {
+    params: {
+      description: params.description || undefined,
+      amount: params.amount || undefined,
+      date_from: params.date_from || undefined,
+      date_to: params.date_to || undefined,
+      account: params.account || undefined,
+    },
+    responseType: 'blob',
+  });
+  const blob = response.data;
+  const disposition = response.headers['content-disposition'];
+  let filename = 'Investec_Bank_Transactions.xlsx';
+  if (disposition) {
+    const match = disposition.match(/filename="?([^";\n]+)"?/);
+    if (match) filename = match[1];
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /**
