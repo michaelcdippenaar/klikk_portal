@@ -7,6 +7,7 @@ import {
   processTrailBalance,
   reconcileReports,
   importPnlByTracking,
+  syncXeroDocuments,
 } from '../api/endpoints';
 
 export const useProcessStore = defineStore('processes', () => {
@@ -58,6 +59,12 @@ export const useProcessStore = defineStore('processes', () => {
           result = await importPnlByTracking(params.tenantId, {
             from_date: params.from_date,
             to_date: params.to_date,
+          });
+          break;
+        case 'documents':
+          result = await syncXeroDocuments(params.tenantId, {
+            transaction_ids: params.transaction_ids,
+            types: params.types,
           });
           break;
         default:

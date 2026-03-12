@@ -73,6 +73,11 @@ const routes = [
         name: 'ai-agent',
         component: () => import('pages/AiAgent.vue'),
       },
+      {
+        path: 'financial-investments',
+        name: 'financial-investments',
+        component: () => import('pages/FinancialInvestments.vue'),
+      },
     ],
   },
   {

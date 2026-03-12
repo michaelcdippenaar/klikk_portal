@@ -18,8 +18,8 @@
       <q-badge :color="result.success ? 'positive' : 'negative'" class="q-mb-sm">
         {{ result.success ? 'Success' : 'Error' }}
       </q-badge>
-      <div v-if="result.success && result.data">
-        <pre class="q-mt-sm" style="max-height: 300px; overflow: auto; font-size: 0.85em;">{{ JSON.stringify(result.data, null, 2) }}</pre>
+      <div v-if="result.success && (result.data || result.result)">
+        <pre class="q-mt-sm" style="max-height: 300px; overflow: auto; font-size: 0.85em;">{{ JSON.stringify(result.data || result.result, null, 2) }}</pre>
       </div>
       <div v-else-if="result.error" class="text-negative">
         {{ result.error }}

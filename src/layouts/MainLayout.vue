@@ -177,6 +177,25 @@
         <q-separator spaced />
 
         <q-item-label header class="text-grey-8">
+          Financial Investments
+        </q-item-label>
+
+        <q-item
+          clickable
+          v-ripple
+          :to="{ name: 'financial-investments' }"
+        >
+          <q-item-section avatar>
+            <q-icon name="show_chart" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>Stocks</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-separator spaced />
+
+        <q-item-label header class="text-grey-8">
           Planning Analytics
         </q-item-label>
 

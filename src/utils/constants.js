@@ -1,10 +1,14 @@
 // API Configuration
-// When portal is opened on port 8080 (direct container), there is no /backend – use Django on 8001
+// Backend: klikk_financials_v4 (klikk_business_intelligence) — runs on port 8002 in dev.
+// When portal is opened on port 8080 (e.g. direct container), use same host with Django on 8002.
 export function getApiBaseUrl() {
-  if (typeof window !== 'undefined' && window.location.port === '8080') {
-    return `${window.location.protocol}//${window.location.hostname}:8001`;
+  if (typeof window !== 'undefined') {
+    const port = window.location.port;
+    if (port === '8080' || port === '9000') {
+      return `${window.location.protocol}//${window.location.hostname}:8002`;
+    }
   }
-  return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001';
+  return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8002';
 }
 export const API_BASE_URL = getApiBaseUrl();
 
@@ -28,6 +32,8 @@ export const API_ENDPOINTS = {
   // Data
   UPDATE_DATA: '/xero/data/update/journals/',
   PROCESS_JOURNALS: '/xero/data/process/journals/',
+  SYNC_DOCUMENTS: '/xero/data/sync/documents/',
+  DOCUMENTS_BY_TRANSACTION: '/xero/data/documents/by-transaction/', // + transactionId + ?tenant_id=
   
   // Cube
   PROCESS_CUBE: '/xero/cube/process/',
@@ -85,6 +91,9 @@ export const API_ENDPOINTS = {
   INVESTEC_BANK_TRANSACTIONS_EXPORT: '/api/investec/bank/transactions/export/',
   INVESTEC_BANK_SYNC_STATUS: '/api/investec/bank/sync-status/',
   INVESTEC_BANK_SYNC: '/api/investec/bank/sync/',
+
+  // Financial Investments (yfinance stock data)
+  FINANCIAL_INVESTMENTS_SYMBOLS: '/api/financial-investments/symbols/',
 };
 
 // Storage Keys

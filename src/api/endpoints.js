@@ -77,6 +77,31 @@ export async function processJournals(tenantId) {
 }
 
 /**
+ * Sync documents (attachments) from Xero and link to transactions.
+ * Optional: transaction_ids (array), types (e.g. ['Invoice', 'CreditNote', 'BankTransaction']).
+ */
+export async function syncXeroDocuments(tenantId, options = {}) {
+  const response = await apiClient.post(API_ENDPOINTS.SYNC_DOCUMENTS, {
+    tenant_id: tenantId,
+    transaction_ids: options.transaction_ids || undefined,
+    types: options.types || undefined,
+  });
+  return response.data;
+}
+
+/**
+ * List documents linked to a Xero transaction (by transaction ID).
+ */
+export async function getDocumentsByTransaction(transactionId, tenantId = null) {
+  const params = tenantId ? { tenant_id: tenantId } : {};
+  const response = await apiClient.get(
+    `${API_ENDPOINTS.DOCUMENTS_BY_TRANSACTION}${encodeURIComponent(transactionId)}/`,
+    { params }
+  );
+  return response.data;
+}
+
+/**
  * Process trail balance
  */
 export async function processTrailBalance(tenantId, options = {}) {
@@ -374,5 +399,111 @@ export async function getInvestecBankSyncStatus() {
  */
 export async function triggerInvestecBankSync() {
   const response = await apiClient.post(API_ENDPOINTS.INVESTEC_BANK_SYNC);
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Financial Investments (yfinance stock data)
+// ---------------------------------------------------------------------------
+
+/**
+ * Get list of tracked symbols (symbol, name, exchange).
+ */
+export async function getFinancialInvestmentsSymbols() {
+  const response = await apiClient.get(API_ENDPOINTS.FINANCIAL_INVESTMENTS_SYMBOLS);
+  return response.data;
+}
+
+/**
+ * Get price history for a symbol from DB. Optional start_date, end_date (YYYY-MM-DD).
+ */
+export async function getFinancialInvestmentsHistory(symbol, params = {}) {
+  const url = `/api/financial-investments/symbols/${encodeURIComponent(symbol)}/history/`;
+  const response = await apiClient.get(url, { params: { start_date: params.start_date, end_date: params.end_date } });
+  return response.data;
+}
+
+/**
+ * Refresh symbol from yfinance (fetch and store). Optional start_date, end_date in body or params.
+ */
+export async function refreshFinancialInvestmentsSymbol(symbol, params = {}) {
+  const url = `/api/financial-investments/symbols/${encodeURIComponent(symbol)}/refresh/`;
+  const response = await apiClient.post(url, { start_date: params.start_date, end_date: params.end_date });
+  return response.data;
+}
+
+/**
+ * Refresh extra data (dividends, splits, company info, financials, earnings, analyst, ownership, news).
+ * Optional types: array of 'dividends','splits','company_info','financial_statements','earnings','earnings_estimate','analyst_recommendations','analyst_price_target','ownership','news'
+ */
+export async function refreshFinancialInvestmentsExtra(symbol, types = null) {
+  const url = `/api/financial-investments/symbols/${encodeURIComponent(symbol)}/refresh-extra/`;
+  const response = await apiClient.post(url, types ? { types } : {});
+  return response.data;
+}
+
+function _fiUrl(symbol, path) {
+  return `/api/financial-investments/symbols/${encodeURIComponent(symbol)}/${path}`;
+}
+
+export async function getFinancialInvestmentsDividends(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'dividends/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsSplits(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'splits/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsInfo(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'info/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsFinancialStatements(symbol, freq = 'yearly') {
+  const response = await apiClient.get(_fiUrl(symbol, 'financial-statements/'), { params: { freq } });
+  return response.data;
+}
+
+export async function getFinancialInvestmentsEarnings(symbol, freq = 'yearly') {
+  const response = await apiClient.get(_fiUrl(symbol, 'earnings/'), { params: { freq } });
+  return response.data;
+}
+
+export async function getFinancialInvestmentsEarningsEstimate(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'earnings-estimate/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsAnalystRecommendations(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'analyst-recommendations/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsAnalystPriceTarget(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'analyst-price-target/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsOwnership(symbol) {
+  const response = await apiClient.get(_fiUrl(symbol, 'ownership/'));
+  return response.data;
+}
+
+export async function getFinancialInvestmentsNews(symbol, limit = 20) {
+  const response = await apiClient.get(_fiUrl(symbol, 'news/'), { params: { limit } });
+  return response.data;
+}
+
+const _fiBase = () => '/api/financial-investments';
+
+export async function getFinancialInvestmentsWatchlistPreference() {
+  const response = await apiClient.get(`${_fiBase()}/watchlist-preference/`);
+  return response.data;
+}
+
+export async function saveFinancialInvestmentsWatchlistPreference(value) {
+  const response = await apiClient.post(`${_fiBase()}/watchlist-preference/save/`, { value });
   return response.data;
 }

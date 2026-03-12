@@ -78,6 +78,15 @@
         @run="runProcessJournals"
       />
 
+      <!-- Sync Xero Documents -->
+      <ProcessCard
+        title="Sync Xero Documents"
+        description="Import invoice, credit note and bank transaction attachments from Xero and link them to transactions. Run after syncing transactions."
+        :loading="loading.documents"
+        :result="results.documents"
+        @run="runSyncDocuments"
+      />
+
       <!-- Process Trail Balance -->
       <ProcessCard
         title="Build Trail Balance"
@@ -145,6 +154,7 @@ const loading = reactive({
   metadata: false,
   data: false,
   journals: false,
+  documents: false,
   trailBalance: false,
 });
 
@@ -152,6 +162,7 @@ const results = reactive({
   metadata: null,
   data: null,
   journals: null,
+  documents: null,
   trailBalance: null,
 });
 
@@ -205,6 +216,19 @@ async function runProcessJournals() {
     await fetchApiCallStats();
   } finally {
     loading.journals = false;
+  }
+}
+
+async function runSyncDocuments() {
+  loading.documents = true;
+  results.documents = null;
+  try {
+    const result = await processStore.runProcess('documents', {
+      tenantId: dataStore.selectedTenant,
+    });
+    results.documents = result;
+  } finally {
+    loading.documents = false;
   }
 }
 
