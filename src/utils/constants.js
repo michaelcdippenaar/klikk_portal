@@ -1,14 +1,14 @@
 // API Configuration
-// Backend: klikk_financials_v4 (klikk_business_intelligence) — runs on port 8002 in dev.
-// When portal is opened on port 8080 (e.g. direct container), use same host with Django on 8002.
+// Backend: klikk_financials_v4 (klikk_business_intelligence) — runs on port 8001.
+// When portal is opened on port 8080 (e.g. direct container), use same host with Django on 8001.
 export function getApiBaseUrl() {
   if (typeof window !== 'undefined') {
     const port = window.location.port;
     if (port === '8080' || port === '9000') {
-      return `${window.location.protocol}//${window.location.hostname}:8002`;
+      return `${window.location.protocol}//${window.location.hostname}:8001`;
     }
   }
-  return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8002';
+  return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001';
 }
 export const API_BASE_URL = getApiBaseUrl();
 
@@ -58,6 +58,7 @@ export const API_ENDPOINTS = {
   PA_TM1_TEST_CONNECTION: '/api/planning-analytics/tm1/test-connection/',
   PA_TM1_CONFIG: '/api/planning-analytics/tm1/config/',
   PA_TM1_PROCESSES: '/api/planning-analytics/tm1/processes/',
+  PA_TM1_CREDENTIALS: '/api/planning-analytics/tm1/credentials/',
 
   // AI Agent
   AI_AGENT_HEALTH: '/api/ai-agent/health/',

@@ -53,8 +53,8 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 
-const username = ref('');
-const password = ref('');
+const username = ref('mc@tremly.com');
+const password = ref('Number55dip');
 const loading = ref(false);
 const error = ref('');
 
@@ -66,7 +66,7 @@ async function handleLogin() {
     const result = await authStore.login(username.value, password.value);
     
     if (result.success) {
-      const redirect = route.query.redirect || '/';
+      const redirect = route.query.redirect || '/app';
       router.push(redirect);
     } else {
       error.value = result.error || 'Login failed';

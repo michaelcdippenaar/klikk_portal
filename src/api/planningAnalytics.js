@@ -68,3 +68,21 @@ export async function saveTm1Processes(processes) {
   const resp = await client.post(API_ENDPOINTS.PA_TM1_PROCESSES, { processes });
   return resp.data;
 }
+
+export async function getTm1Credentials() {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_CREDENTIALS);
+  return resp.data;
+}
+
+export async function saveTm1Credentials(payload) {
+  const client = await getClient();
+  const resp = await client.put(API_ENDPOINTS.PA_TM1_CREDENTIALS, payload);
+  return resp.data;
+}
+
+export async function deleteTm1Credentials() {
+  const client = await getClient();
+  const resp = await client.delete(API_ENDPOINTS.PA_TM1_CREDENTIALS);
+  return resp.data;
+}

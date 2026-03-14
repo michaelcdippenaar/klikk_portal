@@ -17,6 +17,31 @@
       <q-tab-panels v-model="tab" animated>
         <!-- ===================== SETUP TAB ===================== -->
         <q-tab-panel name="setup">
+          <!-- My TM1 Credentials -->
+          <q-card class="q-mb-md">
+            <q-card-section>
+              <div class="text-subtitle1 q-mb-xs">My TM1 Credentials</div>
+              <div class="text-caption text-grey-7 q-mb-sm">Your personal TM1 login. All TM1 operations will use these credentials.</div>
+              <div class="row q-col-gutter-sm">
+                <div class="col-12 col-sm-6 col-md-4">
+                  <q-input v-model="myCreds.tm1_username" label="TM1 Username" dense outlined />
+                </div>
+                <div class="col-12 col-sm-6 col-md-4">
+                  <q-input v-model="myCreds.tm1_password" label="TM1 Password" type="password" dense outlined />
+                </div>
+              </div>
+              <div class="q-mt-sm q-gutter-sm">
+                <q-btn label="Save credentials" color="primary" :loading="savingCreds" @click="handleSaveCreds" no-caps />
+                <q-btn label="Remove" flat color="negative" :loading="removingCreds" @click="handleRemoveCreds" no-caps />
+              </div>
+              <div v-if="credsResult" class="q-mt-sm">
+                <q-banner :class="credsResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
+                  {{ credsResult.message }}
+                </q-banner>
+              </div>
+            </q-card-section>
+          </q-card>
+
           <!-- TM1 Server -->
           <q-card class="q-mb-md">
             <q-card-section>
@@ -145,6 +170,11 @@ export default defineComponent({
     const savingServer = ref(false);
     const savingProcesses = ref(false);
     const connectionResult = ref(null);
+
+    const myCreds = reactive({ tm1_username: '', tm1_password: '' });
+    const savingCreds = ref(false);
+    const removingCreds = ref(false);
+    const credsResult = ref(null);
     const pipelineRunning = ref(false);
 
     const pipelineOpts = reactive({
@@ -198,8 +228,39 @@ export default defineComponent({
       tm1Processes.value.push({ process_name: '', enabled: true, sort_order: tm1Processes.value.length, paramString: '', parameters: {} });
     }
 
+    async function handleSaveCreds() {
+      savingCreds.value = true;
+      credsResult.value = null;
+      try {
+        const res = await api.saveTm1Credentials({ tm1_username: myCreds.tm1_username, tm1_password: myCreds.tm1_password });
+        credsResult.value = { success: true, message: res.message || 'TM1 credentials saved.' };
+      } catch (e) {
+        credsResult.value = { success: false, message: e.response?.data?.error || e.message };
+      }
+      savingCreds.value = false;
+    }
+
+    async function handleRemoveCreds() {
+      removingCreds.value = true;
+      credsResult.value = null;
+      try {
+        const res = await api.deleteTm1Credentials();
+        myCreds.tm1_username = '';
+        myCreds.tm1_password = '';
+        credsResult.value = { success: true, message: res.message || 'Credentials removed.' };
+      } catch (e) {
+        credsResult.value = { success: false, message: e.response?.data?.error || e.message };
+      }
+      removingCreds.value = false;
+    }
+
     async function loadFromApi() {
       if (!api) return;
+      try {
+        const creds = await api.getTm1Credentials();
+        myCreds.tm1_username = creds.tm1_username || '';
+        myCreds.tm1_password = creds.tm1_password || '';
+      } catch (e) { console.warn('Failed to load TM1 credentials', e); }
       try {
         const cfg = await api.getTm1Config();
         tm1.baseUrl = cfg.base_url || '';
@@ -346,6 +407,8 @@ export default defineComponent({
     return {
       tab, tenantId, tm1, tm1Processes,
       testingConnection, savingServer, savingProcesses, connectionResult,
+      myCreds, savingCreds, removingCreds, credsResult,
+      handleSaveCreds, handleRemoveCreds,
       pipelineOpts, steps, pipelineRunning,
       addProcess, handleTestConnection, handleSaveServer, handleSaveProcesses,
       runSingleStep, runSelectedSteps, stepRowClass, buildSteps,

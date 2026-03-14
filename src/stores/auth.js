@@ -3,13 +3,22 @@ import { ref, computed } from 'vue';
 import { login as apiLogin, refreshToken as apiRefreshToken } from '../api/auth';
 import { STORAGE_KEYS } from '../utils/constants';
 
+function getCookieDomain() {
+  const hostname = window.location.hostname;
+  // Don't set domain for IP addresses or localhost — browser will scope to current host
+  if (/^(\d+\.){3}\d+$/.test(hostname) || hostname === 'localhost') {
+    return '';
+  }
+  return '; domain=.klikk.co.za';
+}
+
 function setAuthCookie(name, value) {
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `${name}=${value}; domain=.klikk.co.za; path=/; SameSite=Lax${secure}`;
+  document.cookie = `${name}=${value}${getCookieDomain()}; path=/; SameSite=Lax${secure}`;
 }
 
 function clearAuthCookie(name) {
-  document.cookie = `${name}=; domain=.klikk.co.za; path=/; max-age=0`;
+  document.cookie = `${name}=${getCookieDomain()}; path=/; max-age=0`;
 }
 
 export const useAuthStore = defineStore('auth', () => {

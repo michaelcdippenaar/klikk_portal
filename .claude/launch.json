@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "klikk-portal",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["quasar", "dev"],
+      "port": 9000
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 <template>
-  <q-page class="ai-agent-page">
+  <q-page class="ai-agent-page" :style-fn="(offset) => ({ height: offset ? `calc(100vh - ${offset}px)` : '100vh' })">
     <div class="ai-topbar">
       <div class="row items-center justify-between">
         <div class="row items-center q-gutter-sm">
@@ -98,9 +98,31 @@
               </div>
 
               <div v-if="chatLoading" class="ai-msg-row ai-msg-assistant">
-                <div class="ai-msg-bubble">
+                <div class="ai-msg-bubble ai-thinking-bubble">
                   <div class="ai-msg-meta">Agent</div>
-                  <div class="ai-msg-content text-grey-7">Thinking…</div>
+                  <div class="ai-msg-content text-grey-7">
+                    <div class="row items-center q-gutter-xs q-mb-xs">
+                      <q-spinner-dots size="16px" color="grey-7" />
+                      <span>Working…</span>
+                    </div>
+                    <div v-if="thinkingSteps.length" class="ai-thinking-steps">
+                      <div
+                        v-for="(step, idx) in thinkingSteps"
+                        :key="idx"
+                        class="ai-thinking-step"
+                      >
+                        <q-icon
+                          :name="step.status === 'completed' ? 'check_circle' : (step.status === 'error' ? 'error' : 'hourglass_top')"
+                          :color="step.status === 'completed' ? 'positive' : (step.status === 'error' ? 'negative' : 'grey-6')"
+                          size="14px"
+                          class="q-mr-xs"
+                        />
+                        <span class="ai-step-label">{{ step.tool_name || step.type || 'step' }}</span>
+                        <span v-if="step.duration_ms" class="ai-step-duration">{{ (step.duration_ms / 1000).toFixed(1) }}s</span>
+                        <span v-if="step.summary" class="ai-step-summary">{{ step.summary }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -360,6 +382,7 @@ import {
   getAiAgentStatus,
   getAiAgentTm1Config,
   getSessionMessages,
+  getSessionExecutions,
   runSessionWithTools,
   createAiAgentProject,
   createAiAgentSession,
@@ -429,6 +452,8 @@ export default defineComponent({
 
     const chatInput = ref('');
     const chatScrollRef = ref(null);
+    const thinkingSteps = ref([]);
+    let executionPollTimer = null;
 
     const projectMemoryJson = ref('{}');
     const systemDocSlug = ref('klikk-system');
@@ -598,11 +623,44 @@ export default defineComponent({
       }
     }
 
+    function startExecutionPolling() {
+      stopExecutionPolling();
+      thinkingSteps.value = [];
+      executionPollTimer = setInterval(async () => {
+        if (!activeSessionId.value) return;
+        try {
+          const execs = await getSessionExecutions(activeSessionId.value);
+          if (execs && execs.length) {
+            // Show the steps from the most recent execution
+            const latest = execs[execs.length - 1];
+            const steps = latest.steps || latest.tool_calls || latest.executions || [];
+            if (Array.isArray(steps) && steps.length) {
+              thinkingSteps.value = steps;
+            } else if (latest.status || latest.tool_name) {
+              // Single execution record per call
+              thinkingSteps.value = execs;
+            }
+            scrollChatToBottom();
+          }
+        } catch {
+          // Silently ignore polling errors
+        }
+      }, 2000);
+    }
+
+    function stopExecutionPolling() {
+      if (executionPollTimer) {
+        clearInterval(executionPollTimer);
+        executionPollTimer = null;
+      }
+    }
+
     async function handleSendChat() {
       if (!activeSessionId.value) return;
       const text = chatInput.value.trim();
       if (!text) return;
       chatLoading.value = true;
+      startExecutionPolling();
       try {
         lastResult.value = await runSessionWithTools(activeSessionId.value, {
           message: text,
@@ -616,6 +674,8 @@ export default defineComponent({
           detail: err.response?.data || null,
         };
       } finally {
+        stopExecutionPolling();
+        thinkingSteps.value = [];
         chatLoading.value = false;
       }
     }
@@ -877,6 +937,7 @@ export default defineComponent({
       chatInput,
       chatLoading,
       chatScrollRef,
+      thinkingSteps,
       lastResult,
       creatingSession,
       projectSaving,
@@ -930,6 +991,8 @@ export default defineComponent({
 
 <style scoped>
 .ai-agent-page {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   background: #f6f7f8;
 }
@@ -938,11 +1001,13 @@ export default defineComponent({
   padding: 12px 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   background: #fff;
+  flex-shrink: 0;
 }
 
 .ai-shell {
   display: flex;
-  height: calc(100vh - 64px);
+  flex: 1;
+  overflow: hidden;
 }
 
 .ai-sidebar {
@@ -1093,6 +1158,44 @@ export default defineComponent({
   background: #ffffff;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   padding: 12px 16px 16px;
+}
+
+.ai-thinking-bubble {
+  min-width: 280px;
+}
+
+.ai-thinking-steps {
+  margin-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding-top: 6px;
+}
+
+.ai-thinking-step {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 0;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.ai-step-label {
+  font-weight: 500;
+}
+
+.ai-step-duration {
+  margin-left: 6px;
+  color: rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+}
+
+.ai-step-summary {
+  margin-left: 6px;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
 }
 
 .result-block {
