@@ -59,6 +59,8 @@ export const API_ENDPOINTS = {
   PA_TM1_CONFIG: '/api/planning-analytics/tm1/config/',
   PA_TM1_PROCESSES: '/api/planning-analytics/tm1/processes/',
   PA_TM1_CREDENTIALS: '/api/planning-analytics/tm1/credentials/',
+  PA_TRACKING_MAPPING: '/api/planning-analytics/tm1/tracking-mapping/',
+  PA_TRACKING_MAPPING_ADD: '/api/planning-analytics/tm1/tracking-mapping/add/',
 
   // AI Agent
   AI_AGENT_HEALTH: '/api/ai-agent/health/',
@@ -95,6 +97,15 @@ export const API_ENDPOINTS = {
 
   // Financial Investments (yfinance stock data)
   FINANCIAL_INVESTMENTS_SYMBOLS: '/api/financial-investments/symbols/',
+
+  // Dividend Forecast Workflow
+  DIVIDEND_CALENDAR: '/api/financial-investments/dividend-calendar/',
+  DIVIDEND_CALENDAR_CHECK: '/api/financial-investments/dividend-calendar/check/',
+  DIVIDEND_CALENDAR_UPDATE_CATEGORY: '/api/financial-investments/dividend-calendar/update-category/',
+  DIVIDEND_CALENDAR_UPDATE_PAYMENT_DATE: '/api/financial-investments/dividend-calendar/update-payment-date/',
+  DIVIDEND_FORECAST_ADJUST: '/api/financial-investments/dividend-forecast/adjust/',
+  DIVIDEND_FORECAST_ADJUST_PENDING: '/api/financial-investments/dividend-forecast/adjust-pending/',
+  DIVIDEND_FORECAST_VERIFY: '/api/financial-investments/dividend-forecast/verify/',
 };
 
 // Storage Keys

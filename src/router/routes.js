@@ -78,6 +78,11 @@ const routes = [
             component: () => import('pages/FinancialInvestments.vue'),
           },
           {
+            path: 'dividend-forecast',
+            name: 'dividend-forecast',
+            component: () => import('pages/DividendForecast.vue'),
+          },
+          {
             path: 'planning-analytics',
             name: 'planning-analytics',
             component: () => import('pages/PlanningAnalytics.vue'),

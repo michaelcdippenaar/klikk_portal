@@ -25,6 +25,12 @@ RUN echo 'server { \
     location / { \
       try_files $uri $uri/ /index.html; \
     } \
+    location = /index.html { \
+      add_header Cache-Control "no-store, no-cache, must-revalidate"; \
+    } \
+    location /assets/ { \
+      add_header Cache-Control "public, max-age=31536000, immutable"; \
+    } \
   }' > /etc/nginx/conf.d/default.conf
 
 COPY --from=builder /app/dist/spa /usr/share/nginx/html

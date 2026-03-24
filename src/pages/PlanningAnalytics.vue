@@ -11,6 +11,7 @@
       <q-tabs v-model="tab" dense class="text-grey" active-color="primary" indicator-color="primary" align="left">
         <q-tab name="setup" label="Setup" icon="settings" />
         <q-tab name="pipeline" label="Pipeline" icon="play_circle" />
+        <q-tab name="tracking-mapping" label="Tracking Mapping" icon="swap_horiz" />
       </q-tabs>
       <q-separator />
 
@@ -150,6 +151,88 @@
             </q-card-section>
           </q-card>
         </q-tab-panel>
+
+        <!-- ===================== TRACKING MAPPING TAB ===================== -->
+        <q-tab-panel name="tracking-mapping">
+          <div v-if="!tenantId" class="q-pa-lg text-center">
+            <q-icon name="info" size="3em" color="grey-5" />
+            <div class="text-h6 q-mt-md text-grey-7">Please select a tenant first</div>
+          </div>
+
+          <div v-else>
+            <!-- Header row -->
+            <div class="row items-center q-mb-md q-gutter-sm">
+              <div class="text-subtitle1">Xero Tracking Category 1 → TM1 Dimensions</div>
+              <q-space />
+              <q-chip v-if="mappingRows.length" :color="mappingUnmappedCount > 0 ? 'orange' : 'positive'" text-color="white" icon="info" dense>
+                {{ mappingUnmappedCount }} unmapped in tracking_1
+              </q-chip>
+              <q-btn label="Refresh" icon="refresh" flat color="primary" no-caps :loading="mappingLoading" @click="loadTrackingMapping" />
+            </div>
+
+            <!-- Error -->
+            <q-banner v-if="mappingError" class="bg-negative text-white q-mb-md" dense rounded>
+              {{ mappingError }}
+            </q-banner>
+
+            <!-- Loading skeleton -->
+            <div v-if="mappingLoading && !mappingRows.length" class="q-gutter-sm">
+              <q-skeleton height="40px" v-for="n in 5" :key="n" />
+            </div>
+
+            <!-- Table -->
+            <q-table
+              v-else
+              :rows="mappingRows"
+              :columns="mappingColumns"
+              row-key="xero_name"
+              dense
+              flat
+              bordered
+              :rows-per-page-options="[0]"
+              hide-bottom
+            >
+              <template #body-cell-in_tracking1="props">
+                <q-td :props="props" class="text-center">
+                  <q-icon v-if="props.value" name="check_circle" color="positive" />
+                  <q-icon v-else name="cancel" color="negative" />
+                </q-td>
+              </template>
+              <template #body-cell-in_cost_object="props">
+                <q-td :props="props" class="text-center">
+                  <q-icon v-if="props.value" name="check_circle" color="positive" />
+                  <q-icon v-else name="cancel" color="negative" />
+                </q-td>
+              </template>
+              <template #body-cell-actions="props">
+                <q-td :props="props">
+                  <div class="row q-gutter-xs">
+                    <q-btn
+                      label="+ tracking_1"
+                      size="xs"
+                      flat
+                      no-caps
+                      color="primary"
+                      :disable="props.row.in_tracking1 || !!mappingInFlight[props.row.xero_name + '_t1']"
+                      :loading="!!mappingInFlight[props.row.xero_name + '_t1']"
+                      @click="addToTm1(props.row, true, false)"
+                    />
+                    <q-btn
+                      label="+ cost_object"
+                      size="xs"
+                      flat
+                      no-caps
+                      color="secondary"
+                      :disable="props.row.in_cost_object || !!mappingInFlight[props.row.xero_name + '_co']"
+                      :loading="!!mappingInFlight[props.row.xero_name + '_co']"
+                      @click="addToTm1(props.row, false, true)"
+                    />
+                  </div>
+                </q-td>
+              </template>
+            </q-table>
+          </div>
+        </q-tab-panel>
       </q-tab-panels>
     </div>
   </q-page>
@@ -187,6 +270,57 @@ export default defineComponent({
     const steps = ref([]);
     let api = null;
     let dataStoreRef = null;
+
+    // --- Tracking Mapping ---
+    const mappingRows = ref([]);
+    const mappingLoading = ref(false);
+    const mappingError = ref('');
+    const mappingInFlight = ref({});
+    const mappingUnmappedCount = ref(0);
+
+    const mappingColumns = [
+      { name: 'xero_name', label: 'Xero Name', field: 'xero_name', align: 'left', sortable: true },
+      { name: 'in_tracking1', label: 'In tracking_1', field: 'in_tracking1', align: 'center', sortable: true },
+      { name: 'in_cost_object', label: 'In cost_object', field: 'in_cost_object', align: 'center', sortable: true },
+      { name: 'actions', label: 'Actions', field: 'actions', align: 'left' },
+    ];
+
+    async function loadTrackingMapping() {
+      if (!tenantId.value) return;
+      mappingLoading.value = true;
+      mappingError.value = '';
+      try {
+        const paApi = await import('../api/planningAnalytics');
+        const data = await paApi.getTrackingMapping(tenantId.value);
+        mappingRows.value = data.rows || [];
+        mappingUnmappedCount.value = data.unmapped_count || 0;
+      } catch (e) {
+        mappingError.value = e.response?.data?.error || e.message;
+      } finally {
+        mappingLoading.value = false;
+      }
+    }
+
+    async function addToTm1(row, addToTracking1, addToCostObject) {
+      const key = addToTracking1 ? row.xero_name + '_t1' : row.xero_name + '_co';
+      mappingInFlight.value = { ...mappingInFlight.value, [key]: true };
+      try {
+        const paApi = await import('../api/planningAnalytics');
+        await paApi.addTrackingElement({
+          xero_name: row.xero_name,
+          add_to_tracking1: addToTracking1,
+          add_to_cost_object: addToCostObject,
+        });
+        await loadTrackingMapping();
+      } catch (e) {
+        mappingError.value = e.response?.data?.error || e.message;
+      } finally {
+        const updated = { ...mappingInFlight.value };
+        delete updated[key];
+        mappingInFlight.value = updated;
+      }
+    }
+
 
     function buildSteps() {
       const base = [
@@ -402,6 +536,7 @@ export default defineComponent({
         api = await import('../api/planningAnalytics');
       } catch (e) { console.warn(e); }
       await loadFromApi();
+      if (tenantId.value) await loadTrackingMapping();
     });
 
     return {
@@ -412,6 +547,8 @@ export default defineComponent({
       pipelineOpts, steps, pipelineRunning,
       addProcess, handleTestConnection, handleSaveServer, handleSaveProcesses,
       runSingleStep, runSelectedSteps, stepRowClass, buildSteps,
+      mappingRows, mappingLoading, mappingError, mappingInFlight, mappingUnmappedCount,
+      mappingColumns, loadTrackingMapping, addToTm1,
     };
   },
 });

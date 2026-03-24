@@ -507,3 +507,80 @@ export async function saveFinancialInvestmentsWatchlistPreference(value) {
   const response = await apiClient.post(`${_fiBase()}/watchlist-preference/save/`, { value });
   return response.data;
 }
+
+// ---------------------------------------------------------------------------
+// Dividend Forecast Workflow
+// ---------------------------------------------------------------------------
+
+/**
+ * Get dividend calendar entries. Params: status (declared/paid/estimated), pending_tm1 (1 = pending only).
+ */
+export async function getDividendCalendar(params = {}) {
+  const response = await apiClient.get(API_ENDPOINTS.DIVIDEND_CALENDAR, { params });
+  return response.data;
+}
+
+/**
+ * Update dividend category for a calendar entry. Body: { id, dividend_category }.
+ */
+export async function updateDividendCalendarCategory(id, dividendCategory) {
+  const response = await apiClient.post(API_ENDPOINTS.DIVIDEND_CALENDAR_UPDATE_CATEGORY, {
+    id,
+    dividend_category: dividendCategory,
+  });
+  return response.data;
+}
+
+/**
+ * Update payment_date for a calendar entry. Body: { id, payment_date (YYYY-MM-DD or null) }.
+ */
+export async function updateDividendCalendarPaymentDate(id, paymentDate) {
+  const response = await apiClient.post(API_ENDPOINTS.DIVIDEND_CALENDAR_UPDATE_PAYMENT_DATE, {
+    id,
+    payment_date: paymentDate,
+  });
+  return response.data;
+}
+
+/**
+ * Check yfinance for newly declared dividends. Optional body: { share_code }.
+ */
+export async function checkDeclaredDividends(shareCode = '') {
+  const response = await apiClient.post(API_ENDPOINTS.DIVIDEND_CALENDAR_CHECK, {
+    share_code: shareCode,
+  }, { timeout: 120000 });
+  return response.data;
+}
+
+/**
+ * Read the current TM1 dividend forecast for a share. Params: year, month.
+ */
+export async function getDividendForecast(shareCode, year, month) {
+  const url = `${_fiBase()}/dividend-forecast/${encodeURIComponent(shareCode)}/`;
+  const response = await apiClient.get(url, { params: { year, month } });
+  return response.data;
+}
+
+/**
+ * Write a TM1 adjustment. Body: { share_code, declared_dps, year, month, confirm }.
+ */
+export async function adjustDividendForecast(payload) {
+  const response = await apiClient.post(API_ENDPOINTS.DIVIDEND_FORECAST_ADJUST, payload, { timeout: 60000 });
+  return response.data;
+}
+
+/**
+ * Write TM1 adjustments for all pending dividend calendar entries.
+ */
+export async function adjustAllPendingDividends() {
+  const response = await apiClient.post(API_ENDPOINTS.DIVIDEND_FORECAST_ADJUST_PENDING, {}, { timeout: 300000 });
+  return response.data;
+}
+
+/**
+ * Verify TM1 adjustments — reads TM1 for all written entries and confirms values match.
+ */
+export async function verifyDividendForecasts() {
+  const response = await apiClient.post(API_ENDPOINTS.DIVIDEND_FORECAST_VERIFY, {}, { timeout: 300000 });
+  return response.data;
+}

@@ -86,3 +86,17 @@ export async function deleteTm1Credentials() {
   const resp = await client.delete(API_ENDPOINTS.PA_TM1_CREDENTIALS);
   return resp.data;
 }
+
+export async function getTrackingMapping(tenantId) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TRACKING_MAPPING, {
+    params: { tenant_id: tenantId },
+  });
+  return resp.data;
+}
+
+export async function addTrackingElement(payload) {
+  const client = await getClient();
+  const resp = await client.post(API_ENDPOINTS.PA_TRACKING_MAPPING_ADD, payload);
+  return resp.data;
+}
