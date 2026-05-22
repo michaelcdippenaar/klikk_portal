@@ -3,7 +3,7 @@
     <q-header elevated class="bg-primary text-white">
       <q-toolbar>
         <q-toolbar-title class="text-weight-bold">
-          Klikk Admin Console
+          Klikk Financials Console
         </q-toolbar-title>
 
         <q-space />

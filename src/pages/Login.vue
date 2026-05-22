@@ -2,7 +2,7 @@
   <div class="fullscreen flex flex-center bg-grey-1">
     <q-card style="min-width: 350px">
       <q-card-section>
-        <div class="text-h6 text-center">Klikk Admin Console</div>
+        <div class="text-h6 text-center">Klikk Financials Console</div>
         <div class="text-subtitle2 text-center text-grey-7 q-mt-sm">Sign in to continue</div>
       </q-card-section>
 

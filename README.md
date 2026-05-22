@@ -1,4 +1,4 @@
-# Klikk Admin Console
+# Klikk Financials Console
 
 Vue.js + Quasar admin console for managing Xero data processes, viewing results, and comparing reports.
 

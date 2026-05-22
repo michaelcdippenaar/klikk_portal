@@ -1,7 +1,7 @@
 <template>
   <q-page class="q-pa-lg">
-    <div class="text-h4 q-mb-sm">Klikk Portal</div>
-    <div class="text-subtitle1 text-grey-7 q-mb-lg">Choose an application to continue</div>
+    <div class="text-h4 q-mb-sm">Klikk Financials Console</div>
+    <div class="text-subtitle1 text-grey-7 q-mb-lg">Group financial operations, Xero, Investec, and Planning Analytics</div>
 
     <div class="row q-gutter-lg">
       <q-card
@@ -10,33 +10,25 @@
         @click="openDjango()"
       >
         <q-card-section class="text-center">
-          <q-icon name="admin_panel_settings" size="48px" color="primary" />
-          <div class="text-h6 q-mt-md">klikk_financials_4</div>
-          <div class="text-caption text-grey-7 q-mt-sm">Django Front End</div>
+          <q-icon name="dashboard" size="48px" color="primary" />
+          <div class="text-h6 q-mt-md">Console</div>
+          <div class="text-caption text-grey-7 q-mt-sm">Xero, Investec, and reporting workflows</div>
         </q-card-section>
       </q-card>
 
-      <q-card
-        class="app-card cursor-pointer col-12 col-sm-5 col-md-3"
-        bordered
-        @click="openPaw()"
-      >
+      <q-card class="app-card cursor-pointer col-12 col-sm-5 col-md-3" bordered @click="openPaw()">
         <q-card-section class="text-center">
           <q-icon name="analytics" size="48px" color="primary" />
-          <div class="text-h6 q-mt-md">PAW</div>
-          <div class="text-caption text-grey-7 q-mt-sm">Planning Analytics for Excel</div>
+          <div class="text-h6 q-mt-md">Planning Analytics</div>
+          <div class="text-caption text-grey-7 q-mt-sm">TM1 and PAW on the RedHat VM</div>
         </q-card-section>
       </q-card>
 
-      <q-card
-        class="app-card cursor-pointer col-12 col-sm-5 col-md-3"
-        bordered
-        @click="openExternal('http://192.168.1.235:8000')"
-      >
+      <q-card class="app-card cursor-pointer col-12 col-sm-5 col-md-3" bordered @click="openAgent()">
         <q-card-section class="text-center">
           <q-icon name="smart_toy" size="48px" color="primary" />
-          <div class="text-h6 q-mt-md">klikk_ai_portal</div>
-          <div class="text-caption text-grey-7 q-mt-sm">AI Agent</div>
+          <div class="text-h6 q-mt-md">AI Agent</div>
+          <div class="text-caption text-grey-7 q-mt-sm">Financial assistant and model tools</div>
         </q-card-section>
       </q-card>
     </div>
@@ -44,18 +36,20 @@
 </template>
 
 <script setup>
-import { getApiBaseUrl } from '../utils/constants';
+import { useRouter } from 'vue-router';
+
+const router = useRouter();
 
 function openDjango() {
-  window.open(`${getApiBaseUrl()}/admin/`, '_blank');
+  router.push({ name: 'processes' });
 }
 
 function openPaw() {
-  window.open('http://192.168.1.194:8080', '_blank');
+  window.open('http://192.168.1.132/paw/', '_blank');
 }
 
-function openExternal(url) {
-  window.open(url, '_blank');
+function openAgent() {
+  router.push({ name: 'ai-agent' });
 }
 </script>
 

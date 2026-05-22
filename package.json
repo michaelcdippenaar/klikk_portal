@@ -1,7 +1,7 @@
 {
   "name": "klikk-portal",
   "version": "1.0.0",
-  "description": "Klikk Portal - Landing hub for Django admin, PAW, and frontend admin",
+  "description": "Klikk Financials Console - Landing hub for Django admin, PAW, and frontend admin",
   "author": "",
   "private": true,
   "scripts": {
