@@ -19,82 +19,81 @@
     <q-separator class="q-mb-md" />
 
     <template v-if="activeTab === 'share-codes'">
-      <q-card>
-        <q-card-section>
-          <div class="row items-center justify-between q-mb-md flex-wrap q-col-gutter-sm">
-            <div class="text-subtitle1">Share codes, names and company</div>
-            <div class="row no-wrap q-gutter-sm">
-              <q-btn
-                label="Download to Excel"
-                color="primary"
-                outline
-                :loading="loadingExport"
-                @click="downloadMapping"
-              />
-              <q-btn
-                label="Upload"
-                color="primary"
-                :loading="loadingUpload"
-                :disable="!uploadFile"
-                @click="uploadMapping"
-              />
-              <q-file
-                v-model="uploadFile"
-                label="Excel file"
-                accept=".xlsx,.xls"
-                outlined
-                dense
-                clearable
-                class="col-auto"
-                style="min-width: 160px"
-              />
-              <q-btn
-                label="Refresh"
-                color="primary"
-                flat
-                dense
-                :loading="loadingMappings"
-                @click="refreshShareCodes"
-              />
-            </div>
-          </div>
-          <p class="text-body2 text-grey-8 q-mb-md">
-            Download the current mapping to Excel, edit (add/change Share_Name, Share_Name2, Share_Name3, Company, Share_Code), then upload to update.
-            Share_Name2 and Share_Name3 are alternative names used for the same share in transaction files.
-          </p>
-          <div v-if="uploadResult" class="q-mb-sm">
-            <q-banner
-              :class="uploadResult.error ? 'bg-negative' : 'bg-positive'"
-              rounded
+      <SectionCard>
+        <template #actions>
+          <div class="row no-wrap q-gutter-sm items-center">
+            <q-btn
+              label="Download to Excel"
+              color="primary"
+              outline
+              :loading="loadingExport"
+              @click="downloadMapping"
+            />
+            <q-btn
+              label="Upload"
+              color="primary"
+              :loading="loadingUpload"
+              :disable="!uploadFile"
+              @click="uploadMapping"
+            />
+            <q-file
+              v-model="uploadFile"
+              label="Excel file"
+              accept=".xlsx,.xls"
+              outlined
               dense
-              class="text-white"
-            >
-              {{ uploadResult.error || uploadResult.message }}
-            </q-banner>
+              clearable
+              class="isc-file-input"
+            />
+            <q-btn
+              label="Refresh"
+              color="primary"
+              flat
+              dense
+              :loading="loadingMappings"
+              @click="refreshShareCodes"
+            />
           </div>
-          <div v-if="exportResult && exportResult.error" class="q-mb-sm">
-            <q-banner class="bg-negative text-white" rounded dense>
-              {{ exportResult.error }}
-            </q-banner>
-          </div>
-          <q-table
-            :rows="mappings"
-            :columns="mappingColumns"
-            row-key="id"
-            flat
-            bordered
-            :loading="loadingMappings"
-            :rows-per-page-options="[25, 50, 100]"
-          />
-        </q-card-section>
-      </q-card>
+        </template>
+
+        <p class="text-body2 text-grey-8 q-mb-md">
+          Download the current mapping to Excel, edit (add/change Share_Name, Share_Name2, Share_Name3, Company, Share_Code), then upload to update.
+          Share_Name2 and Share_Name3 are alternative names used for the same share in transaction files.
+        </p>
+        <div v-if="uploadResult" class="q-mb-sm">
+          <q-banner
+            :class="uploadResult.error ? 'bg-negative' : 'bg-positive'"
+            rounded
+            dense
+            class="text-white"
+          >
+            {{ uploadResult.error || uploadResult.message }}
+          </q-banner>
+        </div>
+        <div v-if="exportResult && exportResult.error" class="q-mb-sm">
+          <q-banner class="bg-negative text-white" rounded dense>
+            {{ exportResult.error }}
+          </q-banner>
+        </div>
+        <q-table
+          :rows="mappings"
+          :columns="mappingColumns"
+          row-key="id"
+          flat
+          bordered
+          :loading="loadingMappings"
+          :rows-per-page-options="[25, 50, 100]"
+        />
+      </SectionCard>
     </template>
 
     <template v-if="activeTab === 'unmapped'">
-      <q-card>
-        <q-card-section>
-          <div class="row items-center justify-between q-mb-sm">
-            <div class="text-subtitle2">Share names in transactions not in mapping ({{ unmappedShareNames.length }})</div>
+      <SectionCard>
+        <template #actions>
+          <div class="row no-wrap items-center q-gutter-sm">
+            <span class="text-subtitle2">
+              Share names in transactions not in mapping ({{ unmappedShareNames.length }})
+            </span>
             <q-btn
               label="Refresh"
               color="primary"
@@ -105,16 +104,23 @@
               @click="fetchUnmappedShareNames"
             />
           </div>
-          <div class="text-body2 text-grey-8">
-            Add these to the mapping table: download Share codes above, add rows for these names (and Company/Share_Code if you have them), then upload.
-          </div>
-          <q-list dense class="q-mt-sm">
-            <q-item v-for="(name, i) in unmappedShareNames" :key="i" dense>
-              <q-item-section>{{ name }}</q-item-section>
-            </q-item>
-          </q-list>
-        </q-card-section>
-      </q-card>
+        </template>
+
+        <p class="text-body2 text-grey-8 q-mb-sm">
+          Add these to the mapping table: download Share codes above, add rows for these names (and Company/Share_Code if you have them), then upload.
+        </p>
+        <EmptyState
+          v-if="unmappedShareNames.length === 0 && !loadingUnmapped"
+          icon="check_circle"
+          title="No unmapped share names"
+          body="All share names in transactions are mapped."
+        />
+        <q-list v-else dense class="q-mt-sm">
+          <q-item v-for="(name, i) in unmappedShareNames" :key="i" dense>
+            <q-item-section>{{ name }}</q-item-section>
+          </q-item>
+        </q-list>
+      </SectionCard>
     </template>
   </q-page>
 </template>
@@ -128,6 +134,8 @@ import {
 } from '../api/endpoints';
 import { API_BASE_URL, API_ENDPOINTS } from '../utils/constants';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import EmptyState from '../components/klikk/EmptyState.vue';
 
 const activeTab = ref('share-codes');
 
@@ -187,7 +195,6 @@ function onTabChange(tab) {
 function downloadMapping() {
   const token = localStorage.getItem('auth_token');
   const url = `${API_BASE_URL}${API_ENDPOINTS.INVESTEC_EXPORT_MAPPING}`;
-  // Use fetch to get the file with auth header, then trigger browser download
   loadingExport.value = true;
   exportResult.value = null;
   fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -240,3 +247,10 @@ onMounted(() => {
   fetchMappings();
 });
 </script>
+
+<style scoped>
+/* File input minimum width — replaces removed inline style="min-width: 160px" */
+.isc-file-input {
+  min-width: 160px;
+}
+</style>

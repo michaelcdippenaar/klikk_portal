@@ -2,197 +2,192 @@
   <q-page class="q-pa-md">
     <PageHeader title="Share Transactions" subtitle="Investec trading history and transaction records" />
 
-    <div class="text-subtitle1 q-mb-sm">Upload transactions</div>
-    <div class="row q-col-gutter-md q-mb-lg">
-      <q-card class="col-12 col-md-4">
-        <q-card-section>
-          <q-file
-            v-model="uploadFile"
-            label="Excel file"
-            accept=".xlsx,.xls"
-            outlined
-            dense
-            clearable
-            class="q-mb-sm"
-          />
+    <!-- Upload section -->
+    <SectionCard title="Upload transactions" class="q-mb-lg col-12 col-md-4-wrap">
+      <q-file
+        v-model="uploadFile"
+        label="Excel file"
+        accept=".xlsx,.xls"
+        outlined
+        dense
+        clearable
+        class="q-mb-sm"
+      />
+      <q-btn
+        label="Upload"
+        color="primary"
+        :loading="loadingUpload"
+        :disable="!uploadFile"
+        @click="uploadTransactions"
+      />
+      <div v-if="uploadResult" class="q-mt-sm text-body2">
+        <q-banner
+          :class="uploadResult.error ? 'bg-negative' : 'bg-positive'"
+          rounded
+          dense
+          class="text-white"
+        >
+          {{ uploadResult.error || uploadResult.message }}
+        </q-banner>
+      </div>
+    </SectionCard>
+
+    <!-- Transactions table -->
+    <SectionCard title="Share transactions" class="q-mb-lg">
+      <FilterBar class="q-mb-md">
+        <q-input
+          v-model="filters.account_number"
+          label="Account number"
+          outlined
+          dense
+          clearable
+          class="col-12 col-sm-4"
+          @update:model-value="fetchTransactions"
+        />
+        <q-input
+          v-model="filters.share_name"
+          label="Share name"
+          outlined
+          dense
+          clearable
+          class="col-12 col-sm-4"
+          @update:model-value="fetchTransactions"
+        />
+        <q-input
+          v-model="filters.type"
+          label="Type"
+          outlined
+          dense
+          clearable
+          class="col-12 col-sm-4"
+          @update:model-value="fetchTransactions"
+        />
+      </FilterBar>
+
+      <q-table
+        :rows="transactions"
+        :columns="transactionColumns"
+        row-key="id"
+        flat
+        bordered
+        :loading="loadingTable"
+        :pagination="pagination"
+        @request="onTableRequest"
+      >
+        <template v-slot:body-cell-date="props">
+          <q-td :props="props">{{ formatDate(props.row.date) }}</q-td>
+        </template>
+        <template v-slot:body-cell-value="props">
+          <!-- ADR §1: accounting table — parenthesised negatives, no colour on sign -->
+          <q-td :props="props" class="kdl-numeric">{{ format(props.row.value, { mode: 'accounting' }) }}</q-td>
+        </template>
+        <template v-slot:body-cell-quantity="props">
+          <q-td :props="props" class="kdl-numeric">{{ format(props.row.quantity, { mode: 'accounting' }) }}</q-td>
+        </template>
+      </q-table>
+
+      <div class="row justify-between items-center q-mt-sm">
+        <q-btn
+          flat
+          dense
+          :disable="pagination.offset === 0"
+          @click="goPage(-1)"
+        >
+          Previous
+        </q-btn>
+        <span class="text-body2">
+          {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
+        </span>
+        <q-btn
+          flat
+          dense
+          :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
+          @click="goPage(1)"
+        >
+          Next
+        </q-btn>
+      </div>
+    </SectionCard>
+
+    <!-- Exports -->
+    <SectionCard title="Exports">
+      <div class="row q-col-gutter-md">
+        <div class="col-12 col-md-4">
           <q-btn
-            label="Upload"
+            label="Export companies"
             color="primary"
-            :loading="loadingUpload"
-            :disable="!uploadFile"
-            @click="uploadTransactions"
+            outline
+            :loading="loadingExportCompanies"
+            @click="exportCompanies"
           />
-          <div v-if="uploadResult" class="q-mt-sm text-body2">
+          <div v-if="exportData.companies" class="q-mt-sm text-body2">
+            Count: {{ exportData.companies.count }}
+            <q-list v-if="exportData.companies.companies?.length" dense class="q-mt-xs">
+              <q-item v-for="(c, i) in exportData.companies.companies.slice(0, 10)" :key="i" dense>
+                <q-item-section>{{ c.company }} ({{ c.share_code }})</q-item-section>
+              </q-item>
+              <q-item v-if="exportData.companies.companies.length > 10" dense>
+                <q-item-section class="text-grey">... and {{ exportData.companies.companies.length - 10 }} more</q-item-section>
+              </q-item>
+            </q-list>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <q-btn
+            label="Export share names"
+            color="primary"
+            outline
+            :loading="loadingExportShareNames"
+            @click="exportShareNames"
+          />
+          <div v-if="exportData.shareNames" class="q-mt-sm text-body2">
+            Count: {{ exportData.shareNames.count }}
+            <q-list v-if="exportData.shareNames.share_names?.length" dense class="q-mt-xs">
+              <q-item v-for="(s, i) in exportData.shareNames.share_names.slice(0, 10)" :key="i" dense>
+                <q-item-section>{{ s }}</q-item-section>
+              </q-item>
+              <q-item v-if="exportData.shareNames.share_names.length > 10" dense>
+                <q-item-section class="text-grey">... and {{ exportData.shareNames.share_names.length - 10 }} more</q-item-section>
+              </q-item>
+            </q-list>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <q-btn
+            label="Export transactions (Excel)"
+            color="primary"
+            outline
+            :loading="loadingExportTransactions"
+            @click="exportTransactions"
+          />
+          <div v-if="exportData.transactions" class="q-mt-sm text-body2">
             <q-banner
-              :class="uploadResult.error ? 'bg-negative' : 'bg-positive'"
+              v-if="exportData.transactions.error"
+              class="bg-negative text-white"
               rounded
               dense
-              class="text-white"
             >
-              {{ uploadResult.error || uploadResult.message }}
+              {{ exportData.transactions.error }}
             </q-banner>
-          </div>
-        </q-card-section>
-      </q-card>
-    </div>
-
-    <div class="text-subtitle1 q-mb-sm">Share transactions</div>
-    <q-card class="q-mb-lg">
-      <q-card-section>
-        <div class="row q-col-gutter-sm q-mb-md">
-          <q-input
-            v-model="filters.account_number"
-            label="Account number"
-            outlined
-            dense
-            clearable
-            class="col-12 col-sm-4"
-            @update:model-value="fetchTransactions"
-          />
-          <q-input
-            v-model="filters.share_name"
-            label="Share name"
-            outlined
-            dense
-            clearable
-            class="col-12 col-sm-4"
-            @update:model-value="fetchTransactions"
-          />
-          <q-input
-            v-model="filters.type"
-            label="Type"
-            outlined
-            dense
-            clearable
-            class="col-12 col-sm-4"
-            @update:model-value="fetchTransactions"
-          />
-        </div>
-        <q-table
-          :rows="transactions"
-          :columns="transactionColumns"
-          row-key="id"
-          flat
-          bordered
-          :loading="loadingTable"
-          :pagination="pagination"
-          @request="onTableRequest"
-        >
-          <template v-slot:body-cell-date="props">
-            <q-td :props="props">{{ formatDate(props.row.date) }}</q-td>
-          </template>
-          <template v-slot:body-cell-value="props">
-            <q-td :props="props">{{ formatNumber(props.row.value) }}</q-td>
-          </template>
-          <template v-slot:body-cell-quantity="props">
-            <q-td :props="props">{{ formatNumber(props.row.quantity) }}</q-td>
-          </template>
-        </q-table>
-        <div class="row justify-between items-center q-mt-sm">
-          <q-btn
-            flat
-            dense
-            :disable="pagination.offset === 0"
-            @click="goPage(-1)"
-          >
-            Previous
-          </q-btn>
-          <span class="text-body2">
-            {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
-          </span>
-          <q-btn
-            flat
-            dense
-            :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
-            @click="goPage(1)"
-          >
-            Next
-          </q-btn>
-        </div>
-      </q-card-section>
-    </q-card>
-
-    <div class="text-subtitle1 q-mb-sm">Exports</div>
-    <q-card>
-      <q-card-section>
-        <div class="row q-col-gutter-md">
-          <div class="col-12 col-md-4">
-            <q-btn
-              label="Export companies"
-              color="primary"
-              outline
-              :loading="loadingExportCompanies"
-              @click="exportCompanies"
-            />
-            <div v-if="exportData.companies" class="q-mt-sm text-body2">
-              Count: {{ exportData.companies.count }}
-              <q-list v-if="exportData.companies.companies?.length" dense class="q-mt-xs">
-                <q-item v-for="(c, i) in exportData.companies.companies.slice(0, 10)" :key="i" dense>
-                  <q-item-section>{{ c.company }} ({{ c.share_code }})</q-item-section>
-                </q-item>
-                <q-item v-if="exportData.companies.companies.length > 10" dense>
-                  <q-item-section class="text-grey">... and {{ exportData.companies.companies.length - 10 }} more</q-item-section>
-                </q-item>
-              </q-list>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <q-btn
-              label="Export share names"
-              color="primary"
-              outline
-              :loading="loadingExportShareNames"
-              @click="exportShareNames"
-            />
-            <div v-if="exportData.shareNames" class="q-mt-sm text-body2">
-              Count: {{ exportData.shareNames.count }}
-              <q-list v-if="exportData.shareNames.share_names?.length" dense class="q-mt-xs">
-                <q-item v-for="(s, i) in exportData.shareNames.share_names.slice(0, 10)" :key="i" dense>
-                  <q-item-section>{{ s }}</q-item-section>
-                </q-item>
-                <q-item v-if="exportData.shareNames.share_names.length > 10" dense>
-                  <q-item-section class="text-grey">... and {{ exportData.shareNames.share_names.length - 10 }} more</q-item-section>
-                </q-item>
-              </q-list>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <q-btn
-              label="Export transactions (Excel)"
-              color="primary"
-              outline
-              :loading="loadingExportTransactions"
-              @click="exportTransactions"
-            />
-            <div v-if="exportData.transactions" class="q-mt-sm text-body2">
-              <q-banner
-                v-if="exportData.transactions.error"
-                class="bg-negative text-white"
-                rounded
+            <template v-else>
+              <span>{{ exportData.transactions.message }}</span>
+              <q-btn
+                v-if="exportData.transactions.filename"
+                flat
                 dense
+                color="primary"
+                :href="exportDownloadUrl(exportData.transactions.filename)"
+                target="_blank"
+                download
+                class="q-ml-sm"
               >
-                {{ exportData.transactions.error }}
-              </q-banner>
-              <template v-else>
-                <span>{{ exportData.transactions.message }}</span>
-                <q-btn
-                  v-if="exportData.transactions.filename"
-                  flat
-                  dense
-                  color="primary"
-                  :href="exportDownloadUrl(exportData.transactions.filename)"
-                  target="_blank"
-                  download
-                  class="q-ml-sm"
-                >
-                  Download
-                </q-btn>
-              </template>
-            </div>
+                Download
+              </q-btn>
+            </template>
           </div>
         </div>
-      </q-card-section>
-    </q-card>
+      </div>
+    </SectionCard>
   </q-page>
 </template>
 
@@ -206,7 +201,12 @@ import {
   getInvestecExportTransactions,
   getInvestecExportDownloadUrl,
 } from '../api/endpoints';
+import { useFormatCurrency } from '../composables/useFormatCurrency';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import FilterBar from '../components/klikk/FilterBar.vue';
+
+const { format } = useFormatCurrency();
 
 const transactionColumns = [
   { name: 'date', label: 'Date', field: 'date', align: 'left', sortable: true },
@@ -215,7 +215,7 @@ const transactionColumns = [
   { name: 'share_name', label: 'Share name', field: 'share_name', align: 'left' },
   { name: 'type', label: 'Type', field: 'type', align: 'left' },
   { name: 'quantity', label: 'Quantity', field: 'quantity', align: 'right' },
-  { name: 'value', label: 'Value', field: 'value', align: 'right' },
+  { name: 'value', label: 'Value (R)', field: 'value', align: 'right' },
 ];
 
 const transactions = ref([]);
@@ -248,12 +248,6 @@ const exportData = reactive({
 function formatDate(val) {
   if (!val) return '';
   return new Date(val).toLocaleDateString();
-}
-
-function formatNumber(val) {
-  if (val == null) return '';
-  const n = Number(val);
-  return isNaN(n) ? val : n.toLocaleString();
 }
 
 function exportDownloadUrl(filename) {

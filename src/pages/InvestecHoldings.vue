@@ -2,49 +2,46 @@
   <q-page class="q-pa-md">
     <PageHeader title="Share Holdings" subtitle="Investec portfolio positions" />
 
-    <div class="text-subtitle1 q-mb-sm">Upload portfolio</div>
-    <q-card class="q-mb-lg" style="max-width: 400px">
-      <q-card-section>
-        <q-file
-          v-model="uploadFile"
-          label="Excel file(s)"
-          accept=".xlsx,.xls"
-          outlined
+    <SectionCard title="Upload portfolio" class="isc-upload-card">
+      <q-file
+        v-model="uploadFile"
+        label="Excel file(s)"
+        accept=".xlsx,.xls"
+        outlined
+        dense
+        clearable
+        multiple
+        class="q-mb-sm"
+      />
+      <q-btn
+        label="Upload"
+        color="primary"
+        :loading="loading"
+        :disable="!(Array.isArray(uploadFile) ? uploadFile.length : uploadFile)"
+        @click="uploadPortfolio"
+      />
+      <div v-if="result" class="q-mt-sm">
+        <q-banner
+          :class="result.error ? 'bg-negative' : 'bg-positive'"
+          rounded
           dense
-          clearable
-          multiple
-          class="q-mb-sm"
-        />
-        <q-btn
-          label="Upload"
-          color="primary"
-          :loading="loading"
-          :disable="!(Array.isArray(uploadFile) ? uploadFile.length : uploadFile)"
-          @click="uploadPortfolio"
-        />
-        <div v-if="result" class="q-mt-sm">
+          class="text-white"
+        >
+          {{ result.message }}
+        </q-banner>
+        <div v-if="result.fileErrors && result.fileErrors.length" class="q-mt-xs">
           <q-banner
-            :class="result.error ? 'bg-negative' : 'bg-positive'"
+            v-for="(fe, i) in result.fileErrors"
+            :key="i"
+            class="bg-negative text-white q-mb-xs"
             rounded
             dense
-            class="text-white"
           >
-            {{ result.message }}
+            <strong>{{ fe.filename }}</strong>: {{ fe.error }}
           </q-banner>
-          <div v-if="result.fileErrors && result.fileErrors.length" class="q-mt-xs">
-            <q-banner
-              v-for="(fe, i) in result.fileErrors"
-              :key="i"
-              class="bg-negative text-white q-mb-xs"
-              rounded
-              dense
-            >
-              <strong>{{ fe.filename }}</strong>: {{ fe.error }}
-            </q-banner>
-          </div>
         </div>
-      </q-card-section>
-    </q-card>
+      </div>
+    </SectionCard>
   </q-page>
 </template>
 
@@ -52,6 +49,7 @@
 import { ref } from 'vue';
 import { uploadInvestecPortfolio } from '../api/endpoints';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
 
 const uploadFile = ref(null);
 const loading = ref(false);
@@ -94,3 +92,10 @@ async function uploadPortfolio() {
   }
 }
 </script>
+
+<style scoped>
+/* Max-width constraint on the upload card — replaces removed inline style="max-width: 400px" */
+.isc-upload-card {
+  max-width: 400px;
+}
+</style>

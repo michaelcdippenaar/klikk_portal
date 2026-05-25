@@ -16,159 +16,155 @@
     <q-separator class="q-mb-md" />
 
     <!-- Transactions tab -->
-    <q-card v-show="activeTab === 'transactions'" class="q-mb-lg">
-      <q-card-section>
-        <div class="row q-col-gutter-sm q-mb-md">
-          <q-input
-            v-model="filters.description"
-            label="Description"
-            outlined
-            dense
-            clearable
-            placeholder="Search in description"
-            class="col-12 col-sm-6 col-md-3"
-            @update:model-value="debouncedSearch"
+    <SectionCard v-show="activeTab === 'transactions'" class="q-mb-lg">
+      <FilterBar class="q-mb-md">
+        <q-input
+          v-model="filters.description"
+          label="Description"
+          outlined
+          dense
+          clearable
+          placeholder="Search in description"
+          class="col-12 col-sm-6 col-md-3"
+          @update:model-value="debouncedSearch"
+        />
+        <q-input
+          v-model="filters.amount"
+          label="Amount"
+          outlined
+          dense
+          clearable
+          placeholder="Exact amount"
+          class="col-12 col-sm-6 col-md-2"
+          @update:model-value="debouncedSearch"
+        />
+        <q-input
+          v-model="filters.date_from"
+          label="From date"
+          outlined
+          dense
+          clearable
+          type="date"
+          class="col-12 col-sm-6 col-md-2"
+          @update:model-value="onFilterChange"
+        />
+        <q-input
+          v-model="filters.date_to"
+          label="To date"
+          outlined
+          dense
+          clearable
+          type="date"
+          class="col-12 col-sm-6 col-md-2"
+          @update:model-value="onFilterChange"
+        />
+        <q-select
+          v-model="filters.account"
+          :options="accountOptions"
+          label="Account"
+          outlined
+          dense
+          clearable
+          emit-value
+          map-options
+          options-dense
+          class="col-12 col-sm-6 col-md-3"
+          @update:model-value="onFilterChange"
+        />
+        <div class="row no-wrap q-gutter-sm">
+          <q-btn
+            label="Search"
+            color="primary"
+            :loading="loadingTable"
+            @click="onFilterChange"
           />
-          <q-input
-            v-model="filters.amount"
-            label="Amount"
-            outlined
-            dense
-            clearable
-            placeholder="Exact amount"
-            class="col-12 col-sm-6 col-md-2"
-            @update:model-value="debouncedSearch"
+          <q-btn
+            label="Download Excel"
+            color="primary"
+            outline
+            :loading="loadingExport"
+            @click="downloadExcel"
           />
-          <q-input
-            v-model="filters.date_from"
-            label="From date"
-            outlined
-            dense
-            clearable
-            type="date"
-            class="col-12 col-sm-6 col-md-2"
-            @update:model-value="onFilterChange"
-          />
-          <q-input
-            v-model="filters.date_to"
-            label="To date"
-            outlined
-            dense
-            clearable
-            type="date"
-            class="col-12 col-sm-6 col-md-2"
-            @update:model-value="onFilterChange"
-          />
-          <q-select
-            v-model="filters.account"
-            :options="accountOptions"
-            label="Account"
-            outlined
-            dense
-            clearable
-            emit-value
-            map-options
-            options-dense
-            class="col-12 col-sm-6 col-md-3"
-            @update:model-value="onFilterChange"
-          />
-          <div class="col-12 col-sm-6 col-md-2 flex items-center q-gutter-sm">
-            <q-btn
-              label="Search"
-              color="primary"
-              :loading="loadingTable"
-              @click="onFilterChange"
-            />
-            <q-btn
-              label="Download Excel"
-              color="primary"
-              outline
-              :loading="loadingExport"
-              @click="downloadExcel"
-            />
-          </div>
         </div>
+      </FilterBar>
 
-        <q-table
-          :rows="transactions"
-          :columns="columns"
-          row-key="id"
+      <q-table
+        :rows="transactions"
+        :columns="columns"
+        row-key="id"
+        flat
+        bordered
+        :loading="loadingTable"
+        :pagination="pagination"
+        @request="onTableRequest"
+      >
+        <template v-slot:body-cell-posting_date="props">
+          <q-td :props="props">{{ formatDate(props.row.posting_date) }}</q-td>
+        </template>
+        <template v-slot:body-cell-transaction_date="props">
+          <q-td :props="props">{{ formatDate(props.row.transaction_date) }}</q-td>
+        </template>
+        <template v-slot:body-cell-amount="props">
+          <!-- ADR §1: accounting tables use parenthesised negatives. No colour on sign. -->
+          <q-td :props="props" class="kdl-numeric">{{ format(props.row.amount, { mode: 'accounting' }) }}</q-td>
+        </template>
+        <template v-slot:body-cell-running_balance="props">
+          <q-td :props="props" class="kdl-numeric">{{ format(props.row.running_balance, { mode: 'accounting' }) }}</q-td>
+        </template>
+      </q-table>
+
+      <div class="row justify-between items-center q-mt-sm">
+        <q-btn
           flat
-          bordered
-          :loading="loadingTable"
-          :pagination="pagination"
-          @request="onTableRequest"
+          dense
+          :disable="pagination.offset === 0"
+          @click="goPage(-1)"
         >
-          <template v-slot:body-cell-posting_date="props">
-            <q-td :props="props">{{ formatDate(props.row.posting_date) }}</q-td>
-          </template>
-          <template v-slot:body-cell-transaction_date="props">
-            <q-td :props="props">{{ formatDate(props.row.transaction_date) }}</q-td>
-          </template>
-          <template v-slot:body-cell-amount="props">
-            <q-td :props="props">
-              <span :class="amountClass(props.row.type)">{{ formatAmount(props.row.amount, props.row.type) }}</span>
-            </q-td>
-          </template>
-          <template v-slot:body-cell-running_balance="props">
-            <q-td :props="props">{{ formatAmount(props.row.running_balance) }}</q-td>
-          </template>
-        </q-table>
-
-        <div class="row justify-between items-center q-mt-sm">
-          <q-btn
-            flat
-            dense
-            :disable="pagination.offset === 0"
-            @click="goPage(-1)"
-          >
-            Previous
-          </q-btn>
-          <span class="text-body2">
-            {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
-          </span>
-          <q-btn
-            flat
-            dense
-            :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
-            @click="goPage(1)"
-          >
-            Next
-          </q-btn>
-        </div>
-      </q-card-section>
-    </q-card>
+          Previous
+        </q-btn>
+        <span class="text-body2">
+          {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
+        </span>
+        <q-btn
+          flat
+          dense
+          :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
+          @click="goPage(1)"
+        >
+          Next
+        </q-btn>
+      </div>
+    </SectionCard>
 
     <!-- Update from API tab -->
-    <q-card v-show="activeTab === 'sync'" class="q-mb-lg">
-      <q-card-section>
-        <div class="text-subtitle1 q-mb-sm">Sync accounts and transactions from Investec API</div>
-        <p class="text-body2 text-grey-8 q-mb-md">
-          Only transactions from the last update date to today are fetched (incremental update). If you have never synced, the last 180 days are fetched.
-        </p>
-        <div class="row items-center q-col-gutter-md">
-          <div class="col-12 col-sm-auto">
-            <span class="text-weight-medium">Last update: </span>
-            <span v-if="lastSyncedAt">{{ formatDateTime(lastSyncedAt) }}</span>
-            <span v-else class="text-grey">Never</span>
-          </div>
-          <div class="col-12 col-sm-auto">
-            <q-btn
-              label="Update from API"
-              color="primary"
-              :loading="loadingSync"
-              @click="runSync"
-            />
-          </div>
+    <SectionCard
+      v-show="activeTab === 'sync'"
+      class="q-mb-lg"
+      title="Sync accounts and transactions from Investec API"
+      description="Only transactions from the last update date to today are fetched (incremental update). If you have never synced, the last 180 days are fetched."
+    >
+      <div class="row items-center q-col-gutter-md">
+        <div class="col-12 col-sm-auto">
+          <span class="text-weight-medium">Last update: </span>
+          <span v-if="lastSyncedAt">{{ formatDateTime(lastSyncedAt) }}</span>
+          <span v-else class="text-grey">Never</span>
         </div>
-        <q-banner v-if="syncResult" rounded dense class="q-mt-md text-white" :class="syncResult.error ? 'bg-negative' : 'bg-positive'">
-          <template v-if="syncResult.error">{{ syncResult.error }}</template>
-          <template v-else>
-            Created {{ syncResult.created }}, updated {{ syncResult.updated }}. Synced from {{ syncResult.from_date }} to {{ syncResult.to_date }}.
-          </template>
-        </q-banner>
-      </q-card-section>
-    </q-card>
+        <div class="col-12 col-sm-auto">
+          <q-btn
+            label="Update from API"
+            color="primary"
+            :loading="loadingSync"
+            @click="runSync"
+          />
+        </div>
+      </div>
+      <q-banner v-if="syncResult" rounded dense class="q-mt-md text-white" :class="syncResult.error ? 'bg-negative' : 'bg-positive'">
+        <template v-if="syncResult.error">{{ syncResult.error }}</template>
+        <template v-else>
+          Created {{ syncResult.created }}, updated {{ syncResult.updated }}. Synced from {{ syncResult.from_date }} to {{ syncResult.to_date }}.
+        </template>
+      </q-banner>
+    </SectionCard>
   </q-page>
 </template>
 
@@ -181,7 +177,12 @@ import {
   triggerInvestecBankSync,
   downloadInvestecBankTransactionsExcel,
 } from '../api/endpoints';
+import { useFormatCurrency } from '../composables/useFormatCurrency';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import FilterBar from '../components/klikk/FilterBar.vue';
+
+const { format } = useFormatCurrency();
 
 const activeTab = ref('transactions');
 const lastSyncedAt = ref(null);
@@ -195,9 +196,9 @@ const columns = [
   { name: 'account_number', label: 'Account', field: 'account_number', align: 'left' },
   { name: 'account_name', label: 'Account name', field: 'account_name', align: 'left' },
   { name: 'type', label: 'Type', field: 'type', align: 'left' },
-  { name: 'amount', label: 'Amount', field: 'amount', align: 'right' },
+  { name: 'amount', label: 'Amount (R)', field: 'amount', align: 'right' },
   { name: 'description', label: 'Description', field: 'description', align: 'left' },
-  { name: 'running_balance', label: 'Balance', field: 'running_balance', align: 'right' },
+  { name: 'running_balance', label: 'Balance (R)', field: 'running_balance', align: 'right' },
 ];
 
 const transactions = ref([]);
@@ -241,20 +242,6 @@ function formatDate(val) {
   return new Date(val).toLocaleDateString();
 }
 
-function formatAmount(val, type) {
-  if (val == null || val === '') return '';
-  const n = Number(val);
-  if (isNaN(n)) return val;
-  const formatted = n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return formatted;
-}
-
-function amountClass(type) {
-  if (type === 'DEBIT') return 'text-negative';
-  if (type === 'CREDIT') return 'text-positive';
-  return '';
-}
-
 function onFilterChange() {
   pagination.offset = 0;
   fetchTransactions();
@@ -272,7 +259,6 @@ async function downloadExcel() {
     });
   } catch (err) {
     console.error(err);
-    // Optionally show a notification
   } finally {
     loadingExport.value = false;
   }

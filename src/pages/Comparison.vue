@@ -6,50 +6,52 @@
       </template>
     </PageHeader>
 
-    <div v-if="!dataStore.selectedTenant" class="q-pa-lg text-center">
-      <q-icon name="info" size="3em" color="grey-5" />
-      <div class="text-h6 q-mt-md text-grey-7">Please select a tenant first</div>
-    </div>
+    <EmptyState
+      v-if="!dataStore.selectedTenant"
+      icon="info"
+      title="No tenant selected"
+      body="Select a tenant from the header to view comparisons."
+    />
 
     <div v-else>
 
       <!-- Import P&L by Tracking -->
-      <q-card class="q-mb-md">
-        <q-card-section>
-          <div class="text-h6">Import P&amp;L by Tracking</div>
-          <div class="text-caption text-grey-7">Pull Xero P&amp;L totals per tracking category for comparison with trail balance</div>
-        </q-card-section>
-        <q-card-section>
-          <div class="row q-gutter-md items-end">
-            <q-input
-              v-model="pnlTrackingForm.fromDate"
-              label="From Date (YYYY-MM-DD)"
-              outlined
-              dense
-              style="min-width: 180px"
-              hint="Default: 12 months ago"
-            />
-            <q-input
-              v-model="pnlTrackingForm.toDate"
-              label="To Date (YYYY-MM-DD)"
-              outlined
-              dense
-              style="min-width: 180px"
-              hint="Default: today"
-            />
-            <q-btn
-              label="Import P&amp;L by Tracking"
-              color="secondary"
-              :loading="pnlTrackingLoading"
-              @click="runPnlByTracking"
-            />
-          </div>
-        </q-card-section>
-        <q-card-section v-if="pnlTrackingLoading" class="text-center">
+      <SectionCard
+        class="q-mb-md"
+        title="Import P&amp;L by Tracking"
+        description="Pull Xero P&amp;L totals per tracking category for comparison with trail balance"
+      >
+        <div class="row q-gutter-md items-end">
+          <q-input
+            v-model="pnlTrackingForm.fromDate"
+            label="From Date (YYYY-MM-DD)"
+            outlined
+            dense
+            class="comp-input--md"
+            hint="Default: 12 months ago"
+          />
+          <q-input
+            v-model="pnlTrackingForm.toDate"
+            label="To Date (YYYY-MM-DD)"
+            outlined
+            dense
+            class="comp-input--md"
+            hint="Default: today"
+          />
+          <q-btn
+            label="Import P&amp;L by Tracking"
+            color="secondary"
+            :loading="pnlTrackingLoading"
+            @click="runPnlByTracking"
+          />
+        </div>
+
+        <div v-if="pnlTrackingLoading" class="text-center q-mt-md">
           <q-spinner color="secondary" size="2em" />
           <span class="q-ml-sm text-grey-7">Importing...</span>
-        </q-card-section>
-        <q-card-section v-if="pnlTrackingResult && !pnlTrackingLoading">
+        </div>
+
+        <div v-if="pnlTrackingResult && !pnlTrackingLoading" class="q-mt-md">
           <q-badge :color="pnlTrackingResult.success ? 'positive' : 'negative'" class="q-mb-sm">
             {{ pnlTrackingResult.success ? 'Success' : 'Error' }}
           </q-badge>
@@ -57,53 +59,51 @@
             {{ pnlTrackingResult.result.message || 'Import complete' }}
           </div>
           <div v-else-if="pnlTrackingResult.error" class="text-negative">{{ pnlTrackingResult.error }}</div>
-        </q-card-section>
-      </q-card>
+        </div>
+      </SectionCard>
 
       <!-- Reconciliation Form -->
-      <q-card class="q-mb-md">
-        <q-card-section>
-          <div class="text-h6">Run Reconciliation</div>
-          <div class="text-caption text-grey-7">Compare Xero P&amp;L and Balance Sheet reports to constructed trail balance</div>
-        </q-card-section>
-        <q-card-section>
-          <div class="row q-gutter-md items-end">
-            <q-input
-              v-model.number="reconcileForm.financialYear"
-              label="Financial Year"
-              type="number"
-              outlined
-              dense
-              style="min-width: 150px"
-            />
-            <q-input
-              v-model.number="reconcileForm.fiscalYearStartMonth"
-              label="Fiscal Year Start Month"
-              type="number"
-              min="1"
-              max="12"
-              outlined
-              dense
-              style="min-width: 180px"
-            />
-            <q-input
-              v-model.number="reconcileForm.tolerance"
-              label="Tolerance"
-              type="number"
-              step="0.01"
-              outlined
-              dense
-              style="min-width: 120px"
-            />
-            <q-btn
-              label="Run Reconciliation"
-              color="primary"
-              :loading="loading"
-              @click="runReconciliation"
-            />
-          </div>
-        </q-card-section>
-      </q-card>
+      <SectionCard
+        class="q-mb-md"
+        title="Run Reconciliation"
+        description="Compare Xero P&amp;L and Balance Sheet reports to constructed trail balance"
+      >
+        <div class="row q-gutter-md items-end">
+          <q-input
+            v-model.number="reconcileForm.financialYear"
+            label="Financial Year"
+            type="number"
+            outlined
+            dense
+            class="comp-input--sm"
+          />
+          <q-input
+            v-model.number="reconcileForm.fiscalYearStartMonth"
+            label="Fiscal Year Start Month"
+            type="number"
+            min="1"
+            max="12"
+            outlined
+            dense
+            class="comp-input--md"
+          />
+          <q-input
+            v-model.number="reconcileForm.tolerance"
+            label="Tolerance"
+            type="number"
+            step="0.01"
+            outlined
+            dense
+            class="comp-input--xs"
+          />
+          <q-btn
+            label="Run Reconciliation"
+            color="primary"
+            :loading="loading"
+            @click="runReconciliation"
+          />
+        </div>
+      </SectionCard>
 
       <!-- Results -->
       <div v-if="reconciliationResult">
@@ -127,13 +127,14 @@
         </q-banner>
 
         <!-- Tabs: P&L / Balance Sheet / Exceptions -->
-        <q-card>
-          <q-tabs v-model="activeTab" dense align="left" class="text-primary" active-color="primary" indicator-color="primary">
-            <q-tab name="pnl" label="Profit & Loss" />
-            <q-tab name="bs" label="Balance Sheet" />
-            <q-tab name="exceptions" :label="'Exceptions (' + exceptionCount + ')'" />
-          </q-tabs>
-          <q-separator />
+        <SectionCard>
+          <template #actions>
+            <q-tabs v-model="activeTab" dense align="left" class="text-primary" active-color="primary" indicator-color="primary">
+              <q-tab name="pnl" label="Profit &amp; Loss" />
+              <q-tab name="bs" label="Balance Sheet" />
+              <q-tab name="exceptions" :label="'Exceptions (' + exceptionCount + ')'" />
+            </q-tabs>
+          </template>
 
           <q-tab-panels v-model="activeTab" animated>
 
@@ -177,14 +178,15 @@
                     hide-pagination
                   >
                     <template v-slot:body-cell-match_percentage="props">
-                      <q-td :props="props">
+                      <q-td :props="props" class="kdl-numeric">
                         <q-badge :color="props.row.match_percentage >= 95 ? 'positive' : props.row.match_percentage >= 80 ? 'warning' : 'negative'">
                           {{ props.row.match_percentage.toFixed(1) }}%
                         </q-badge>
                       </q-td>
                     </template>
                     <template v-slot:body-cell-mismatches="props">
-                      <q-td :props="props">
+                      <q-td :props="props" class="kdl-numeric">
+                        <!-- text-negative permitted here: mismatch count is an explicit variance signal -->
                         <span :class="props.row.mismatches > 0 ? 'text-negative text-weight-bold' : ''">{{ props.row.mismatches }}</span>
                       </q-td>
                     </template>
@@ -192,7 +194,7 @@
                 </div>
 
               </div>
-              <div v-else class="text-grey-6">No Profit &amp; Loss data available.</div>
+              <EmptyState v-else title="No Profit &amp; Loss data" body="Run a reconciliation to see P&amp;L results." />
             </q-tab-panel>
 
             <!-- Balance Sheet Tab -->
@@ -251,8 +253,15 @@
                         </q-badge>
                       </q-td>
                     </template>
+                    <template v-slot:body-cell-xero_value="props">
+                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                    </template>
+                    <template v-slot:body-cell-db_value="props">
+                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                    </template>
                     <template v-slot:body-cell-difference="props">
-                      <q-td :props="props">
+                      <q-td :props="props" class="kdl-numeric">
+                        <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
                         <span :class="parseFloat(props.row.difference) !== 0 ? 'text-negative text-weight-bold' : ''">
                           {{ formatNum(props.row.difference) }}
                         </span>
@@ -262,15 +271,17 @@
                 </div>
 
               </div>
-              <div v-else class="text-grey-6">No Balance Sheet data available.</div>
+              <EmptyState v-else title="No Balance Sheet data" body="Run a reconciliation to see Balance Sheet results." />
             </q-tab-panel>
 
             <!-- Exceptions Tab -->
             <q-tab-panel name="exceptions">
-              <div v-if="allExceptions.length === 0" class="text-center q-pa-lg text-grey-6">
-                <q-icon name="check_circle" size="3em" color="positive" />
-                <div class="text-h6 q-mt-sm">No exceptions found</div>
-              </div>
+              <EmptyState
+                v-if="allExceptions.length === 0"
+                icon="check_circle"
+                title="No exceptions found"
+                body="All periods and accounts reconcile within tolerance."
+              />
               <div v-else>
                 <q-banner class="bg-orange-1 q-mb-md" rounded>
                   <template v-slot:avatar><q-icon name="warning" color="warning" /></template>
@@ -291,14 +302,15 @@
                     hide-pagination
                   >
                     <template v-slot:body-cell-match_percentage="props">
-                      <q-td :props="props">
+                      <q-td :props="props" class="kdl-numeric">
                         <q-badge :color="props.row.match_percentage >= 95 ? 'positive' : props.row.match_percentage >= 80 ? 'warning' : 'negative'">
                           {{ props.row.match_percentage.toFixed(1) }}%
                         </q-badge>
                       </q-td>
                     </template>
                     <template v-slot:body-cell-mismatches="props">
-                      <q-td :props="props">
+                      <q-td :props="props" class="kdl-numeric">
+                        <!-- text-negative permitted: mismatch count is an explicit variance signal -->
                         <span class="text-negative text-weight-bold">{{ props.row.mismatches }}</span>
                       </q-td>
                     </template>
@@ -336,8 +348,15 @@
                               </q-badge>
                             </q-td>
                           </template>
+                          <template v-slot:body-cell-xero_value="props">
+                            <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                          </template>
+                          <template v-slot:body-cell-db_value="props">
+                            <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                          </template>
                           <template v-slot:body-cell-difference="props">
-                            <q-td :props="props">
+                            <q-td :props="props" class="kdl-numeric">
+                              <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
                               <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
                             </q-td>
                           </template>
@@ -368,8 +387,15 @@
                         </q-badge>
                       </q-td>
                     </template>
+                    <template v-slot:body-cell-xero_value="props">
+                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                    </template>
+                    <template v-slot:body-cell-db_value="props">
+                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                    </template>
                     <template v-slot:body-cell-difference="props">
-                      <q-td :props="props">
+                      <q-td :props="props" class="kdl-numeric">
+                        <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
                         <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
                       </q-td>
                     </template>
@@ -379,7 +405,7 @@
             </q-tab-panel>
 
           </q-tab-panels>
-        </q-card>
+        </SectionCard>
 
       </div>
     </div>
@@ -390,11 +416,15 @@
 import { ref, reactive, computed } from 'vue';
 import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
+import { useFormatCurrency } from '../composables/useFormatCurrency';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import EmptyState from '../components/klikk/EmptyState.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 
 const dataStore = useDataStore();
 const processStore = useProcessStore();
+const { format } = useFormatCurrency();
 
 // --- P&L by Tracking ---
 const pnlTrackingLoading = ref(false);
@@ -432,10 +462,14 @@ const reconcileForm = reactive({
   tolerance: 0.01,
 });
 
+/**
+ * Format a numeric value for the comparison tables.
+ * Difference/variance columns use accounting mode (parenthesised negatives, ADR §1).
+ * Colour on those cells is red by exception — permitted by ADR §3 because these
+ * are explicit variance/delta columns.
+ */
 function formatNum(val) {
-  const n = parseFloat(val);
-  if (isNaN(n)) return val;
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return format(val, { mode: 'accounting' });
 }
 
 // --- P&L computed ---
@@ -496,18 +530,18 @@ const bsDetailColumns = [
   { name: 'account_code', label: 'Code', field: 'account_code', align: 'left', sortable: true },
   { name: 'account_name', label: 'Account', field: 'account_name', align: 'left', sortable: true },
   { name: 'account_type', label: 'Type', field: 'account_type', align: 'left', sortable: true },
-  { name: 'xero_value', label: 'Xero Value', field: 'xero_value', align: 'right', sortable: true, format: v => formatNum(v) },
-  { name: 'db_value', label: 'DB Value', field: 'db_value', align: 'right', sortable: true, format: v => formatNum(v) },
-  { name: 'difference', label: 'Difference', field: 'difference', align: 'right', sortable: true },
+  { name: 'xero_value', label: 'Xero Value (R)', field: 'xero_value', align: 'right', sortable: true },
+  { name: 'db_value', label: 'DB Value (R)', field: 'db_value', align: 'right', sortable: true },
+  { name: 'difference', label: 'Difference (R)', field: 'difference', align: 'right', sortable: true },
   { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
 ];
 
 const pnlAccountExceptionColumns = [
   { name: 'account_code', label: 'Code', field: 'account_code', align: 'left', sortable: true },
   { name: 'account_name', label: 'Account', field: 'account_name', align: 'left', sortable: true },
-  { name: 'xero_value', label: 'Xero', field: 'xero_value', align: 'right', sortable: true, format: v => formatNum(v) },
-  { name: 'db_value', label: 'DB', field: 'db_value', align: 'right', sortable: true, format: v => formatNum(v) },
-  { name: 'difference', label: 'Difference', field: 'difference', align: 'right', sortable: true },
+  { name: 'xero_value', label: 'Xero (R)', field: 'xero_value', align: 'right', sortable: true },
+  { name: 'db_value', label: 'DB (R)', field: 'db_value', align: 'right', sortable: true },
+  { name: 'difference', label: 'Difference (R)', field: 'difference', align: 'right', sortable: true },
   { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
 ];
 
@@ -564,3 +598,10 @@ async function runReconciliation() {
   }
 }
 </script>
+
+<style scoped>
+/* Input width constraints — replace removed inline style="min-width:..." */
+.comp-input--xs { min-width: 120px; }
+.comp-input--sm { min-width: 150px; }
+.comp-input--md { min-width: 180px; }
+</style>
