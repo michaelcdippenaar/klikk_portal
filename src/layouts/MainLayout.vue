@@ -133,6 +133,21 @@
             </svg>
             <span class="kdl-user-menu__email">{{ userEmail }}</span>
           </div>
+          <!-- Command palette discoverability hint -->
+          <button class="kdl-user-menu__item" @click="openPalette">
+            <!-- Lucide search -->
+            <svg
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span class="kdl-user-menu__cmd-label">Search &amp; commands</span>
+            <span class="kdl-user-menu__shortcut" aria-hidden="true">⌘K</span>
+          </button>
           <q-separator />
           <button class="kdl-user-menu__item kdl-user-menu__item--danger" @click="handleLogout">
             <!-- Lucide log-out -->
@@ -155,22 +170,32 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <!-- ⌘K Command Palette — mounted once at the app shell root -->
+    <KCommandPalette />
   </q-layout>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useDataStore } from '../stores/data';
+import { useProcessStore } from '../stores/processes';
 import { useTheme } from '../composables/useTheme';
+import { useCommandPalette } from '../composables/useCommandPalette';
 import KLockup from '../components/klikk/KLockup.vue';
+import KCommandPalette from '../components/klikk/KCommandPalette.vue';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const dataStore = useDataStore();
+const processStore = useProcessStore();
 const { isDark, toggleTheme } = useTheme();
+
+// Install the global ⌘K listener once at the app shell level.
+const { open: openPalette, register, unregister } = useCommandPalette({ installGlobalListener: true });
 
 const userMenuOpen = ref(false);
 const userTriggerRef = ref(null);
@@ -190,11 +215,197 @@ function isActive(item) {
   return route.path.startsWith('/app/' + item.name);
 }
 
+// ── Command palette — global command registration ────────────────────────────
+
+/** Build the fixed Navigate + Theme + Logout commands (tenant-independent). */
+function buildStaticCommands() {
+  const cmds = [
+    // Navigate
+    {
+      id: 'nav-dashboard',
+      label: 'Go to Dashboard',
+      category: 'Navigate',
+      icon: 'home',
+      keywords: ['home', 'portal', 'overview'],
+      perform: () => router.push({ name: 'portal' }),
+    },
+    {
+      id: 'nav-processes',
+      label: 'Go to Processes',
+      category: 'Navigate',
+      icon: 'refresh-cw',
+      keywords: ['pipeline', 'run', 'operations'],
+      perform: () => router.push({ name: 'processes' }),
+    },
+    {
+      id: 'nav-data',
+      label: 'Go to Data Viewer',
+      category: 'Navigate',
+      icon: 'database',
+      keywords: ['data', 'table', 'viewer', 'transactions'],
+      perform: () => router.push({ name: 'data' }),
+    },
+    {
+      id: 'nav-compare',
+      label: 'Go to Comparison',
+      category: 'Navigate',
+      icon: 'bar-chart-2',
+      keywords: ['compare', 'comparison', 'reports'],
+      perform: () => router.push({ name: 'compare' }),
+    },
+    {
+      id: 'nav-setup',
+      label: 'Go to Setup',
+      category: 'Navigate',
+      icon: 'settings',
+      keywords: ['credentials', 'config', 'xero'],
+      perform: () => router.push({ name: 'setup' }),
+    },
+    // Investec sub-pages
+    {
+      id: 'nav-investec-holdings',
+      label: 'Investec — Share Holdings',
+      category: 'Navigate',
+      icon: 'trending-up',
+      keywords: ['investec', 'holdings', 'shares'],
+      perform: () => router.push({ name: 'investec-holdings' }),
+    },
+    {
+      id: 'nav-investec-transactions',
+      label: 'Investec — Share Transactions',
+      category: 'Navigate',
+      icon: 'layers',
+      keywords: ['investec', 'transactions', 'trades'],
+      perform: () => router.push({ name: 'investec-transactions' }),
+    },
+    {
+      id: 'nav-investec-share-codes',
+      label: 'Investec — Share Codes',
+      category: 'Navigate',
+      icon: 'git-branch',
+      keywords: ['investec', 'codes', 'tickers', 'symbols'],
+      perform: () => router.push({ name: 'investec-share-codes' }),
+    },
+    {
+      id: 'nav-investec-account',
+      label: 'Investec — Account',
+      category: 'Navigate',
+      icon: 'users',
+      keywords: ['investec', 'account', 'balance'],
+      perform: () => router.push({ name: 'investec-account' }),
+    },
+    // Theme
+    {
+      id: 'theme-toggle',
+      label: 'Toggle Theme',
+      category: 'Theme',
+      icon: isDark.value ? 'sun' : 'moon',
+      keywords: ['dark', 'light', 'theme', 'appearance'],
+      perform: () => toggleTheme(),
+    },
+    // Logout
+    {
+      id: 'auth-logout',
+      label: 'Logout',
+      category: 'Account',
+      icon: 'log-out',
+      keywords: ['sign out', 'exit'],
+      perform: () => {
+        authStore.logout();
+        router.push({ name: 'login' });
+      },
+    },
+  ];
+
+  // AI Agent — only if the route exists.
+  if (router.hasRoute('ai-agent')) {
+    cmds.splice(5, 0, {
+      id: 'nav-ai-agent',
+      label: 'Go to AI Agent',
+      category: 'Navigate',
+      icon: 'bot',
+      keywords: ['ai', 'agent', 'assistant', 'llm'],
+      perform: () => router.push({ name: 'ai-agent' }),
+    });
+  }
+
+  return cmds;
+}
+
+/** Re-build tenant-switching commands from the current tenants list. */
+function buildTenantCommands() {
+  return dataStore.tenants.map((t) => ({
+    id: `tenant-switch-${t.tenant_id}`,
+    label: `Switch tenant: ${t.tenant_name}`,
+    category: 'Tenant',
+    icon: 'users',
+    keywords: ['tenant', 'switch', 'organisation', t.tenant_name.toLowerCase()],
+    perform: () => dataStore.setSelectedTenant(t.tenant_id),
+  }));
+}
+
+/** Re-build process commands — only meaningful when a tenant is selected. */
+function buildProcessCommands() {
+  if (!dataStore.selectedTenant) return [];
+  const tenantId = dataStore.selectedTenant;
+
+  return [
+    {
+      id: 'process-metadata',
+      label: 'Run Update Metadata',
+      category: 'Process',
+      icon: 'refresh-cw',
+      keywords: ['metadata', 'update', 'xero', 'sync'],
+      perform: () => processStore.runProcess('metadata', { tenantId }),
+    },
+    {
+      id: 'process-data',
+      label: 'Run Sync Transactions & Journals',
+      category: 'Process',
+      icon: 'refresh-cw',
+      keywords: ['sync', 'transactions', 'journals', 'data'],
+      perform: () => processStore.runProcess('data', { tenantId }),
+    },
+    {
+      id: 'process-journals',
+      label: 'Run Process Journals',
+      category: 'Process',
+      icon: 'play',
+      keywords: ['journals', 'process'],
+      perform: () => processStore.runProcess('journals', { tenantId }),
+    },
+    {
+      id: 'process-trail-balance',
+      label: 'Run Build Trial Balance',
+      category: 'Process',
+      icon: 'bar-chart-2',
+      keywords: ['trial balance', 'trail balance', 'build'],
+      perform: () => processStore.runProcess('trail-balance', { tenantId }),
+    },
+  ];
+}
+
+function refreshAllCommands() {
+  register([
+    ...buildStaticCommands(),
+    ...buildTenantCommands(),
+    ...buildProcessCommands(),
+  ]);
+}
+
 onMounted(() => {
   dataStore.loadTenants().catch(err => {
     console.warn('Failed to load tenants:', err);
   });
+  refreshAllCommands();
 });
+
+// Re-register tenant + process commands when tenants list or selected tenant changes.
+watch(
+  [() => dataStore.tenants, () => dataStore.selectedTenant],
+  () => refreshAllCommands(),
+  { deep: true }
+);
 
 function handleLogout() {
   userMenuOpen.value = false;
@@ -375,5 +586,16 @@ function handleLogout() {
 
 .kdl-user-menu__item--danger:hover {
   background: color-mix(in srgb, #EF4444 8%, transparent);
+}
+
+.kdl-user-menu__cmd-label {
+  flex: 1 1 0;
+}
+
+.kdl-user-menu__shortcut {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--kdl-text-hint);
+  letter-spacing: 0.01em;
 }
 </style>
