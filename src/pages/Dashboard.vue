@@ -1,5 +1,5 @@
 <template>
-  <q-page class="q-pa-lg">
+  <div class="page-content">
     <PageHeader title="Dashboard" subtitle="System status — Xero, Investec, Planning Analytics">
       <template #tenantContext>
         <TenantSelector />
@@ -366,7 +366,7 @@
       </div>
 
     </template>
-  </q-page>
+  </div>
 </template>
 
 <script setup>

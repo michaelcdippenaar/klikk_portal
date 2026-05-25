@@ -1,5 +1,5 @@
 <template>
-  <q-page class="q-pa-md">
+  <div class="page-content">
 
     <!-- ── 1. Page header — quota pill in actions slot ─────────────────────── -->
     <PageHeader
@@ -81,7 +81,7 @@
           :last-error="cardLastError('data')"
           :primary-action="{ label: loading.data ? 'Running…' : 'Sync Data', handler: runDataUpdate }"
         >
-          <q-checkbox
+          <KCheckbox
             v-model="dataOptions.loadAll"
             label="Load all data (ignore last update timestamp)"
           />
@@ -127,14 +127,13 @@
           :primary-action="{ label: loading.trailBalance ? 'Running…' : 'Build Trail Balance', handler: runTrailBalance }"
         >
           <div class="processes-stack__form-group">
-            <q-checkbox
+            <KCheckbox
               v-model="trailBalanceOptions.rebuild"
               label="Rebuild trail balance (delete existing and rebuild)"
             />
-            <q-checkbox
+            <KCheckbox
               v-model="trailBalanceOptions.excludeManual"
               label="Exclude manual journals"
-              class="q-mt-sm"
             />
           </div>
         </KOperationCard>
@@ -207,7 +206,7 @@
       </details>
     </div>
 
-  </q-page>
+  </div>
 </template>
 
 <script setup>
@@ -221,6 +220,7 @@ import PersistentResultStrip from '../components/klikk/PersistentResultStrip.vue
 import EmptyState from '../components/klikk/EmptyState.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 import PipelineStatusStrip from '../components/processes/PipelineStatusStrip.vue';
+import KCheckbox from '../components/klikk/KCheckbox.vue';
 import { getApiCallStats } from '../api/endpoints';
 
 const dataStore = useDataStore();
