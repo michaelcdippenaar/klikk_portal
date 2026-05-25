@@ -250,6 +250,7 @@ const drawerOpen = ref(true);
   border-radius: 5px;
   font-size: 12px;
   font-weight: 400;
+  letter-spacing: -0.005em;
   color: var(--kdl-text-secondary);
   text-decoration: none;
   transition: background var(--duration-short) var(--ease-standard),
