@@ -1,3 +1,9 @@
+<!--
+  TODO(chore): ProcessCard is orphaned — no longer used by Processes.vue after the
+  CDO-mandated KOperationCard restructure (commit feat/processes: pipeline status strip…).
+  Safe to delete once confirmed no other page imports it.
+  grep -rn 'ProcessCard' src/ should return only this file.
+-->
 <template>
   <q-card class="q-mb-md">
     <q-card-section>
