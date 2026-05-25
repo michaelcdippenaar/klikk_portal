@@ -26,37 +26,37 @@
       </svg>
     </button>
 
-    <q-menu
-      v-model="menuOpen"
-      :target="triggerRef"
-      anchor="bottom left"
-      self="top left"
-      class="kdl-tenant-menu"
-      no-parent-event
-    >
+    <Transition name="kdl-tenant-menu-fade">
       <div
-        v-if="tenantOptions.length === 0"
-        class="kdl-tenant-menu__empty"
+        v-if="menuOpen"
+        class="kdl-tenant-menu"
+        role="listbox"
+        :aria-label="label"
       >
-        No tenants available
+        <div
+          v-if="tenantOptions.length === 0"
+          class="kdl-tenant-menu__empty"
+        >
+          No tenants available
+        </div>
+        <button
+          v-for="option in tenantOptions"
+          :key="option.value"
+          class="kdl-tenant-menu__item"
+          :class="{ 'kdl-tenant-menu__item--active': option.value === selectedTenantId }"
+          role="option"
+          :aria-selected="option.value === selectedTenantId"
+          @click="select(option.value)"
+        >
+          {{ option.label }}
+        </button>
       </div>
-      <button
-        v-for="option in tenantOptions"
-        :key="option.value"
-        class="kdl-tenant-menu__item"
-        :class="{ 'kdl-tenant-menu__item--active': option.value === selectedTenantId }"
-        role="option"
-        :aria-selected="option.value === selectedTenantId"
-        @click="select(option.value)"
-      >
-        {{ option.label }}
-      </button>
-    </q-menu>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useDataStore } from '../stores/data';
 
 const dataStore = useDataStore();
@@ -86,10 +86,21 @@ function select(value) {
   menuOpen.value = false;
 }
 
+function handleClickOutside(e) {
+  if (triggerRef.value && !triggerRef.value.contains(e.target)) {
+    menuOpen.value = false;
+  }
+}
+
 onMounted(async () => {
+  document.addEventListener('click', handleClickOutside, true);
   if (dataStore.tenants.length === 0) {
     await dataStore.loadTenants();
   }
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside, true);
 });
 </script>
 
@@ -149,7 +160,16 @@ onMounted(async () => {
 }
 
 /* ── Dropdown menu ────────────────────────────────────── */
+.kdl-tenant-menu-fade-enter-active,
+.kdl-tenant-menu-fade-leave-active { transition: opacity 120ms, transform 120ms; }
+.kdl-tenant-menu-fade-enter-from,
+.kdl-tenant-menu-fade-leave-to { opacity: 0; transform: translateY(-4px); }
+
 .kdl-tenant-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
   min-width: 200px;
   background: var(--kdl-card-bg);
   border: 1px solid var(--kdl-border-subtle);
