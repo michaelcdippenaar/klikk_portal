@@ -417,6 +417,122 @@
       </div>
     </div>
 
+    <!-- Form primitives (Phase 1.C) -->
+    <!-- KInput v2 — clearable / debounce / number coercion -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KInput v2 — clearable · debounce · number coercion</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+        <KInput v-model="demoClearable" label="Clearable input" placeholder="Type something…" clearable />
+        <KInput v-model="demoDebounced" label="Debounced (300ms)" placeholder="Search…" :debounce="300" icon="search" clearable />
+        <KInput v-model="demoNumber" label="Number input (type=number)" type="number" placeholder="0.00" prefix="R" />
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 12px; color: var(--kdl-text-muted);">Emitted value:</span>
+          <code style="font-size: 13px; color: var(--kdl-text-primary);">{{ JSON.stringify({ clearable: demoClearable, debounced: demoDebounced, number: demoNumber, numberType: typeof demoNumber }) }}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- KSelect -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KSelect — Reka-backed single select</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+        <KSelect v-model="demoSelect" label="GL Account" :options="selectOptions" placeholder="Choose account…" clearable />
+        <KSelect v-model="demoSelectError" label="Entity (error state)" :options="['Bosch en Dal', 'Tremly Holdings', 'Investo CC']" :error="true" error-message="Entity is required" />
+        <KSelect v-model="demoSelectDisabled" label="Disabled select" :options="['Option A', 'Option B']" :disabled="true" />
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 12px; color: var(--kdl-text-muted);">Selected value:</span>
+          <code style="font-size: 13px; color: var(--kdl-text-primary);">{{ JSON.stringify(demoSelect) }}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- KMultiSelect -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KMultiSelect — Reka Combobox multi-select</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+        <KMultiSelect v-model="demoMultiSelect" label="Categories" :options="multiSelectOptions" placeholder="Select categories…" />
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 12px; color: var(--kdl-text-muted);">Selected values:</span>
+          <code style="font-size: 13px; color: var(--kdl-text-primary);">{{ JSON.stringify(demoMultiSelect) }}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- KCheckbox + KToggle -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KCheckbox + KToggle — Reka-backed booleans</span>
+      <div style="display: flex; flex-direction: column; gap: 16px; max-width: 480px;">
+        <div>
+          <p class="preview-variant-label">KCheckbox</p>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <KCheckbox v-model="demoCheck1" label="Enable Xero journal posting" />
+            <KCheckbox v-model="demoCheck2" label="Send email notifications on failure" />
+            <KCheckbox v-model="demoCheckDisabled" label="Disabled option" :disabled="true" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">KToggle</p>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <KToggle v-model="demoToggle1" label="Automatic reconciliation" />
+            <KToggle v-model="demoToggle2" label="Dark mode (live!)" @update:model-value="onToggleDark" />
+            <KToggle v-model="demoToggleDisabled" label="Disabled toggle" :disabled="true" />
+          </div>
+        </div>
+        <div style="font-size: 12px; color: var(--kdl-text-muted);">
+          Check: {{ demoCheck1 }}, {{ demoCheck2 }} | Toggle: {{ demoToggle1 }}, {{ demoToggle2 }}
+        </div>
+      </div>
+    </div>
+
+    <!-- KRadioGroup -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KRadioGroup — Reka RadioGroup</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 680px;">
+        <div>
+          <p class="preview-variant-label">Vertical (default)</p>
+          <KRadioGroup v-model="demoRadio" name="period-demo" :options="radioOptions" />
+        </div>
+        <div>
+          <p class="preview-variant-label">Horizontal</p>
+          <KRadioGroup v-model="demoRadio" name="period-demo-h" :options="radioOptions" orientation="horizontal" />
+        </div>
+        <div style="font-size: 12px; color: var(--kdl-text-muted);">
+          Selected: <strong>{{ demoRadio }}</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- KFile -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KFile — native file picker wrapper</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+        <KFile v-model="demoFile" label="Attachment" accept=".pdf,.csv" placeholder="Choose PDF or CSV…" help-text="Max 10MB" />
+        <KFile v-model="demoFiles" label="Documents (multiple)" :multiple="true" accept=".pdf" />
+        <div style="font-size: 12px; color: var(--kdl-text-muted); grid-column: span 2;">
+          Single: {{ demoFile?.name ?? 'none' }} | Multiple: {{ Array.isArray(demoFiles) ? demoFiles.map(f => f.name).join(', ') : 'none' }}
+        </div>
+      </div>
+    </div>
+
+    <!-- KForm -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KForm — minimal form wrapper</span>
+      <div style="max-width: 480px;">
+        <KForm @submit="onFormSubmit">
+          <KInput v-model="demoFormEmail" label="Email" type="email" placeholder="you@example.com" />
+          <KSelect v-model="demoFormEntity" label="Entity" :options="['Bosch en Dal', 'Tremly Holdings']" />
+          <KCheckbox v-model="demoFormAgree" label="I confirm the data is correct" />
+          <div style="display: flex; gap: 8px;">
+            <button type="submit" class="btn-primary btn-sm">Submit</button>
+            <button type="button" class="btn-ghost btn-sm" @click="resetForm">Reset</button>
+          </div>
+          <p v-if="demoFormSubmitted" style="font-size: 13px; color: var(--kdl-accent); margin: 0;">
+            Form submitted! Email: {{ demoFormEmail }}, Entity: {{ demoFormEntity }}, Agreed: {{ demoFormAgree }}
+          </p>
+        </KForm>
+      </div>
+    </div>
+
     <!-- ⑭ KSpinner — loading indicator primitive -->
     <div class="klikk-preview-section">
       <span class="label-upper" style="display: block; margin-bottom: 12px;">⑭ KSpinner — loading indicator (size × tone)</span>
@@ -649,6 +765,105 @@
       </div>
     </div>
 
+    <!-- ㉒ KTable — TanStack Table v8 primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">㉒ KTable — TanStack Table v8 (sort / filter / pagination / virtual / selectable)</span>
+
+      <!-- A: Client-paginated with sort + filter slots + dense mode -->
+      <h3 class="preview-section-h3">A — Client paginated, sort, filter slots, dense mode</h3>
+      <p class="preview-variant-label">Small dataset (20 rows). Click headers to sort; shift-click for multi-sort. Filter inputs appear below headers.</p>
+      <KTable
+        :columns="ktableCols"
+        :data="ktableSmallData"
+        dense
+        pagination="client"
+        :pageSize="10"
+        :showVisibilityMenu="true"
+        @row-click="ktableLastClick = $event"
+      >
+        <template #filter-account_code="{ column }">
+          <input
+            class="ktable-demo-filter-input"
+            placeholder="Filter code…"
+            :value="column.getFilterValue() ?? ''"
+            @input="column.setFilterValue($event.target.value || undefined)"
+          />
+        </template>
+        <template #filter-type="{ column }">
+          <select
+            class="ktable-demo-filter-select"
+            :value="column.getFilterValue() ?? ''"
+            @change="column.setFilterValue($event.target.value || undefined)"
+          >
+            <option value="">All</option>
+            <option v-for="t in ['Asset', 'Liability', 'Equity', 'Expense', 'Revenue']" :key="t" :value="t">{{ t }}</option>
+          </select>
+        </template>
+        <template #cell-debit="{ value }">
+          <span style="font-variant-numeric: tabular-nums;">R {{ Number(value).toLocaleString('en-ZA', { minimumFractionDigits: 2 }) }}</span>
+        </template>
+      </KTable>
+      <p v-if="ktableLastClick" class="preview-variant-label" style="margin-top: 8px;">
+        Last row-click: <strong>{{ ktableLastClick.account_code }} — {{ ktableLastClick.account_name }}</strong>
+      </p>
+
+      <!-- B: Virtual scroll (1000 rows) -->
+      <h3 class="preview-section-h3" style="margin-top: 32px;">B — Virtual scroll (1 000 rows)</h3>
+      <p class="preview-variant-label">All 1 000 rows rendered via @tanstack/vue-virtual. Scroll smoothly at any speed.</p>
+      <KTable
+        :columns="ktableCols"
+        :data="ktableBigData"
+        pagination="none"
+        virtual
+        :virtualHeight="400"
+      />
+
+      <!-- C: Selectable rows -->
+      <h3 class="preview-section-h3" style="margin-top: 32px;">C — Selectable rows</h3>
+      <p class="preview-variant-label">Checkbox column + v-model:selectedRowIds. {{ ktableSelected.size }} row(s) selected.</p>
+      <KTable
+        :columns="ktableCols"
+        :data="ktableSmallData"
+        selectable
+        v-model:selectedRowIds="ktableSelected"
+        pagination="client"
+        :pageSize="10"
+      />
+      <p v-if="ktableSelected.size" class="preview-variant-label" style="margin-top: 8px;">
+        Selected IDs: {{ [...ktableSelected].join(', ') }}
+      </p>
+
+      <!-- D: Loading state -->
+      <h3 class="preview-section-h3" style="margin-top: 32px;">D — Loading state</h3>
+      <p class="preview-variant-label">Toggle button below to show the loading spinner (no data).</p>
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button class="btn-ghost btn-sm" @click="ktableLoading = !ktableLoading">
+          {{ ktableLoading ? 'Stop loading' : 'Start loading' }}
+        </button>
+      </div>
+      <KTable
+        :columns="ktableCols"
+        :data="[]"
+        :loading="ktableLoading"
+        pagination="none"
+      />
+
+      <!-- E: Empty state -->
+      <h3 class="preview-section-h3" style="margin-top: 32px;">E — Empty state</h3>
+      <p class="preview-variant-label">Built-in empty state (no data, no loading).</p>
+      <KTable :columns="ktableCols" :data="[]" pagination="none" />
+
+      <!-- F: Error state -->
+      <h3 class="preview-section-h3" style="margin-top: 32px;">F — Error state</h3>
+      <p class="preview-variant-label">Pass the error prop to render KAlert inside the table.</p>
+      <KTable
+        :columns="ktableCols"
+        :data="[]"
+        error="Xero API returned 503 — connection timeout. Check your credentials in Setup."
+        pagination="none"
+      />
+    </div>
+
     <!-- ⑯ KChip — removable filter pill primitive -->
     <div class="klikk-preview-section">
       <span class="label-upper" style="display: block; margin-bottom: 12px;">⑯ KChip — removable filter pill</span>
@@ -724,6 +939,14 @@ import KMenuSeparator from '../components/klikk/KMenuSeparator.vue';
 import KTooltip from '../components/klikk/KTooltip.vue';
 import KPopover from '../components/klikk/KPopover.vue';
 import { useToast } from '../composables/useToast.js';
+import KTable from '../components/klikk/KTable.vue';
+import KSelect from '../components/klikk/KSelect.vue';
+import KMultiSelect from '../components/klikk/KMultiSelect.vue';
+import KCheckbox from '../components/klikk/KCheckbox.vue';
+import KToggle from '../components/klikk/KToggle.vue';
+import KRadioGroup from '../components/klikk/KRadioGroup.vue';
+import KFile from '../components/klikk/KFile.vue';
+import KForm from '../components/klikk/KForm.vue';
 
 const { isDark, toggleTheme } = useTheme();
 
@@ -780,6 +1003,42 @@ const demoChips = ref(['Invoices', 'ZAR only', 'Q1 2024', 'Bosch en Dal']);
 function removeChip(chip) {
   demoChips.value = demoChips.value.filter((c) => c !== chip);
 }
+
+// ─── KTable demo state ────────────────────────────────────────────────────
+const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Expense', 'Revenue'];
+const PERIODS = ['2024-01', '2024-02', '2024-03', '2024-04', '2024-05', '2024-06'];
+const STATUSES = ['active', 'inactive', 'pending'];
+
+function makeRow(i) {
+  const type = ACCOUNT_TYPES[i % ACCOUNT_TYPES.length];
+  return {
+    id: String(i + 1),
+    account_code: `${type[0]}${String(i + 1).padStart(3, '0')}`,
+    account_name: `${type} Account ${i + 1}`,
+    type,
+    debit: parseFloat((Math.random() * 50000).toFixed(2)),
+    credit: parseFloat((Math.random() * 50000).toFixed(2)),
+    period: PERIODS[i % PERIODS.length],
+    status: STATUSES[i % STATUSES.length],
+  };
+}
+
+const ktableSmallData = Array.from({ length: 20 }, (_, i) => makeRow(i));
+const ktableBigData = Array.from({ length: 1000 }, (_, i) => makeRow(i));
+
+const ktableCols = [
+  { accessorKey: 'account_code', header: 'Code', enableSorting: true, enableColumnFilter: true },
+  { accessorKey: 'account_name', header: 'Account Name', enableSorting: true, enableColumnFilter: true },
+  { accessorKey: 'type', header: 'Type', enableSorting: true, enableColumnFilter: true },
+  { accessorKey: 'debit', header: 'Debit', enableSorting: true },
+  { accessorKey: 'credit', header: 'Credit', enableSorting: true },
+  { accessorKey: 'period', header: 'Period', enableSorting: true },
+  { accessorKey: 'status', header: 'Status', enableSorting: true },
+];
+
+const ktableLastClick = ref(null);
+const ktableSelected = ref(new Set());
+const ktableLoading = ref(false);
 
 // ─── Overlay demo state (Phase 1.B) ──────────────────────────────────────
 const dialogSm = ref(false);
@@ -860,5 +1119,33 @@ const toast = useToast();
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
   max-width: 720px;
+}
+
+/* KTable demo */
+.preview-section-h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+  margin: 0 0 6px;
+}
+
+.ktable-demo-filter-input,
+.ktable-demo-filter-select {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--kdl-text-primary);
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.ktable-demo-filter-input:focus,
+.ktable-demo-filter-select:focus {
+  border-color: var(--kdl-accent);
+  box-shadow: 0 0 0 2px rgba(255, 61, 127, 0.15);
 }
 </style>
