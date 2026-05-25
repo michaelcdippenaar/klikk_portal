@@ -1,164 +1,130 @@
 <template>
-  <q-page class="q-pa-md">
+  <div class="page-content">
     <PageHeader title="Credentials" subtitle="Manage API keys and service credentials — saved to database, no restart needed" />
 
-    <q-tabs v-model="tab" align="left" class="text-grey-8" active-color="primary" indicator-color="primary">
-      <q-tab name="ai-agent" label="AI Agent" />
-      <q-tab name="tm1" label="TM1" />
-    </q-tabs>
+    <KTabs
+      :tabs="[
+        { name: 'ai-agent', label: 'AI Agent' },
+        { name: 'tm1', label: 'TM1' },
+      ]"
+      v-model="tab"
+      :url-sync="false"
+    />
 
-    <q-separator />
+    <div v-if="tab === 'ai-agent'" class="cred-panel">
+      <div v-if="loadError" class="klikk-alert-strip tone-error">{{ loadError }}</div>
 
-    <q-tab-panels v-model="tab" animated>
-      <q-tab-panel name="ai-agent">
-        <div class="q-gutter-md" style="max-width: 600px;">
-          <q-banner v-if="loadError" class="bg-negative text-white q-mb-md">{{ loadError }}</q-banner>
-
-          <q-card bordered>
-            <q-card-section>
-              <div class="row items-center justify-between q-mb-sm">
-                <div class="text-h6">Claude (Anthropic)</div>
-                <q-badge v-if="credStatus.anthropic_api_key" color="positive" outline>set</q-badge>
-                <q-badge v-else color="grey-6" outline>not set</q-badge>
-              </div>
-              <q-input
-                v-model="claudeApiKey"
-                label="API Key"
-                outlined
-                dense
-                :type="showClaude ? 'text' : 'password'"
-                placeholder="sk-ant-..."
-              >
-                <template v-slot:append>
-                  <q-icon
-                    :name="showClaude ? 'visibility_off' : 'visibility'"
-                    class="cursor-pointer"
-                    @click="showClaude = !showClaude"
-                  />
-                </template>
-              </q-input>
-              <q-select
-                v-model="claudeModel"
-                :options="claudeModels"
-                label="Default Model"
-                outlined
-                dense
-                class="q-mt-sm"
-                emit-value
-                map-options
-              />
-            </q-card-section>
-          </q-card>
-
-          <q-card bordered>
-            <q-card-section>
-              <div class="row items-center justify-between q-mb-sm">
-                <div class="text-h6">OpenAI</div>
-                <q-badge v-if="credStatus.openai_api_key" color="positive" outline>set</q-badge>
-                <q-badge v-else color="grey-6" outline>not set</q-badge>
-              </div>
-              <q-input
-                v-model="openaiApiKey"
-                label="API Key"
-                outlined
-                dense
-                :type="showOpenai ? 'text' : 'password'"
-                placeholder="sk-..."
-              >
-                <template v-slot:append>
-                  <q-icon
-                    :name="showOpenai ? 'visibility_off' : 'visibility'"
-                    class="cursor-pointer"
-                    @click="showOpenai = !showOpenai"
-                  />
-                </template>
-              </q-input>
-              <q-select
-                v-model="openaiModel"
-                :options="openaiModels"
-                label="Default Model"
-                outlined
-                dense
-                class="q-mt-sm"
-                emit-value
-                map-options
-              />
-            </q-card-section>
-          </q-card>
-
-          <div>
-            <q-btn label="Save" color="primary" @click="saveAiCredentials" :loading="saving" />
-            <q-btn flat label="Test Anthropic" class="q-ml-sm" :loading="testing" @click="testKey('anthropic_api_key')" />
-            <q-btn flat label="Test OpenAI" class="q-ml-sm" :loading="testing" @click="testKey('openai_api_key')" />
-            <span v-if="saved" class="text-positive q-ml-md">Saved</span>
-            <span v-if="testResult" class="q-ml-md" :class="testResult.ok ? 'text-positive' : 'text-negative'">{{ testResult.message }}</span>
-          </div>
+      <div class="cred-card">
+        <div class="cred-card__header">
+          <div class="cred-card__title">Claude (Anthropic)</div>
+          <KBadge :label="credStatus.anthropic_api_key ? 'set' : 'not set'" :tone="credStatus.anthropic_api_key ? 'accent' : 'muted'" />
         </div>
-      </q-tab-panel>
+        <KInput
+          v-model="claudeApiKey"
+          label="API Key"
+          :type="showClaude ? 'text' : 'password'"
+          placeholder="sk-ant-..."
+        >
+          <template #suffix>
+            <button class="cred-eye-btn" type="button" @click="showClaude = !showClaude" :aria-label="showClaude ? 'Hide key' : 'Show key'">
+              <!-- Lucide eye / eye-off -->
+              <svg v-if="showClaude" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </template>
+        </KInput>
+        <KSelect
+          v-model="claudeModel"
+          label="Default Model"
+          :options="claudeModels"
+          class="cred-mt"
+        />
+      </div>
 
-      <q-tab-panel name="tm1">
-        <div class="q-gutter-md" style="max-width: 600px;">
-          <q-card bordered>
-            <q-card-section>
-              <div class="text-h6 q-mb-sm">TM1 Server</div>
-              <q-input
-                v-model="tm1ServerUrl"
-                label="Server URL"
-                outlined
-                dense
-                placeholder="https://hostname:port"
-              />
-              <q-input
-                v-model="tm1Username"
-                label="Username"
-                outlined
-                dense
-                class="q-mt-sm"
-              />
-              <q-input
-                v-model="tm1Password"
-                label="Password"
-                outlined
-                dense
-                class="q-mt-sm"
-                :type="showTm1 ? 'text' : 'password'"
-              >
-                <template v-slot:append>
-                  <q-icon
-                    :name="showTm1 ? 'visibility_off' : 'visibility'"
-                    class="cursor-pointer"
-                    @click="showTm1 = !showTm1"
-                  />
-                </template>
-              </q-input>
-              <q-input
-                v-model="tm1Namespace"
-                label="Namespace (CAM)"
-                outlined
-                dense
-                class="q-mt-sm"
-                placeholder="Optional"
-              />
-            </q-card-section>
-          </q-card>
-
-          <div>
-            <q-btn label="Save" color="primary" @click="saveTm1Credentials" :loading="saving" />
-            <span v-if="saved" class="text-positive q-ml-md">Saved</span>
-          </div>
+      <div class="cred-card">
+        <div class="cred-card__header">
+          <div class="cred-card__title">OpenAI</div>
+          <KBadge :label="credStatus.openai_api_key ? 'set' : 'not set'" :tone="credStatus.openai_api_key ? 'accent' : 'muted'" />
         </div>
-      </q-tab-panel>
-    </q-tab-panels>
-  </q-page>
+        <KInput
+          v-model="openaiApiKey"
+          label="API Key"
+          :type="showOpenai ? 'text' : 'password'"
+          placeholder="sk-..."
+        >
+          <template #suffix>
+            <button class="cred-eye-btn" type="button" @click="showOpenai = !showOpenai" :aria-label="showOpenai ? 'Hide key' : 'Show key'">
+              <svg v-if="showOpenai" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </template>
+        </KInput>
+        <KSelect
+          v-model="openaiModel"
+          label="Default Model"
+          :options="openaiModels"
+          class="cred-mt"
+        />
+      </div>
+
+      <div class="cred-actions">
+        <button class="btn btn-primary" :disabled="saving" @click="saveAiCredentials">
+          {{ saving ? 'Saving…' : 'Save' }}
+        </button>
+        <button class="btn btn-ghost" :disabled="testing" @click="testKey('anthropic_api_key')">
+          {{ testing ? 'Testing…' : 'Test Anthropic' }}
+        </button>
+        <button class="btn btn-ghost" :disabled="testing" @click="testKey('openai_api_key')">
+          Test OpenAI
+        </button>
+        <span v-if="saved" class="cred-saved-msg">Saved</span>
+        <span v-if="testResult" class="cred-test-msg" :class="testResult.ok ? 'cred-test-msg--ok' : 'cred-test-msg--err'">{{ testResult.message }}</span>
+      </div>
+    </div>
+
+    <div v-else-if="tab === 'tm1'" class="cred-panel">
+      <div class="cred-card">
+        <div class="cred-card__title" style="margin-bottom: 12px;">TM1 Server</div>
+        <KInput v-model="tm1ServerUrl" label="Server URL" placeholder="https://hostname:port" />
+        <KInput v-model="tm1Username" label="Username" class="cred-mt" />
+        <KInput
+          v-model="tm1Password"
+          label="Password"
+          :type="showTm1 ? 'text' : 'password'"
+          class="cred-mt"
+        >
+          <template #suffix>
+            <button class="cred-eye-btn" type="button" @click="showTm1 = !showTm1" :aria-label="showTm1 ? 'Hide password' : 'Show password'">
+              <svg v-if="showTm1" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </template>
+        </KInput>
+        <KInput v-model="tm1Namespace" label="Namespace (CAM)" placeholder="Optional" class="cred-mt" />
+      </div>
+
+      <div class="cred-actions">
+        <button class="btn btn-primary" :disabled="saving" @click="saveTm1Credentials">
+          {{ saving ? 'Saving…' : 'Save' }}
+        </button>
+        <span v-if="saved" class="cred-saved-msg">Saved</span>
+      </div>
+    </div>
+
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useQuasar } from 'quasar';
+import { useToast } from '../composables/useToast';
 import { listCredentials, setCredential } from '../api/skills';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import KTabs from '../components/klikk/KTabs.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSelect from '../components/klikk/KSelect.vue';
+import KBadge from '../components/klikk/KBadge.vue';
 
-const $q = useQuasar();
+const toast = useToast();
 const tab = ref('ai-agent');
 
 const claudeModels = [
@@ -200,12 +166,10 @@ const credStatus = ref({});
 async function loadCredentials() {
   try {
     const data = await listCredentials();
-    // Build a status map { key: true/false } based on whether each key has a value
     const status = {};
     if (Array.isArray(data)) {
       for (const c of data) {
         status[c.key] = !!c.has_value;
-        // Pre-fill model selections if hint shows value (non-sensitive keys)
         if (c.key === 'claude_model' && c.has_value && c.hint) {
           claudeModel.value = c.hint;
         }
@@ -244,7 +208,7 @@ async function saveAiCredentials() {
     await loadCredentials();
     setTimeout(() => { saved.value = false; }, 3000);
   } catch (err) {
-    $q.notify({ type: 'negative', message: `Save failed: ${err.message}` });
+    toast.error(`Save failed: ${err.message}`);
   } finally {
     saving.value = false;
   }
@@ -272,7 +236,7 @@ async function saveTm1Credentials() {
     await loadCredentials();
     setTimeout(() => { saved.value = false; }, 3000);
   } catch (err) {
-    $q.notify({ type: 'negative', message: `Save failed: ${err.message}` });
+    toast.error(`Save failed: ${err.message}`);
   } finally {
     saving.value = false;
   }
@@ -282,7 +246,6 @@ async function testKey(key) {
   testing.value = true;
   testResult.value = null;
   try {
-    // Use the MCP chat endpoint to test the key with a simple ping
     const mod = await import('../api/skills');
     const data = await mod.mcpChat({ message: `test ${key === 'anthropic_api_key' ? 'Claude' : 'OpenAI'} connection — respond with OK` });
     testResult.value = { ok: !!data.response, message: data.response ? 'Key is working' : 'No response' };
@@ -298,3 +261,73 @@ onMounted(() => {
   loadCredentials();
 });
 </script>
+
+<style scoped>
+.page-content {
+  padding: 16px;
+}
+
+.cred-panel {
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.cred-card {
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.cred-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cred-card__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+}
+
+.cred-mt {
+  margin-top: 10px;
+}
+
+.cred-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cred-saved-msg {
+  font-size: 13px;
+  color: var(--kdl-status-success);
+  font-weight: 500;
+}
+
+.cred-test-msg {
+  font-size: 13px;
+}
+.cred-test-msg--ok  { color: var(--kdl-status-success); }
+.cred-test-msg--err { color: var(--kdl-status-error); }
+
+.cred-eye-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--kdl-text-muted);
+  display: flex;
+  align-items: center;
+}
+.cred-eye-btn:hover {
+  color: var(--kdl-text-primary);
+}
+</style>

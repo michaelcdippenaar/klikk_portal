@@ -1,4 +1,5 @@
 <!--
+  TODO(headless-migration): full migration deferred per CTO; depends on a spike for sticky-scroll vs new AppShell.
   TODO(kdl-phase-3.5): full KDL conversion deferred — depends on AiAgent's
   sticky-scroll behaviour, which interacts with q-layout in non-obvious ways.
   Plan: spike with a Quasar-free shell, validate scroll, then convert.
