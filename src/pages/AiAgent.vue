@@ -1,3 +1,8 @@
+<!--
+  TODO(kdl-phase-3.5): full KDL conversion deferred — depends on AiAgent's
+  sticky-scroll behaviour, which interacts with q-layout in non-obvious ways.
+  Plan: spike with a Quasar-free shell, validate scroll, then convert.
+-->
 <template>
   <q-page class="ai-agent-page" :style-fn="(offset) => ({ height: offset ? `calc(100vh - ${offset}px)` : '100vh' })">
     <div class="ai-topbar">
@@ -994,13 +999,20 @@ export default defineComponent({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #f6f7f8;
+  background: var(--kdl-page-bg, #f6f7f8);
 }
 
 .ai-topbar {
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  background: #fff;
+  /* KDL token alignment — matches MainLayout .kdl-toolbar height and visual language */
+  min-height: 44px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--kdl-border-subtle);
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-primary);
+  font-family: inherit;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
