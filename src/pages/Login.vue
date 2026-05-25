@@ -1,16 +1,7 @@
 <template>
   <div class="fullscreen flex flex-center login-page">
-    <q-card class="login-card" flat bordered>
-      <q-card-section class="q-pb-xs">
-        <div class="text-subtitle1 text-weight-bold text-center login-title">
-          Klikk Financials
-        </div>
-        <div class="text-caption text-center q-mt-xs login-subtitle">
-          Sign in to continue
-        </div>
-      </q-card-section>
-
-      <q-card-section class="q-pt-sm">
+    <div class="login-card-wrapper">
+      <SectionCard title="Klikk Financials" description="Sign in to continue">
         <q-form @submit="handleLogin" class="q-gutter-sm">
           <q-input
             v-model="username"
@@ -44,8 +35,8 @@
             />
           </div>
         </q-form>
-      </q-card-section>
-    </q-card>
+      </SectionCard>
+    </div>
   </div>
 </template>
 
@@ -53,6 +44,7 @@
 import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import SectionCard from '../components/klikk/SectionCard.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -69,7 +61,7 @@ async function handleLogin() {
 
   try {
     const result = await authStore.login(username.value, password.value);
-    
+
     if (result.success) {
       const redirect = route.query.redirect || '/app';
       router.push(redirect);
@@ -88,18 +80,10 @@ async function handleLogin() {
 .login-page {
   background: var(--kdl-page-bg);
 }
-.login-title {
-  color: var(--kdl-text-primary);
-}
-.login-subtitle {
-  color: var(--kdl-text-muted);
-}
-.login-card {
+
+.login-card-wrapper {
   width: 100%;
   max-width: 380px;
-  background: var(--kdl-card-bg);
-  border-color: var(--kdl-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-lifted);
+  padding: 0 16px;
 }
 </style>
