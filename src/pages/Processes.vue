@@ -1,6 +1,11 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Process Runner</div>
+    <PageHeader title="Process Runner" subtitle="Run Xero sync, journal processing, and trail balance operations">
+      <template #tenantContext>
+        <TenantSelector />
+      </template>
+    </PageHeader>
+
 
     <!-- API Call Stats -->
     <q-card v-if="apiCallStats" class="q-mb-lg">
@@ -125,6 +130,8 @@ import { ref, reactive, onMounted, watch } from 'vue';
 import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
 import ProcessCard from '../components/ProcessCard.vue';
+import PageHeader from '../components/klikk/PageHeader.vue';
+import TenantSelector from '../components/TenantSelector.vue';
 import { getApiCallStats } from '../api/endpoints';
 
 const dataStore = useDataStore();

@@ -1,6 +1,10 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Data Viewer</div>
+    <PageHeader title="Data Viewer" subtitle="Explore trail balance, P&amp;L summaries, and line items">
+      <template #tenantContext>
+        <TenantSelector />
+      </template>
+    </PageHeader>
 
     <div v-if="!dataStore.selectedTenant" class="q-pa-lg text-center">
       <q-icon name="info" size="3em" color="grey-5" />
@@ -620,6 +624,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useDataStore } from '../stores/data';
+import PageHeader from '../components/klikk/PageHeader.vue';
+import TenantSelector from '../components/TenantSelector.vue';
 
 const dataStore = useDataStore();
 const tab = ref('summary');

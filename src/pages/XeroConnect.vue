@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h4 q-mb-md">Xero Connection</div>
+    <PageHeader title="Xero Connection" subtitle="Configure API credentials and connect to your Xero organisation" />
 
     <!-- Callback result banner -->
     <q-banner
@@ -191,6 +191,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useDataStore } from '../stores/data';
 import { getXeroAuthUrl, getXeroConnectionStatus, saveXeroCredentials } from '../api/endpoints';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const route = useRoute();
 const router = useRouter();

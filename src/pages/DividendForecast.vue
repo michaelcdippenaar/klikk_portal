@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Dividend Forecast Budget</div>
+    <PageHeader title="Dividend Forecast Budget" subtitle="Manage dividend calendar and TM1 forecast adjustments" />
 
     <q-tabs v-model="tab" dense class="text-grey" active-color="primary" indicator-color="primary" align="left">
       <q-tab name="calendar" label="Dividend Calendar" icon="event" />
@@ -302,11 +302,13 @@ import {
   updateDividendCalendarCategory,
   updateDividendCalendarPaymentDate,
 } from '../api/endpoints';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default defineComponent({
   name: 'DividendForecast',
+  components: { PageHeader },
   setup() {
     const tab = ref('calendar');
 

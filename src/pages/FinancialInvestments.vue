@@ -1,10 +1,7 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="row items-center justify-between q-mb-md">
-      <div>
-        <div class="text-h5 q-mb-xs">Watchlist</div>
-        <div class="text-caption text-grey-7">Stock data from yfinance. Select a symbol for details and chart.</div>
-      </div>
+    <PageHeader title="Watchlist" subtitle="Stock data from yfinance — select a symbol for details and chart" />
+    <div class="row items-center justify-end q-mb-md">
       <div class="row items-center q-gutter-sm">
         <span v-if="lastRefreshedAt" class="text-caption text-grey-7">Last updated {{ lastRefreshedAt.toLocaleTimeString() }}</span>
         <q-input
@@ -289,6 +286,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import FinancialLineChart from '../components/FinancialLineChart.vue';
+import PageHeader from '../components/klikk/PageHeader.vue';
 import {
   getFinancialInvestmentsSymbols,
   getFinancialInvestmentsHistory,

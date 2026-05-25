@@ -1,12 +1,10 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="row items-center justify-between q-mb-md">
-      <div>
-        <div class="text-h5 q-mb-xs">Agent Monitor</div>
-        <div class="text-subtitle2 text-grey-7">Performance, health, and diagnostics</div>
-      </div>
-      <q-btn flat color="primary" label="Refresh" icon="refresh" :loading="loading" @click="refreshAll" />
-    </div>
+    <PageHeader title="Agent Monitor" subtitle="Performance, health, and diagnostics">
+      <template #actions>
+        <q-btn flat color="primary" label="Refresh" icon="refresh" :loading="loading" @click="refreshAll" />
+      </template>
+    </PageHeader>
 
     <!-- ============================================================ -->
     <!-- Health Overview Cards                                        -->
@@ -348,6 +346,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { fetchPerformance, fetchSessions, fetchHealth, fetchErrors, fetchSlowTools } from '../api/monitor';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const $q = useQuasar();
 

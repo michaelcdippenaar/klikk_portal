@@ -1,9 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec – Account</div>
-    <p class="text-body2 text-grey-8 q-mb-md">
-      Search bank transactions across all Investec accounts to check if a payment has been made.
-    </p>
+    <PageHeader title="Investec Account" subtitle="Search bank transactions across all Investec accounts" />
 
     <q-tabs
       v-model="activeTab"
@@ -184,6 +181,7 @@ import {
   triggerInvestecBankSync,
   downloadInvestecBankTransactionsExcel,
 } from '../api/endpoints';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const activeTab = ref('transactions');
 const lastSyncedAt = ref(null);

@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec - Share transactions</div>
+    <PageHeader title="Share Transactions" subtitle="Investec trading history and transaction records" />
 
     <div class="text-subtitle1 q-mb-sm">Upload transactions</div>
     <div class="row q-col-gutter-md q-mb-lg">
@@ -206,6 +206,7 @@ import {
   getInvestecExportTransactions,
   getInvestecExportDownloadUrl,
 } from '../api/endpoints';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const transactionColumns = [
   { name: 'date', label: 'Date', field: 'date', align: 'left', sortable: true },

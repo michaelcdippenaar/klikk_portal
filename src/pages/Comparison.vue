@@ -1,6 +1,10 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Report Comparison</div>
+    <PageHeader title="Report Comparison" subtitle="Compare Xero P&amp;L and Balance Sheet reports against the trail balance">
+      <template #tenantContext>
+        <TenantSelector />
+      </template>
+    </PageHeader>
 
     <div v-if="!dataStore.selectedTenant" class="q-pa-lg text-center">
       <q-icon name="info" size="3em" color="grey-5" />
@@ -386,6 +390,8 @@
 import { ref, reactive, computed } from 'vue';
 import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
+import PageHeader from '../components/klikk/PageHeader.vue';
+import TenantSelector from '../components/TenantSelector.vue';
 
 const dataStore = useDataStore();
 const processStore = useProcessStore();

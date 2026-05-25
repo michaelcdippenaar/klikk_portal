@@ -1,7 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Credentials</div>
-    <div class="text-subtitle2 text-grey-7 q-mb-lg">Manage API keys and service credentials. Saved to database — no restart needed.</div>
+    <PageHeader title="Credentials" subtitle="Manage API keys and service credentials — saved to database, no restart needed" />
 
     <q-tabs v-model="tab" align="left" class="text-grey-8" active-color="primary" indicator-color="primary">
       <q-tab name="ai-agent" label="AI Agent" />
@@ -157,6 +156,7 @@
 import { ref, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { listCredentials, setCredential } from '../api/skills';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const $q = useQuasar();
 const tab = ref('ai-agent');

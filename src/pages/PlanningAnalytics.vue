@@ -1,6 +1,10 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Planning Analytics</div>
+    <PageHeader title="Planning Analytics" subtitle="TM1 pipeline and scenario analysis">
+      <template #tenantContext>
+        <TenantSelector />
+      </template>
+    </PageHeader>
 
     <div v-if="!tenantId" class="q-pa-lg text-center">
       <q-icon name="info" size="3em" color="grey-5" />
@@ -240,9 +244,12 @@
 
 <script>
 import { defineComponent, ref, reactive, onMounted, computed } from 'vue';
+import PageHeader from '../components/klikk/PageHeader.vue';
+import TenantSelector from '../components/TenantSelector.vue';
 
 export default defineComponent({
   name: 'PlanningAnalytics',
+  components: { PageHeader, TenantSelector },
   setup() {
     const tab = ref('pipeline');
     const tenantId = ref(null);

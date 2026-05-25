@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec - Share holdings</div>
+    <PageHeader title="Share Holdings" subtitle="Investec portfolio positions" />
 
     <div class="text-subtitle1 q-mb-sm">Upload portfolio</div>
     <q-card class="q-mb-lg" style="max-width: 400px">
@@ -51,6 +51,7 @@
 <script setup>
 import { ref } from 'vue';
 import { uploadInvestecPortfolio } from '../api/endpoints';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const uploadFile = ref(null);
 const loading = ref(false);

@@ -1,7 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-xs">AI Agent</div>
-    <div class="text-subtitle2 text-grey-7 q-mb-lg">Manage skills, tools, and routing keywords</div>
+    <PageHeader title="AI Agent Setup" subtitle="Manage skills, tools, and routing keywords" />
 
     <div class="row items-center justify-between q-mb-md">
       <div class="text-subtitle1">Registered skill modules ({{ skills.length }})</div>
@@ -135,6 +134,7 @@
 import { ref, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { listSkills, getSkillDetail, updateSkill } from '../api/skills';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const $q = useQuasar();
 

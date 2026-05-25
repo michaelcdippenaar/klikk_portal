@@ -1,7 +1,6 @@
 <template>
   <q-page class="q-pa-lg">
-    <div class="text-h4 q-mb-sm">Klikk Financials Console</div>
-    <div class="text-subtitle1 text-grey-7 q-mb-lg">Group financial operations, Xero, Investec, and Planning Analytics</div>
+    <PageHeader title="Home" subtitle="Group financial operations — Xero, Investec, and Planning Analytics" />
 
     <div class="row q-gutter-lg">
       <q-card
@@ -37,6 +36,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const router = useRouter();
 

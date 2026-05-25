@@ -1,6 +1,6 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec - Share codes</div>
+    <PageHeader title="Share Codes" subtitle="Investec share code mappings and company data" />
 
     <q-tabs
       v-model="activeTab"
@@ -127,6 +127,7 @@ import {
   uploadInvestecMapping,
 } from '../api/endpoints';
 import { API_BASE_URL, API_ENDPOINTS } from '../utils/constants';
+import PageHeader from '../components/klikk/PageHeader.vue';
 
 const activeTab = ref('share-codes');
 
