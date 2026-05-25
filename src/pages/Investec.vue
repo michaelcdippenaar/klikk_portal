@@ -1,271 +1,238 @@
 <template>
-  <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Investec</div>
+  <AppPage>
+    <h1 class="text-xl font-semibold mb-4">Investec</h1>
 
-    <q-tabs
+    <KTabs
+      :tabs="[
+        { name: 'data', label: 'Data' },
+        { name: 'mappings', label: 'Share codes & names' },
+      ]"
       v-model="activeTab"
-      dense
-      class="text-grey"
-      active-color="primary"
-      indicator-color="primary"
-      align="left"
-      narrow-indicator
+      :url-sync="false"
+      class="mb-4"
       @update:model-value="onTabChange"
-    >
-      <q-tab name="data" label="Data" />
-      <q-tab name="mappings" label="Share codes &amp; names" />
-    </q-tabs>
-
-    <q-separator class="q-mb-md" />
+    />
 
     <template v-if="activeTab === 'data'">
       <!-- Uploads -->
-      <div class="text-subtitle1 q-mb-sm">Uploads</div>
-      <div class="row q-col-gutter-md q-mb-lg">
-        <div class="col-12 col-md-4">
-          <SectionCard title="Share transactions">
-            <q-file
-              v-model="uploadFiles.transactions"
-              label="Excel file"
-              accept=".xlsx,.xls"
-              outlined
-              dense
-              clearable
-              class="q-mb-sm"
+      <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">Uploads</h2>
+      <div class="flex flex-wrap gap-4 mb-8">
+        <SectionCard title="Share transactions" class="investec-upload-card">
+          <KFile
+            v-model="uploadFiles.transactions"
+            label="Excel file"
+            accept=".xlsx,.xls"
+            class="mb-3"
+          />
+          <button
+            class="btn btn-primary"
+            :disabled="loading.uploadTransactions || !uploadFiles.transactions"
+            @click="uploadTransactions"
+          >
+            <span v-if="loading.uploadTransactions" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Uploading…
+            </span>
+            <span v-else>Upload</span>
+          </button>
+          <div v-if="uploadResult.transactions" class="mt-3">
+            <KAlert
+              :variant="uploadResult.transactions.error ? 'error' : 'success'"
+              :body="uploadResult.transactions.error || uploadResult.transactions.message"
             />
-            <q-btn
-              label="Upload"
-              color="primary"
-              :loading="loading.uploadTransactions"
-              :disable="!uploadFiles.transactions"
-              @click="uploadTransactions"
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Portfolio" class="investec-upload-card">
+          <KFile
+            v-model="uploadFiles.portfolio"
+            label="Excel file(s)"
+            accept=".xlsx,.xls"
+            multiple
+            class="mb-3"
+          />
+          <button
+            class="btn btn-primary"
+            :disabled="loading.uploadPortfolio || !(Array.isArray(uploadFiles.portfolio) ? uploadFiles.portfolio?.length : uploadFiles.portfolio)"
+            @click="uploadPortfolio"
+          >
+            <span v-if="loading.uploadPortfolio" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Uploading…
+            </span>
+            <span v-else>Upload</span>
+          </button>
+          <div v-if="uploadResult.portfolio" class="mt-3">
+            <KAlert
+              :variant="uploadResult.portfolio.error ? 'error' : 'success'"
+              :body="uploadResult.portfolio.error || uploadResult.portfolio.message"
             />
-            <div v-if="uploadResult.transactions" class="q-mt-sm text-body2">
-              <q-banner
-                :class="uploadResult.transactions.error ? 'bg-negative' : 'bg-positive'"
-                rounded
-                dense
-                class="text-white"
-              >
-                {{ uploadResult.transactions.error || uploadResult.transactions.message }}
-              </q-banner>
-            </div>
-          </SectionCard>
-        </div>
-        <div class="col-12 col-md-4">
-          <SectionCard title="Portfolio">
-            <q-file
-              v-model="uploadFiles.portfolio"
-              label="Excel file(s)"
-              accept=".xlsx,.xls"
-              outlined
-              dense
-              clearable
-              multiple
-              class="q-mb-sm"
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Share name mapping" class="investec-upload-card">
+          <KFile
+            v-model="uploadFiles.mapping"
+            label="Excel file"
+            accept=".xlsx,.xls"
+            class="mb-3"
+          />
+          <button
+            class="btn btn-primary"
+            :disabled="loading.uploadMapping || !uploadFiles.mapping"
+            @click="uploadMapping"
+          >
+            <span v-if="loading.uploadMapping" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Uploading…
+            </span>
+            <span v-else>Upload</span>
+          </button>
+          <div v-if="uploadResult.mapping" class="mt-3">
+            <KAlert
+              :variant="uploadResult.mapping.error ? 'error' : 'success'"
+              :body="uploadResult.mapping.error || uploadResult.mapping.message"
             />
-            <q-btn
-              label="Upload"
-              color="primary"
-              :loading="loading.uploadPortfolio"
-              :disable="!(Array.isArray(uploadFiles.portfolio) ? uploadFiles.portfolio.length : uploadFiles.portfolio)"
-              @click="uploadPortfolio"
-            />
-            <div v-if="uploadResult.portfolio" class="q-mt-sm text-body2">
-              <q-banner
-                :class="uploadResult.portfolio.error ? 'bg-negative' : 'bg-positive'"
-                rounded
-                dense
-                class="text-white"
-              >
-                {{ uploadResult.portfolio.error || uploadResult.portfolio.message }}
-              </q-banner>
-            </div>
-          </SectionCard>
-        </div>
-        <div class="col-12 col-md-4">
-          <SectionCard title="Share name mapping">
-            <q-file
-              v-model="uploadFiles.mapping"
-              label="Excel file"
-              accept=".xlsx,.xls"
-              outlined
-              dense
-              clearable
-              class="q-mb-sm"
-            />
-            <q-btn
-              label="Upload"
-              color="primary"
-              :loading="loading.uploadMapping"
-              :disable="!uploadFiles.mapping"
-              @click="uploadMapping"
-            />
-            <div v-if="uploadResult.mapping" class="q-mt-sm text-body2">
-              <q-banner
-                :class="uploadResult.mapping.error ? 'bg-negative' : 'bg-positive'"
-                rounded
-                dense
-                class="text-white"
-              >
-                {{ uploadResult.mapping.error || uploadResult.mapping.message }}
-              </q-banner>
-            </div>
-          </SectionCard>
-        </div>
+          </div>
+        </SectionCard>
       </div>
 
       <!-- Share transactions table -->
-      <SectionCard title="Share transactions" class="q-mb-lg">
-        <FilterBar class="q-mb-md">
-          <q-input
+      <SectionCard title="Share transactions" class="mb-8">
+        <FilterBar class="mb-4">
+          <KInput
             v-model="filters.account_number"
             label="Account number"
-            outlined
-            dense
             clearable
-            class="col-12 col-sm-4"
+            class="flex-1 min-w-36"
             @update:model-value="fetchTransactions"
           />
-          <q-input
+          <KInput
             v-model="filters.share_name"
             label="Share name"
-            outlined
-            dense
             clearable
-            class="col-12 col-sm-4"
+            class="flex-1 min-w-36"
             @update:model-value="fetchTransactions"
           />
-          <q-input
+          <KInput
             v-model="filters.type"
             label="Type"
-            outlined
-            dense
             clearable
-            class="col-12 col-sm-4"
+            class="flex-1 min-w-28"
             @update:model-value="fetchTransactions"
           />
         </FilterBar>
 
-        <q-table
-          :rows="transactions"
-          :columns="transactionColumns"
-          row-key="id"
-          flat
-          bordered
+        <KTable
+          :columns="transactionKColumns"
+          :data="transactions"
           :loading="loading.transactions"
-          :pagination="pagination"
-          @request="onTableRequest"
+          dense
+          pagination="none"
+          virtual
+          :virtualHeight="500"
         >
-          <template v-slot:body-cell-date="props">
-            <q-td :props="props">{{ formatDate(props.row.date) }}</q-td>
+          <template #cell-date="{ value }">
+            {{ formatDate(value) }}
           </template>
-          <template v-slot:body-cell-value="props">
+          <template #cell-value="{ value }">
             <!-- ADR §1: accounting table — parenthesised negatives, no colour on sign -->
-            <q-td :props="props" class="kdl-numeric">{{ format(props.row.value, { mode: 'accounting' }) }}</q-td>
+            <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
           </template>
-          <template v-slot:body-cell-quantity="props">
-            <q-td :props="props" class="kdl-numeric">{{ format(props.row.quantity, { mode: 'accounting' }) }}</q-td>
+          <template #cell-quantity="{ value }">
+            <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
           </template>
-        </q-table>
+        </KTable>
 
-        <div class="row justify-between items-center q-mt-sm">
-          <q-btn
-            flat
-            dense
-            :disable="pagination.offset === 0"
+        <div class="flex justify-between items-center mt-3">
+          <button
+            class="btn btn-ghost btn-sm"
+            :disabled="pagination.offset === 0"
             @click="goPage(-1)"
           >
             Previous
-          </q-btn>
-          <span class="text-body2">
+          </button>
+          <span class="text-sm text-muted">
             {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
           </span>
-          <q-btn
-            flat
-            dense
-            :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
+          <button
+            class="btn btn-ghost btn-sm"
+            :disabled="pagination.offset + pagination.rowsPerPage >= transactionCount"
             @click="goPage(1)"
           >
             Next
-          </q-btn>
+          </button>
         </div>
       </SectionCard>
 
       <!-- Exports -->
       <SectionCard title="Exports">
-        <div class="row q-col-gutter-md">
-          <div class="col-12 col-md-4">
-            <q-btn
-              label="Export companies"
-              color="primary"
-              outline
-              :loading="loading.exportCompanies"
+        <div class="flex flex-wrap gap-6">
+          <div>
+            <button
+              class="btn btn-primary btn-outline"
+              :disabled="loading.exportCompanies"
               @click="exportCompanies"
-            />
-            <div v-if="exportData.companies" class="q-mt-sm text-body2">
-              Count: {{ exportData.companies.count }}
-              <q-list v-if="exportData.companies.companies?.length" dense class="q-mt-xs">
-                <q-item v-for="(c, i) in exportData.companies.companies.slice(0, 10)" :key="i" dense>
-                  <q-item-section>{{ c.company }} ({{ c.share_code }})</q-item-section>
-                </q-item>
-                <q-item v-if="exportData.companies.companies.length > 10" dense>
-                  <q-item-section class="text-grey">… and {{ exportData.companies.companies.length - 10 }} more</q-item-section>
-                </q-item>
-              </q-list>
+            >
+              <span v-if="loading.exportCompanies" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Exporting…
+              </span>
+              <span v-else>Export companies</span>
+            </button>
+            <div v-if="exportData.companies" class="mt-2 text-sm">
+              <p class="text-muted">Count: {{ exportData.companies.count }}</p>
+              <ul v-if="exportData.companies.companies?.length" class="mt-1 space-y-0.5 text-xs">
+                <li v-for="(c, i) in exportData.companies.companies.slice(0, 10)" :key="i">
+                  {{ c.company }} ({{ c.share_code }})
+                </li>
+                <li v-if="exportData.companies.companies.length > 10" class="text-muted">
+                  … and {{ exportData.companies.companies.length - 10 }} more
+                </li>
+              </ul>
             </div>
           </div>
-          <div class="col-12 col-md-4">
-            <q-btn
-              label="Export share names"
-              color="primary"
-              outline
-              :loading="loading.exportShareNames"
+          <div>
+            <button
+              class="btn btn-primary btn-outline"
+              :disabled="loading.exportShareNames"
               @click="exportShareNames"
-            />
-            <div v-if="exportData.shareNames" class="q-mt-sm text-body2">
-              Count: {{ exportData.shareNames.count }}
-              <q-list v-if="exportData.shareNames.share_names?.length" dense class="q-mt-xs">
-                <q-item v-for="(s, i) in exportData.shareNames.share_names.slice(0, 10)" :key="i" dense>
-                  <q-item-section>{{ s }}</q-item-section>
-                </q-item>
-                <q-item v-if="exportData.shareNames.share_names.length > 10" dense>
-                  <q-item-section class="text-grey">… and {{ exportData.shareNames.share_names.length - 10 }} more</q-item-section>
-                </q-item>
-              </q-list>
+            >
+              <span v-if="loading.exportShareNames" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Exporting…
+              </span>
+              <span v-else>Export share names</span>
+            </button>
+            <div v-if="exportData.shareNames" class="mt-2 text-sm">
+              <p class="text-muted">Count: {{ exportData.shareNames.count }}</p>
+              <ul v-if="exportData.shareNames.share_names?.length" class="mt-1 space-y-0.5 text-xs">
+                <li v-for="(s, i) in exportData.shareNames.share_names.slice(0, 10)" :key="i">{{ s }}</li>
+                <li v-if="exportData.shareNames.share_names.length > 10" class="text-muted">
+                  … and {{ exportData.shareNames.share_names.length - 10 }} more
+                </li>
+              </ul>
             </div>
           </div>
-          <div class="col-12 col-md-4">
-            <q-btn
-              label="Export transactions (Excel)"
-              color="primary"
-              outline
-              :loading="loading.exportTransactions"
+          <div>
+            <button
+              class="btn btn-primary btn-outline"
+              :disabled="loading.exportTransactions"
               @click="exportTransactions"
-            />
-            <div v-if="exportData.transactions" class="q-mt-sm text-body2">
-              <q-banner
-                v-if="exportData.transactions.error"
-                class="bg-negative text-white"
-                rounded
-                dense
-              >
-                {{ exportData.transactions.error }}
-              </q-banner>
+            >
+              <span v-if="loading.exportTransactions" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Exporting…
+              </span>
+              <span v-else>Export transactions (Excel)</span>
+            </button>
+            <div v-if="exportData.transactions" class="mt-2 text-sm">
+              <KAlert v-if="exportData.transactions.error" variant="error" :body="exportData.transactions.error" />
               <template v-else>
                 <span>{{ exportData.transactions.message }}</span>
-                <q-btn
+                <a
                   v-if="exportData.transactions.filename"
-                  flat
-                  dense
-                  color="primary"
                   :href="exportDownloadUrl(exportData.transactions.filename)"
                   target="_blank"
                   download
-                  class="q-ml-sm"
+                  class="btn btn-ghost btn-sm ml-2"
                 >
                   Download
-                </q-btn>
+                </a>
               </template>
             </div>
           </div>
@@ -274,56 +241,57 @@
     </template>
 
     <template v-if="activeTab === 'mappings'">
-      <SectionCard v-if="unmappedShareNames.length > 0" class="q-mb-md">
+      <SectionCard v-if="unmappedShareNames.length > 0" class="mb-4">
         <template #actions>
-          <div class="row no-wrap items-center q-gutter-sm">
-            <span class="text-subtitle2">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium">
               Share names in transactions not in mapping ({{ unmappedShareNames.length }})
             </span>
-            <q-btn
-              label="Refresh"
-              color="primary"
-              flat
-              dense
-              size="sm"
-              :loading="loading.unmappedShareNames"
+            <button
+              class="btn btn-ghost btn-sm"
+              :disabled="loading.unmappedShareNames"
               @click="fetchUnmappedShareNames"
-            />
+            >
+              <!-- Lucide refresh-cw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
           </div>
         </template>
-        <p class="text-body2 text-grey-8">
+        <p class="text-sm text-muted mb-3">
           Add these to the mapping table (e.g. via upload) so they have a share code and company.
         </p>
-        <q-list dense class="q-mt-sm">
-          <q-item v-for="(name, i) in unmappedShareNames" :key="i" dense>
-            <q-item-section>{{ name }}</q-item-section>
-          </q-item>
-        </q-list>
+        <ul class="mt-2 space-y-1">
+          <li v-for="(name, i) in unmappedShareNames" :key="i" class="text-sm py-1 border-b border-kdl-border-subtle last:border-0">
+            {{ name }}
+          </li>
+        </ul>
       </SectionCard>
 
       <SectionCard title="Share codes, names and company">
         <template #actions>
-          <q-btn
-            label="Refresh"
-            color="primary"
-            flat
-            dense
-            :loading="loading.mappings"
+          <button
+            class="btn btn-ghost btn-sm"
+            :disabled="loading.mappings"
             @click="refreshMappingsTab"
-          />
+          >
+            <!-- Lucide refresh-cw -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
         </template>
-        <q-table
-          :rows="mappings"
-          :columns="mappingColumns"
-          row-key="id"
-          flat
-          bordered
+        <KTable
+          :columns="mappingKColumns"
+          :data="mappings"
           :loading="loading.mappings"
-          :rows-per-page-options="[25, 50, 100]"
+          dense
+          pagination="client"
+          :pageSize="25"
+          :pageSizeOptions="[25, 50, 100]"
         />
       </SectionCard>
     </template>
-  </q-page>
+  </AppPage>
 </template>
 
 <script setup>
@@ -341,27 +309,34 @@ import {
   getInvestecExportDownloadUrl,
 } from '../api/endpoints';
 import { useFormatCurrency } from '../composables/useFormatCurrency';
+import AppPage from '../components/shell/AppPage.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import FilterBar from '../components/klikk/FilterBar.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KFile from '../components/klikk/KFile.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 
 const { format } = useFormatCurrency();
 
 const activeTab = ref('data');
 
-const mappingColumns = [
-  { name: 'share_name', label: 'Share name', field: 'share_name', align: 'left', sortable: true },
-  { name: 'company', label: 'Company', field: 'company', align: 'left', sortable: true },
-  { name: 'share_code', label: 'Share code', field: 'share_code', align: 'left', sortable: true },
+const mappingKColumns = [
+  { accessorKey: 'share_name', header: 'Share name', enableSorting: true },
+  { accessorKey: 'company', header: 'Company', enableSorting: true },
+  { accessorKey: 'share_code', header: 'Share code', enableSorting: true },
 ];
 
-const transactionColumns = [
-  { name: 'date', label: 'Date', field: 'date', align: 'left', sortable: true },
-  { name: 'account_number', label: 'Account', field: 'account_number', align: 'left' },
-  { name: 'description', label: 'Description', field: 'description', align: 'left' },
-  { name: 'share_name', label: 'Share name', field: 'share_name', align: 'left' },
-  { name: 'type', label: 'Type', field: 'type', align: 'left' },
-  { name: 'quantity', label: 'Quantity', field: 'quantity', align: 'right' },
-  { name: 'value', label: 'Value (R)', field: 'value', align: 'right' },
+const transactionKColumns = [
+  { accessorKey: 'date', header: 'Date', enableSorting: true },
+  { accessorKey: 'account_number', header: 'Account', enableSorting: false },
+  { accessorKey: 'description', header: 'Description', enableSorting: false },
+  { accessorKey: 'share_name', header: 'Share name', enableSorting: false },
+  { accessorKey: 'type', header: 'Type', enableSorting: false },
+  { accessorKey: 'quantity', header: 'Quantity', enableSorting: false, meta: { align: 'right' } },
+  { accessorKey: 'value', header: 'Value (R)', enableSorting: false, meta: { align: 'right' } },
 ];
 
 const transactions = ref([]);
@@ -437,12 +412,6 @@ async function fetchTransactions() {
   } finally {
     loading.transactions = false;
   }
-}
-
-function onTableRequest(props) {
-  pagination.offset = props.pagination.offset ?? 0;
-  pagination.rowsPerPage = props.pagination.rowsPerPage ?? 100;
-  fetchTransactions();
 }
 
 function goPage(delta) {
@@ -599,3 +568,11 @@ onMounted(() => {
   fetchTransactions();
 });
 </script>
+
+<style scoped>
+.investec-upload-card {
+  flex: 1;
+  min-width: 220px;
+  max-width: 320px;
+}
+</style>

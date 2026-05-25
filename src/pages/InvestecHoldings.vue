@@ -1,55 +1,50 @@
 <template>
-  <q-page class="q-pa-md">
+  <AppPage>
     <PageHeader title="Share Holdings" subtitle="Investec portfolio positions" />
 
     <SectionCard title="Upload portfolio" class="isc-upload-card">
-      <q-file
+      <KFile
         v-model="uploadFile"
         label="Excel file(s)"
         accept=".xlsx,.xls"
-        outlined
-        dense
-        clearable
         multiple
-        class="q-mb-sm"
+        class="mb-3"
       />
-      <q-btn
-        label="Upload"
-        color="primary"
-        :loading="loading"
-        :disable="!(Array.isArray(uploadFile) ? uploadFile.length : uploadFile)"
+      <button
+        class="btn btn-primary"
+        :disabled="loading || !(Array.isArray(uploadFile) ? uploadFile?.length : uploadFile)"
         @click="uploadPortfolio"
-      />
-      <div v-if="result" class="q-mt-sm">
-        <q-banner
-          :class="result.error ? 'bg-negative' : 'bg-positive'"
-          rounded
-          dense
-          class="text-white"
-        >
-          {{ result.message }}
-        </q-banner>
-        <div v-if="result.fileErrors && result.fileErrors.length" class="q-mt-xs">
-          <q-banner
+      >
+        <span v-if="loading" class="inline-flex items-center gap-1">
+          <KSpinner size="14" /> Uploading…
+        </span>
+        <span v-else>Upload</span>
+      </button>
+      <div v-if="result" class="mt-3">
+        <KAlert :variant="result.error ? 'error' : 'success'" :body="result.message" />
+        <div v-if="result.fileErrors && result.fileErrors.length" class="flex flex-col gap-2 mt-2">
+          <KAlert
             v-for="(fe, i) in result.fileErrors"
             :key="i"
-            class="bg-negative text-white q-mb-xs"
-            rounded
-            dense
-          >
-            <strong>{{ fe.filename }}</strong>: {{ fe.error }}
-          </q-banner>
+            variant="error"
+            :title="fe.filename"
+            :body="fe.error"
+          />
         </div>
       </div>
     </SectionCard>
-  </q-page>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref } from 'vue';
 import { uploadInvestecPortfolio } from '../api/endpoints';
+import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KFile from '../components/klikk/KFile.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
 
 const uploadFile = ref(null);
 const loading = ref(false);

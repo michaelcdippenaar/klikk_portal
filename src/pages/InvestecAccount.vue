@@ -1,171 +1,151 @@
 <template>
-  <q-page class="q-pa-md">
+  <AppPage>
     <PageHeader title="Investec Account" subtitle="Search bank transactions across all Investec accounts" />
 
-    <q-tabs
+    <KTabs
+      :tabs="[
+        { name: 'transactions', label: 'Transactions' },
+        { name: 'sync', label: 'Update from API' },
+      ]"
       v-model="activeTab"
-      dense
-      class="text-grey"
-      active-color="primary"
-      indicator-color="primary"
-      align="left"
-    >
-      <q-tab name="transactions" label="Transactions" />
-      <q-tab name="sync" label="Update from API" />
-    </q-tabs>
-    <q-separator class="q-mb-md" />
+      :url-sync="false"
+      class="mb-4"
+    />
 
     <!-- Transactions tab -->
-    <SectionCard v-show="activeTab === 'transactions'" class="q-mb-lg">
-      <FilterBar class="q-mb-md">
-        <q-input
+    <SectionCard v-show="activeTab === 'transactions'" class="mb-6">
+      <FilterBar class="mb-4">
+        <KInput
           v-model="filters.description"
           label="Description"
-          outlined
-          dense
           clearable
           placeholder="Search in description"
-          class="col-12 col-sm-6 col-md-3"
+          class="flex-1 min-w-48"
           @update:model-value="debouncedSearch"
         />
-        <q-input
+        <KInput
           v-model="filters.amount"
           label="Amount"
-          outlined
-          dense
           clearable
           placeholder="Exact amount"
-          class="col-12 col-sm-6 col-md-2"
+          class="flex-1 min-w-32"
           @update:model-value="debouncedSearch"
         />
-        <q-input
+        <KInput
           v-model="filters.date_from"
           label="From date"
-          outlined
-          dense
-          clearable
           type="date"
-          class="col-12 col-sm-6 col-md-2"
+          clearable
+          class="flex-1 min-w-36"
           @update:model-value="onFilterChange"
         />
-        <q-input
+        <KInput
           v-model="filters.date_to"
           label="To date"
-          outlined
-          dense
-          clearable
           type="date"
-          class="col-12 col-sm-6 col-md-2"
-          @update:model-value="onFilterChange"
-        />
-        <q-select
-          v-model="filters.account"
-          :options="accountOptions"
-          label="Account"
-          outlined
-          dense
           clearable
-          emit-value
-          map-options
-          options-dense
-          class="col-12 col-sm-6 col-md-3"
+          class="flex-1 min-w-36"
           @update:model-value="onFilterChange"
         />
-        <div class="row no-wrap q-gutter-sm">
-          <q-btn
-            label="Search"
-            color="primary"
-            :loading="loadingTable"
-            @click="onFilterChange"
+        <div class="flex-1 min-w-48">
+          <KSelect
+            v-model="filters.account"
+            label="Account"
+            :options="accountOptions"
+            clearable
+            placeholder="All accounts"
+            @update:model-value="onFilterChange"
           />
-          <q-btn
-            label="Download Excel"
-            color="primary"
-            outline
-            :loading="loadingExport"
-            @click="downloadExcel"
-          />
+        </div>
+        <div class="flex gap-2 items-end">
+          <button class="btn btn-primary" :disabled="loadingTable" @click="onFilterChange">
+            <span v-if="loadingTable" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Searching…
+            </span>
+            <span v-else>Search</span>
+          </button>
+          <button class="btn btn-primary btn-outline" :disabled="loadingExport" @click="downloadExcel">
+            <span v-if="loadingExport" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Downloading…
+            </span>
+            <span v-else>Download Excel</span>
+          </button>
         </div>
       </FilterBar>
 
-      <q-table
-        :rows="transactions"
-        :columns="columns"
-        row-key="id"
-        flat
-        bordered
+      <KTable
+        :columns="kColumns"
+        :data="transactions"
         :loading="loadingTable"
-        :pagination="pagination"
-        @request="onTableRequest"
+        dense
+        pagination="none"
+        virtual
+        :virtualHeight="520"
       >
-        <template v-slot:body-cell-posting_date="props">
-          <q-td :props="props">{{ formatDate(props.row.posting_date) }}</q-td>
+        <template #cell-posting_date="{ value }">
+          {{ formatDate(value) }}
         </template>
-        <template v-slot:body-cell-transaction_date="props">
-          <q-td :props="props">{{ formatDate(props.row.transaction_date) }}</q-td>
+        <template #cell-transaction_date="{ value }">
+          {{ formatDate(value) }}
         </template>
-        <template v-slot:body-cell-amount="props">
+        <template #cell-amount="{ value }">
           <!-- ADR §1: accounting tables use parenthesised negatives. No colour on sign. -->
-          <q-td :props="props" class="kdl-numeric">{{ format(props.row.amount, { mode: 'accounting' }) }}</q-td>
+          <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
         </template>
-        <template v-slot:body-cell-running_balance="props">
-          <q-td :props="props" class="kdl-numeric">{{ format(props.row.running_balance, { mode: 'accounting' }) }}</q-td>
+        <template #cell-running_balance="{ value }">
+          <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
         </template>
-      </q-table>
+      </KTable>
 
-      <div class="row justify-between items-center q-mt-sm">
-        <q-btn
-          flat
-          dense
-          :disable="pagination.offset === 0"
+      <div class="flex justify-between items-center mt-3">
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="pagination.offset === 0"
           @click="goPage(-1)"
         >
           Previous
-        </q-btn>
-        <span class="text-body2">
+        </button>
+        <span class="text-sm text-muted">
           {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
         </span>
-        <q-btn
-          flat
-          dense
-          :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="pagination.offset + pagination.rowsPerPage >= transactionCount"
           @click="goPage(1)"
         >
           Next
-        </q-btn>
+        </button>
       </div>
     </SectionCard>
 
     <!-- Update from API tab -->
     <SectionCard
       v-show="activeTab === 'sync'"
-      class="q-mb-lg"
+      class="mb-6"
       title="Sync accounts and transactions from Investec API"
       description="Only transactions from the last update date to today are fetched (incremental update). If you have never synced, the last 180 days are fetched."
     >
-      <div class="row items-center q-col-gutter-md">
-        <div class="col-12 col-sm-auto">
-          <span class="text-weight-medium">Last update: </span>
-          <span v-if="lastSyncedAt">{{ formatDateTime(lastSyncedAt) }}</span>
-          <span v-else class="text-grey">Never</span>
+      <div class="flex flex-wrap items-center gap-4">
+        <div>
+          <span class="font-medium text-sm">Last update: </span>
+          <span v-if="lastSyncedAt" class="text-sm">{{ formatDateTime(lastSyncedAt) }}</span>
+          <span v-else class="text-sm text-muted">Never</span>
         </div>
-        <div class="col-12 col-sm-auto">
-          <q-btn
-            label="Update from API"
-            color="primary"
-            :loading="loadingSync"
-            @click="runSync"
-          />
-        </div>
+        <button class="btn btn-primary" :disabled="loadingSync" @click="runSync">
+          <span v-if="loadingSync" class="inline-flex items-center gap-1">
+            <KSpinner size="14" /> Syncing…
+          </span>
+          <span v-else>Update from API</span>
+        </button>
       </div>
-      <q-banner v-if="syncResult" rounded dense class="q-mt-md text-white" :class="syncResult.error ? 'bg-negative' : 'bg-positive'">
-        <template v-if="syncResult.error">{{ syncResult.error }}</template>
-        <template v-else>
-          Created {{ syncResult.created }}, updated {{ syncResult.updated }}. Synced from {{ syncResult.from_date }} to {{ syncResult.to_date }}.
-        </template>
-      </q-banner>
+      <div v-if="syncResult" class="mt-4">
+        <KAlert
+          :variant="syncResult.error ? 'error' : 'success'"
+          :body="syncResult.error || `Created ${syncResult.created}, updated ${syncResult.updated}. Synced from ${syncResult.from_date} to ${syncResult.to_date}.`"
+        />
+      </div>
     </SectionCard>
-  </q-page>
+  </AppPage>
 </template>
 
 <script setup>
@@ -178,9 +158,16 @@ import {
   downloadInvestecBankTransactionsExcel,
 } from '../api/endpoints';
 import { useFormatCurrency } from '../composables/useFormatCurrency';
+import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import FilterBar from '../components/klikk/FilterBar.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSelect from '../components/klikk/KSelect.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 
 const { format } = useFormatCurrency();
 
@@ -190,15 +177,15 @@ const loadingSync = ref(false);
 const syncResult = ref(null);
 const loadingExport = ref(false);
 
-const columns = [
-  { name: 'posting_date', label: 'Posting date', field: 'posting_date', align: 'left', sortable: true },
-  { name: 'transaction_date', label: 'Transaction date', field: 'transaction_date', align: 'left' },
-  { name: 'account_number', label: 'Account', field: 'account_number', align: 'left' },
-  { name: 'account_name', label: 'Account name', field: 'account_name', align: 'left' },
-  { name: 'type', label: 'Type', field: 'type', align: 'left' },
-  { name: 'amount', label: 'Amount (R)', field: 'amount', align: 'right' },
-  { name: 'description', label: 'Description', field: 'description', align: 'left' },
-  { name: 'running_balance', label: 'Balance (R)', field: 'running_balance', align: 'right' },
+const kColumns = [
+  { accessorKey: 'posting_date', header: 'Posting date', enableSorting: true },
+  { accessorKey: 'transaction_date', header: 'Transaction date', enableSorting: false },
+  { accessorKey: 'account_number', header: 'Account', enableSorting: false },
+  { accessorKey: 'account_name', header: 'Account name', enableSorting: false },
+  { accessorKey: 'type', header: 'Type', enableSorting: false },
+  { accessorKey: 'amount', header: 'Amount (R)', enableSorting: false, meta: { align: 'right' } },
+  { accessorKey: 'description', header: 'Description', enableSorting: false },
+  { accessorKey: 'running_balance', header: 'Balance (R)', enableSorting: false, meta: { align: 'right' } },
 ];
 
 const transactions = ref([]);
@@ -221,11 +208,10 @@ const pagination = reactive({
 });
 
 const accountOptions = computed(() => {
-  const list = (accounts.value?.results || []).map((a) => ({
+  return (accounts.value?.results || []).map((a) => ({
     label: a.account_number + (a.account_name ? ` – ${a.account_name}` : ''),
     value: a.account_number,
   }));
-  return list;
 });
 
 let searchTimeout = null;
@@ -240,6 +226,11 @@ function debouncedSearch() {
 function formatDate(val) {
   if (!val) return '';
   return new Date(val).toLocaleDateString();
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString();
 }
 
 function onFilterChange() {
@@ -282,11 +273,6 @@ async function fetchSyncStatus() {
     lastSyncedAt.value = null;
     console.error(err);
   }
-}
-
-function formatDateTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleString();
 }
 
 async function runSync() {
@@ -347,12 +333,6 @@ async function fetchTransactions() {
       loadingTable.value = false;
     }
   }
-}
-
-function onTableRequest(props) {
-  pagination.offset = props.pagination?.offset ?? 0;
-  pagination.rowsPerPage = props.pagination?.rowsPerPage ?? 100;
-  fetchTransactions();
 }
 
 function goPage(delta) {

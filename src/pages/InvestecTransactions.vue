@@ -1,194 +1,175 @@
 <template>
-  <q-page class="q-pa-md">
+  <AppPage>
     <PageHeader title="Share Transactions" subtitle="Investec trading history and transaction records" />
 
     <!-- Upload section -->
-    <SectionCard title="Upload transactions" class="q-mb-lg col-12 col-md-4-wrap">
-      <q-file
+    <SectionCard title="Upload transactions" class="mb-6 investec-tx-upload">
+      <KFile
         v-model="uploadFile"
         label="Excel file"
         accept=".xlsx,.xls"
-        outlined
-        dense
-        clearable
-        class="q-mb-sm"
+        class="mb-3"
       />
-      <q-btn
-        label="Upload"
-        color="primary"
-        :loading="loadingUpload"
-        :disable="!uploadFile"
+      <button
+        class="btn btn-primary"
+        :disabled="loadingUpload || !uploadFile"
         @click="uploadTransactions"
-      />
-      <div v-if="uploadResult" class="q-mt-sm text-body2">
-        <q-banner
-          :class="uploadResult.error ? 'bg-negative' : 'bg-positive'"
-          rounded
-          dense
-          class="text-white"
-        >
-          {{ uploadResult.error || uploadResult.message }}
-        </q-banner>
+      >
+        <span v-if="loadingUpload" class="inline-flex items-center gap-1">
+          <KSpinner size="14" /> Uploading…
+        </span>
+        <span v-else>Upload</span>
+      </button>
+      <div v-if="uploadResult" class="mt-3">
+        <KAlert :variant="uploadResult.error ? 'error' : 'success'" :body="uploadResult.error || uploadResult.message" />
       </div>
     </SectionCard>
 
     <!-- Transactions table -->
-    <SectionCard title="Share transactions" class="q-mb-lg">
-      <FilterBar class="q-mb-md">
-        <q-input
+    <SectionCard title="Share transactions" class="mb-6">
+      <FilterBar class="mb-4">
+        <KInput
           v-model="filters.account_number"
           label="Account number"
-          outlined
-          dense
           clearable
-          class="col-12 col-sm-4"
+          class="flex-1 min-w-36"
           @update:model-value="fetchTransactions"
         />
-        <q-input
+        <KInput
           v-model="filters.share_name"
           label="Share name"
-          outlined
-          dense
           clearable
-          class="col-12 col-sm-4"
+          class="flex-1 min-w-36"
           @update:model-value="fetchTransactions"
         />
-        <q-input
+        <KInput
           v-model="filters.type"
           label="Type"
-          outlined
-          dense
           clearable
-          class="col-12 col-sm-4"
+          class="flex-1 min-w-28"
           @update:model-value="fetchTransactions"
         />
       </FilterBar>
 
-      <q-table
-        :rows="transactions"
-        :columns="transactionColumns"
-        row-key="id"
-        flat
-        bordered
+      <KTable
+        :columns="transactionKColumns"
+        :data="transactions"
         :loading="loadingTable"
-        :pagination="pagination"
-        @request="onTableRequest"
+        dense
+        pagination="none"
+        virtual
+        :virtualHeight="520"
       >
-        <template v-slot:body-cell-date="props">
-          <q-td :props="props">{{ formatDate(props.row.date) }}</q-td>
+        <template #cell-date="{ value }">
+          {{ formatDate(value) }}
         </template>
-        <template v-slot:body-cell-value="props">
+        <template #cell-value="{ value }">
           <!-- ADR §1: accounting table — parenthesised negatives, no colour on sign -->
-          <q-td :props="props" class="kdl-numeric">{{ format(props.row.value, { mode: 'accounting' }) }}</q-td>
+          <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
         </template>
-        <template v-slot:body-cell-quantity="props">
-          <q-td :props="props" class="kdl-numeric">{{ format(props.row.quantity, { mode: 'accounting' }) }}</q-td>
+        <template #cell-quantity="{ value }">
+          <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
         </template>
-      </q-table>
+      </KTable>
 
-      <div class="row justify-between items-center q-mt-sm">
-        <q-btn
-          flat
-          dense
-          :disable="pagination.offset === 0"
+      <div class="flex justify-between items-center mt-3">
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="pagination.offset === 0"
           @click="goPage(-1)"
         >
           Previous
-        </q-btn>
-        <span class="text-body2">
+        </button>
+        <span class="text-sm text-muted">
           {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
         </span>
-        <q-btn
-          flat
-          dense
-          :disable="pagination.offset + pagination.rowsPerPage >= transactionCount"
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="pagination.offset + pagination.rowsPerPage >= transactionCount"
           @click="goPage(1)"
         >
           Next
-        </q-btn>
+        </button>
       </div>
     </SectionCard>
 
     <!-- Exports -->
     <SectionCard title="Exports">
-      <div class="row q-col-gutter-md">
-        <div class="col-12 col-md-4">
-          <q-btn
-            label="Export companies"
-            color="primary"
-            outline
-            :loading="loadingExportCompanies"
+      <div class="flex flex-wrap gap-6">
+        <div>
+          <button
+            class="btn btn-primary btn-outline"
+            :disabled="loadingExportCompanies"
             @click="exportCompanies"
-          />
-          <div v-if="exportData.companies" class="q-mt-sm text-body2">
-            Count: {{ exportData.companies.count }}
-            <q-list v-if="exportData.companies.companies?.length" dense class="q-mt-xs">
-              <q-item v-for="(c, i) in exportData.companies.companies.slice(0, 10)" :key="i" dense>
-                <q-item-section>{{ c.company }} ({{ c.share_code }})</q-item-section>
-              </q-item>
-              <q-item v-if="exportData.companies.companies.length > 10" dense>
-                <q-item-section class="text-grey">... and {{ exportData.companies.companies.length - 10 }} more</q-item-section>
-              </q-item>
-            </q-list>
+          >
+            <span v-if="loadingExportCompanies" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Exporting…
+            </span>
+            <span v-else>Export companies</span>
+          </button>
+          <div v-if="exportData.companies" class="mt-2 text-sm">
+            <p class="text-muted">Count: {{ exportData.companies.count }}</p>
+            <ul v-if="exportData.companies.companies?.length" class="mt-1 space-y-0.5 text-xs">
+              <li v-for="(c, i) in exportData.companies.companies.slice(0, 10)" :key="i">
+                {{ c.company }} ({{ c.share_code }})
+              </li>
+              <li v-if="exportData.companies.companies.length > 10" class="text-muted">
+                … and {{ exportData.companies.companies.length - 10 }} more
+              </li>
+            </ul>
           </div>
         </div>
-        <div class="col-12 col-md-4">
-          <q-btn
-            label="Export share names"
-            color="primary"
-            outline
-            :loading="loadingExportShareNames"
+        <div>
+          <button
+            class="btn btn-primary btn-outline"
+            :disabled="loadingExportShareNames"
             @click="exportShareNames"
-          />
-          <div v-if="exportData.shareNames" class="q-mt-sm text-body2">
-            Count: {{ exportData.shareNames.count }}
-            <q-list v-if="exportData.shareNames.share_names?.length" dense class="q-mt-xs">
-              <q-item v-for="(s, i) in exportData.shareNames.share_names.slice(0, 10)" :key="i" dense>
-                <q-item-section>{{ s }}</q-item-section>
-              </q-item>
-              <q-item v-if="exportData.shareNames.share_names.length > 10" dense>
-                <q-item-section class="text-grey">... and {{ exportData.shareNames.share_names.length - 10 }} more</q-item-section>
-              </q-item>
-            </q-list>
+          >
+            <span v-if="loadingExportShareNames" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Exporting…
+            </span>
+            <span v-else>Export share names</span>
+          </button>
+          <div v-if="exportData.shareNames" class="mt-2 text-sm">
+            <p class="text-muted">Count: {{ exportData.shareNames.count }}</p>
+            <ul v-if="exportData.shareNames.share_names?.length" class="mt-1 space-y-0.5 text-xs">
+              <li v-for="(s, i) in exportData.shareNames.share_names.slice(0, 10)" :key="i">{{ s }}</li>
+              <li v-if="exportData.shareNames.share_names.length > 10" class="text-muted">
+                … and {{ exportData.shareNames.share_names.length - 10 }} more
+              </li>
+            </ul>
           </div>
         </div>
-        <div class="col-12 col-md-4">
-          <q-btn
-            label="Export transactions (Excel)"
-            color="primary"
-            outline
-            :loading="loadingExportTransactions"
+        <div>
+          <button
+            class="btn btn-primary btn-outline"
+            :disabled="loadingExportTransactions"
             @click="exportTransactions"
-          />
-          <div v-if="exportData.transactions" class="q-mt-sm text-body2">
-            <q-banner
-              v-if="exportData.transactions.error"
-              class="bg-negative text-white"
-              rounded
-              dense
-            >
-              {{ exportData.transactions.error }}
-            </q-banner>
+          >
+            <span v-if="loadingExportTransactions" class="inline-flex items-center gap-1">
+              <KSpinner size="14" /> Exporting…
+            </span>
+            <span v-else>Export transactions (Excel)</span>
+          </button>
+          <div v-if="exportData.transactions" class="mt-2 text-sm">
+            <KAlert v-if="exportData.transactions.error" variant="error" :body="exportData.transactions.error" />
             <template v-else>
               <span>{{ exportData.transactions.message }}</span>
-              <q-btn
+              <a
                 v-if="exportData.transactions.filename"
-                flat
-                dense
-                color="primary"
                 :href="exportDownloadUrl(exportData.transactions.filename)"
                 target="_blank"
                 download
-                class="q-ml-sm"
+                class="btn btn-ghost btn-sm ml-2"
               >
                 Download
-              </q-btn>
+              </a>
             </template>
           </div>
         </div>
       </div>
     </SectionCard>
-  </q-page>
+  </AppPage>
 </template>
 
 <script setup>
@@ -202,20 +183,26 @@ import {
   getInvestecExportDownloadUrl,
 } from '../api/endpoints';
 import { useFormatCurrency } from '../composables/useFormatCurrency';
+import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import FilterBar from '../components/klikk/FilterBar.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KFile from '../components/klikk/KFile.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KTable from '../components/klikk/KTable.vue';
 
 const { format } = useFormatCurrency();
 
-const transactionColumns = [
-  { name: 'date', label: 'Date', field: 'date', align: 'left', sortable: true },
-  { name: 'account_number', label: 'Account', field: 'account_number', align: 'left' },
-  { name: 'description', label: 'Description', field: 'description', align: 'left' },
-  { name: 'share_name', label: 'Share name', field: 'share_name', align: 'left' },
-  { name: 'type', label: 'Type', field: 'type', align: 'left' },
-  { name: 'quantity', label: 'Quantity', field: 'quantity', align: 'right' },
-  { name: 'value', label: 'Value (R)', field: 'value', align: 'right' },
+const transactionKColumns = [
+  { accessorKey: 'date', header: 'Date', enableSorting: true },
+  { accessorKey: 'account_number', header: 'Account', enableSorting: false },
+  { accessorKey: 'description', header: 'Description', enableSorting: false },
+  { accessorKey: 'share_name', header: 'Share name', enableSorting: false },
+  { accessorKey: 'type', header: 'Type', enableSorting: false },
+  { accessorKey: 'quantity', header: 'Quantity', enableSorting: false, meta: { align: 'right' } },
+  { accessorKey: 'value', header: 'Value (R)', enableSorting: false, meta: { align: 'right' } },
 ];
 
 const transactions = ref([]);
@@ -273,12 +260,6 @@ async function fetchTransactions() {
   } finally {
     loadingTable.value = false;
   }
-}
-
-function onTableRequest(props) {
-  pagination.offset = props.pagination.offset ?? 0;
-  pagination.rowsPerPage = props.pagination.rowsPerPage ?? 100;
-  fetchTransactions();
 }
 
 function goPage(delta) {
@@ -354,3 +335,9 @@ onMounted(() => {
   fetchTransactions();
 });
 </script>
+
+<style scoped>
+.investec-tx-upload {
+  max-width: 480px;
+}
+</style>

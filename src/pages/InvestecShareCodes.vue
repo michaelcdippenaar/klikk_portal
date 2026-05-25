@@ -1,88 +1,80 @@
 <template>
-  <q-page class="q-pa-md">
+  <AppPage>
     <PageHeader title="Share Codes" subtitle="Investec share code mappings and company data" />
 
-    <q-tabs
+    <KTabs
+      :tabs="[
+        { name: 'share-codes', label: 'Share codes' },
+        { name: 'unmapped', label: 'Share names in transactions not in mapping' },
+      ]"
       v-model="activeTab"
-      dense
-      class="text-grey"
-      active-color="primary"
-      indicator-color="primary"
-      align="left"
-      narrow-indicator
-      @update:model-value="onTabChange"
-    >
-      <q-tab name="share-codes" label="Share codes" />
-      <q-tab name="unmapped" label="Share names in transactions not in mapping" />
-    </q-tabs>
-
-    <q-separator class="q-mb-md" />
+      :url-sync="false"
+      class="mb-4"
+    />
 
     <template v-if="activeTab === 'share-codes'">
       <SectionCard>
         <template #actions>
-          <div class="row no-wrap q-gutter-sm items-center">
-            <q-btn
-              label="Download to Excel"
-              color="primary"
-              outline
-              :loading="loadingExport"
+          <div class="flex flex-wrap gap-2 items-center">
+            <button
+              class="btn btn-primary btn-outline btn-sm"
+              :disabled="loadingExport"
               @click="downloadMapping"
-            />
-            <q-btn
-              label="Upload"
-              color="primary"
-              :loading="loadingUpload"
-              :disable="!uploadFile"
+            >
+              <span v-if="loadingExport" class="inline-flex items-center gap-1">
+                <KSpinner size="12" /> Downloading…
+              </span>
+              <span v-else>Download to Excel</span>
+            </button>
+            <button
+              class="btn btn-primary btn-sm"
+              :disabled="loadingUpload || !uploadFile"
               @click="uploadMapping"
-            />
-            <q-file
+            >
+              <span v-if="loadingUpload" class="inline-flex items-center gap-1">
+                <KSpinner size="12" /> Uploading…
+              </span>
+              <span v-else>Upload</span>
+            </button>
+            <KFile
               v-model="uploadFile"
               label="Excel file"
               accept=".xlsx,.xls"
-              outlined
-              dense
-              clearable
               class="isc-file-input"
             />
-            <q-btn
-              label="Refresh"
-              color="primary"
-              flat
-              dense
-              :loading="loadingMappings"
+            <button
+              class="btn btn-ghost btn-sm"
+              :disabled="loadingMappings"
               @click="refreshShareCodes"
-            />
+            >
+              <!-- Lucide refresh-cw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
           </div>
         </template>
 
-        <p class="text-body2 text-grey-8 q-mb-md">
+        <p class="text-sm text-muted mb-4">
           Download the current mapping to Excel, edit (add/change Share_Name, Share_Name2, Share_Name3, Company, Share_Code), then upload to update.
           Share_Name2 and Share_Name3 are alternative names used for the same share in transaction files.
         </p>
-        <div v-if="uploadResult" class="q-mb-sm">
-          <q-banner
-            :class="uploadResult.error ? 'bg-negative' : 'bg-positive'"
-            rounded
-            dense
-            class="text-white"
-          >
-            {{ uploadResult.error || uploadResult.message }}
-          </q-banner>
+        <div v-if="uploadResult" class="mb-3">
+          <KAlert
+            :variant="uploadResult.error ? 'error' : 'success'"
+            :body="uploadResult.error || uploadResult.message"
+          />
         </div>
-        <div v-if="exportResult && exportResult.error" class="q-mb-sm">
-          <q-banner class="bg-negative text-white" rounded dense>
-            {{ exportResult.error }}
-          </q-banner>
+        <div v-if="exportResult && exportResult.error" class="mb-3">
+          <KAlert variant="error" :body="exportResult.error" />
         </div>
-        <q-table
-          :rows="mappings"
-          :columns="mappingColumns"
-          row-key="id"
-          flat
-          bordered
+        <KTable
+          :columns="mappingKColumns"
+          :data="mappings"
           :loading="loadingMappings"
-          :rows-per-page-options="[25, 50, 100]"
+          dense
+          pagination="client"
+          :pageSize="25"
+          :pageSizeOptions="[25, 50, 100]"
         />
       </SectionCard>
     </template>
@@ -90,39 +82,38 @@
     <template v-if="activeTab === 'unmapped'">
       <SectionCard>
         <template #actions>
-          <div class="row no-wrap items-center q-gutter-sm">
-            <span class="text-subtitle2">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium">
               Share names in transactions not in mapping ({{ unmappedShareNames.length }})
             </span>
-            <q-btn
-              label="Refresh"
-              color="primary"
-              flat
-              dense
-              size="sm"
-              :loading="loadingUnmapped"
+            <button
+              class="btn btn-ghost btn-sm"
+              :disabled="loadingUnmapped"
               @click="fetchUnmappedShareNames"
-            />
+            >
+              <!-- Lucide refresh-cw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
           </div>
         </template>
 
-        <p class="text-body2 text-grey-8 q-mb-sm">
+        <p class="text-sm text-muted mb-3">
           Add these to the mapping table: download Share codes above, add rows for these names (and Company/Share_Code if you have them), then upload.
         </p>
         <EmptyState
           v-if="unmappedShareNames.length === 0 && !loadingUnmapped"
-          icon="check_circle"
           title="No unmapped share names"
           body="All share names in transactions are mapped."
         />
-        <q-list v-else dense class="q-mt-sm">
-          <q-item v-for="(name, i) in unmappedShareNames" :key="i" dense>
-            <q-item-section>{{ name }}</q-item-section>
-          </q-item>
-        </q-list>
+        <ul v-else class="mt-2 space-y-1">
+          <li v-for="(name, i) in unmappedShareNames" :key="i" class="text-sm py-1 border-b border-kdl-border-subtle last:border-0">
+            {{ name }}
+          </li>
+        </ul>
       </SectionCard>
     </template>
-  </q-page>
+  </AppPage>
 </template>
 
 <script setup>
@@ -133,18 +124,24 @@ import {
   uploadInvestecMapping,
 } from '../api/endpoints';
 import { API_BASE_URL, API_ENDPOINTS } from '../utils/constants';
+import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import EmptyState from '../components/klikk/EmptyState.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KFile from '../components/klikk/KFile.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 
 const activeTab = ref('share-codes');
 
-const mappingColumns = [
-  { name: 'share_name', label: 'Share name', field: 'share_name', align: 'left', sortable: true },
-  { name: 'share_name2', label: 'Alt name 2', field: 'share_name2', align: 'left', sortable: true },
-  { name: 'share_name3', label: 'Alt name 3', field: 'share_name3', align: 'left', sortable: true },
-  { name: 'company', label: 'Company', field: 'company', align: 'left', sortable: true },
-  { name: 'share_code', label: 'Share code', field: 'share_code', align: 'left', sortable: true },
+const mappingKColumns = [
+  { accessorKey: 'share_name', header: 'Share name', enableSorting: true },
+  { accessorKey: 'share_name2', header: 'Alt name 2', enableSorting: true },
+  { accessorKey: 'share_name3', header: 'Alt name 3', enableSorting: true },
+  { accessorKey: 'company', header: 'Company', enableSorting: true },
+  { accessorKey: 'share_code', header: 'Share code', enableSorting: true },
 ];
 
 const mappings = ref([]);
