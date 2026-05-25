@@ -1,6 +1,8 @@
 // app global css in SASS format
 @import '@fontsource/geist/400.css'
 @import '@fontsource/geist/500.css'
+@import '@fontsource/geist/600.css'
+@import '@fontsource/geist/700.css'
 @import './kdl-quasar-typography'
 
 //
@@ -17,8 +19,12 @@
 
 body
   font-family: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif
-  font-size: 13px
-  line-height: 1.35
+  font-size: 14px
+  line-height: 1.45
+  font-feature-settings: 'cv11', 'ss03'
+  -webkit-font-smoothing: antialiased
+  -moz-osx-font-smoothing: grayscale
+  text-rendering: optimizeLegibility
 
 // q-page background removed — KDL sets body background via CSS variable
 // (--kdl-page-bg) so that dark mode flips correctly. Keeping a hard-coded
@@ -34,12 +40,12 @@ body
 // If you add .q-table--dense via the dense prop on a q-table, these cells
 // apply the smaller padding from $table-dense-cell-padding.
 .q-table
-  font-size: 13px
+  font-size: 14px
   th
-    font-size: 11px
+    font-size: 12px
     font-weight: 600
     text-transform: uppercase
-    letter-spacing: 0.04em
+    letter-spacing: 0.06em
   td
     font-variant-numeric: tabular-nums
 
@@ -48,7 +54,7 @@ body
 // on tables for the full quasar dense rendering path.
 .q-table tbody td,
 .q-table thead th
-  padding: 6px 10px
+  padding: 8px 12px
 
 // q-input / q-select density
 .q-field--outlined .q-field__control
@@ -59,6 +65,6 @@ body
 
 // Quasar btn default size reduction
 .q-btn:not(.q-btn--dense)
-  font-size: 12px
+  font-size: 14px
   min-height: 32px
-  padding: 0 10px
+  padding: 0 12px

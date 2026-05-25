@@ -16,19 +16,19 @@ module.exports = {
         info:    { 50: '#eff6ff', 100: '#dbeafe',                 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
       },
       fontFamily: {
-        sans: ['DM Sans', 'system-ui', 'sans-serif'],
+        sans: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
       },
       fontSize: {
-        // Finance-admin density pass — ~12-15% smaller than general KDL defaults.
-        // Portal-level override; do not merge upstream without review.
-        micro: ['11px', { lineHeight: '15px', fontWeight: '500' }],
-        xs:    ['12px', { lineHeight: '16px' }],
-        sm:    ['13px', { lineHeight: '18px' }],
-        base:  ['13px', { lineHeight: '18px' }],
-        lg:    ['15px', { lineHeight: '22px' }],
-        xl:    ['18px', { lineHeight: '24px' }],
-        '2xl': ['22px', { lineHeight: '28px' }],
-        '3xl': ['28px', { lineHeight: '34px' }],
+        // Geist 14px finance-admin variant — CDO Fix #1.
+        // Floor: 12px (.text-micro). 11px permitted only on .text-overline (tracked uppercase).
+        micro: ['12px', { lineHeight: '1.35', fontWeight: '500' }],
+        xs:    ['13px', { lineHeight: '1.4' }],
+        sm:    ['14px', { lineHeight: '1.45' }],
+        base:  ['14px', { lineHeight: '1.45' }],
+        lg:    ['16px', { lineHeight: '1.3' }],
+        xl:    ['22px', { lineHeight: '1.2' }],
+        '2xl': ['28px', { lineHeight: '1.15' }],
+        '3xl': ['36px', { lineHeight: '1.1' }],
       },
       borderRadius: {
         // Finance-admin density pass — one step tighter than general KDL.

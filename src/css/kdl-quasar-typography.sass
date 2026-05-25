@@ -1,17 +1,19 @@
-// KDL compact typography + spacing — Quasar utility-class overrides
+// KDL finance-admin typography + spacing — Quasar utility-class overrides
 // Imported from app.sass AFTER the Quasar styles so these win at equal specificity.
 // !important is NOT used; specificity is raised via the body ancestor where needed.
 //
-// Target ramp (matches e98b88d density pass philosophy):
-//   h1 28px / h2 24px / h3 22px / h4 18px / h5 16px / h6 14px
-//   subtitle1 13px / subtitle2 12px / body1 13px / body2 12px
-//   caption 11px / overline 10px
+// Type ramp (Geist 14px finance-admin variant — CDO Fix #1):
+//   h1 28px/1.15/600 · h2 24px/1.2/600 · h3 22px/1.2/600
+//   h4 18px/1.25/600 · h5 16px/1.3/600 · h6 14px/1.35/600
+//   subtitle1 14px/1.4/500 · subtitle2 13px/1.4/500
+//   body1 14px/1.45/400 · body2 13px/1.45/400
+//   caption 12px/1.35/400 · overline 11px/1.3/600 uppercase +0.06em
 
 // ── Typography ────────────────────────────────────────────────────────────────
 
 body .text-h1
   font-size: 28px
-  line-height: 1.2
+  line-height: 1.15
   font-weight: 600
 
 body .text-h2
@@ -36,159 +38,152 @@ body .text-h5
 
 body .text-h6
   font-size: 14px
-  line-height: 1.3
+  line-height: 1.35
   font-weight: 600
 
 body .text-subtitle1
-  font-size: 13px
-  line-height: 1.35
+  font-size: 14px
+  line-height: 1.4
   font-weight: 500
 
 body .text-subtitle2
-  font-size: 12px
-  line-height: 1.35
+  font-size: 13px
+  line-height: 1.4
   font-weight: 500
 
 body .text-body1
-  font-size: 13px
-  line-height: 1.4
+  font-size: 14px
+  line-height: 1.45
   font-weight: 400
 
 body .text-body2
-  font-size: 12px
-  line-height: 1.4
+  font-size: 13px
+  line-height: 1.45
   font-weight: 400
 
 body .text-caption
-  font-size: 11px
-  line-height: 1.3
+  font-size: 12px
+  line-height: 1.35
   font-weight: 400
 
 body .text-overline
-  font-size: 10px
+  font-size: 11px
   line-height: 1.3
   font-weight: 600
   text-transform: uppercase
   letter-spacing: 0.06em
 
-// ── Quasar spacing utility compression ───────────────────────────────────────
-// Quasar default scale: md=16px, lg=24px, xl=32px.
-// Compressed one step to match compact density goal.
+// ── Quasar spacing utility — comfortable density ──────────────────────────────
+// Previous pass was too tight (md=12, lg=16). Raised one notch toward standard.
 
 // Padding
 body .q-pa-md
-  padding: 12px
-
-body .q-pa-lg
   padding: 16px
 
+body .q-pa-lg
+  padding: 24px
+
 body .q-pa-xl
-  padding: 20px
+  padding: 32px
 
 body .q-px-md
-  padding-left: 12px
-  padding-right: 12px
-
-body .q-px-lg
   padding-left: 16px
   padding-right: 16px
 
-body .q-py-md
-  padding-top: 12px
-  padding-bottom: 12px
+body .q-px-lg
+  padding-left: 24px
+  padding-right: 24px
 
-body .q-py-lg
+body .q-py-md
   padding-top: 16px
   padding-bottom: 16px
 
+body .q-py-lg
+  padding-top: 24px
+  padding-bottom: 24px
+
 // Margin — all four sides for md / lg
 body .q-ma-md
-  margin: 10px
+  margin: 16px
 
 body .q-ma-lg
-  margin: 14px
+  margin: 24px
 
 // Margin bottom
 body .q-mb-md
-  margin-bottom: 10px
+  margin-bottom: 16px
 
 body .q-mb-lg
-  margin-bottom: 14px
+  margin-bottom: 24px
 
 body .q-mb-xl
-  margin-bottom: 20px
+  margin-bottom: 32px
 
 // Margin top
 body .q-mt-md
-  margin-top: 10px
+  margin-top: 16px
 
 body .q-mt-lg
-  margin-top: 14px
+  margin-top: 24px
 
 body .q-mt-xl
-  margin-top: 20px
+  margin-top: 32px
 
 // Margin y (vertical)
 body .q-my-md
-  margin-top: 10px
-  margin-bottom: 10px
+  margin-top: 16px
+  margin-bottom: 16px
 
 body .q-my-lg
-  margin-top: 14px
-  margin-bottom: 14px
+  margin-top: 24px
+  margin-bottom: 24px
 
 // Margin x (horizontal)
 body .q-mx-md
-  margin-left: 10px
-  margin-right: 10px
+  margin-left: 16px
+  margin-right: 16px
 
 body .q-mx-lg
-  margin-left: 14px
-  margin-right: 14px
+  margin-left: 24px
+  margin-right: 24px
 
-// Gutter helpers (q-gutter-* sets margins on children via --q-gutter)
-// Quasar implements q-gutter-* using CSS custom properties + negative margin trick.
-// Override the custom property values directly where Quasar exposes them.
+// Gutter helpers — raised from 10/14 → 16/24
 body .q-gutter-md > *,
 body .q-gutter-md
-  --q-gutter: 10px
+  --q-gutter: 16px
 
 body .q-gutter-lg > *,
 body .q-gutter-lg
-  --q-gutter: 14px
+  --q-gutter: 24px
 
 body .q-gutter-xl > *,
 body .q-gutter-xl
-  --q-gutter: 20px
+  --q-gutter: 32px
 
-// Quasar gutter implementation uses margin-top + margin-left on children
-// and a negative margin on the container equal to the gutter value.
-// Because we cannot easily update the negative-margin wrapper via a variable,
-// supplement with the concrete values to ensure consistency.
 body .q-gutter-md
-  margin: -5px
+  margin: -8px
   > *
-    margin: 5px
+    margin: 8px
 
 body .q-gutter-lg
-  margin: -7px
+  margin: -12px
   > *
-    margin: 7px
+    margin: 12px
 
 body .q-gutter-xl
-  margin: -10px
+  margin: -16px
   > *
-    margin: 10px
+    margin: 16px
 
 // ── Quasar badge / chip / tooltip ────────────────────────────────────────────
 
 body .q-badge
-  font-size: 11px
+  font-size: 12px
   padding: 4px 6px
 
 body .q-chip
-  font-size: 12px
+  font-size: 13px
   min-height: 24px
 
 body .q-tooltip
-  font-size: 11px
+  font-size: 12px
