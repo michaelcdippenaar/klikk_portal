@@ -3,13 +3,13 @@
     <PageHeader title="Watchlist" subtitle="Stock data from yfinance — select a symbol for details and chart" />
     <div class="row items-center justify-end q-mb-md">
       <div class="row items-center q-gutter-sm">
-        <span v-if="lastRefreshedAt" class="text-caption text-grey-7">Last updated {{ lastRefreshedAt.toLocaleTimeString() }}</span>
+        <span v-if="lastRefreshedAt" class="text-muted">Last updated {{ lastRefreshedAt.toLocaleTimeString() }}</span>
         <q-input
           v-model="newSymbol"
           label="Add symbol"
           dense
           outlined
-          style="max-width: 140px"
+          class="fi-symbol-input"
           @keyup.enter="addSymbol"
         />
         <q-btn label="Add" color="primary" :loading="addingSymbol" :disable="!newSymbol.trim()" @click="addSymbol" />
@@ -18,266 +18,259 @@
 
     <div class="row q-col-gutter-lg">
       <div class="col-12 col-lg-4 col-xl-3">
-        <q-card class="q-mb-lg">
-          <q-card-section class="q-pa-sm">
-            <div class="row items-center justify-between q-mb-sm">
-              <span class="text-caption text-grey-7">Toggle columns to show</span>
-              <q-btn flat dense icon="view_column" size="sm" color="grey-7">
-                <q-menu anchor="top right" self="top left">
-                  <q-list dense style="min-width: 200px">
-                    <q-item v-for="col in allSymbolColumnOptions" :key="col.name" dense>
-                      <q-item-section side>
-                        <q-checkbox v-model="visibleColumns" :val="col.name" dense @update:model-value="saveWatchlistColumns" />
-                      </q-item-section>
-                      <q-item-section>{{ col.label }}</q-item-section>
-                    </q-item>
-                  </q-list>
-                </q-menu>
-              </q-btn>
-            </div>
-            <q-table
-              :rows="symbols"
-              :columns="visibleTableColumns"
-              row-key="symbol"
-              flat
-              bordered
-              :loading="loadingSymbols"
-              selection="single"
-              v-model:selected="selectedSymbolRow"
-              @update:selected="onSymbolSelected"
-              :pagination="symbolsPagination"
-              :rows-per-page-options="[25, 50, 100, 0]"
-              dense
-              class="watchlist-table"
-            >
-              <template #body-cell-last_close="props">
-                <q-td :props="props" class="text-right">
-                  {{ props.row.last_close != null ? Number(props.row.last_close).toFixed(2) : '—' }}
-                </q-td>
-              </template>
-              <template #body-cell-change="props">
-                <q-td :props="props" class="text-right" :class="props.row.change != null && props.row.change >= 0 ? 'text-positive' : props.row.change != null ? 'text-negative' : ''">
-                  {{ props.row.change != null ? Number(props.row.change).toFixed(2) : '—' }}
-                </q-td>
-              </template>
-              <template #body-cell-change_pct="props">
-                <q-td :props="props" class="text-right" :class="props.row.change_pct != null && props.row.change_pct >= 0 ? 'text-positive' : props.row.change_pct != null ? 'text-negative' : ''">
-                  {{ props.row.change_pct != null ? Number(props.row.change_pct).toFixed(2) + '%' : '—' }}
-                </q-td>
-              </template>
-              <template #body-cell-pe_ratio="props">
-                <q-td :props="props" class="text-right">
-                  {{ props.row.pe_ratio != null ? Number(props.row.pe_ratio).toFixed(1) : '—' }}
-                </q-td>
-              </template>
-              <template #body-cell-forward_pe="props">
-                <q-td :props="props" class="text-right">
-                  {{ props.row.forward_pe != null ? Number(props.row.forward_pe).toFixed(1) : '—' }}
-                </q-td>
-              </template>
-              <template #body-cell-dividend_yield="props">
-                <q-td :props="props" class="text-right">
-                  {{ props.row.dividend_yield != null ? Number(props.row.dividend_yield).toFixed(2) + '%' : '—' }}
-                </q-td>
-              </template>
-              <template #body-cell-recommendation="props">
-                <q-td :props="props" class="text-left">
-                  <span
-                    :class="{
-                      'text-positive': props.row.recommendation === 'Buy',
-                      'text-negative': props.row.recommendation === 'Sell',
-                      'text-grey-8': props.row.recommendation === 'Hold' || !props.row.recommendation
-                    }"
-                  >
-                    {{ props.row.recommendation || '—' }}
-                  </span>
-                </q-td>
-              </template>
-            </q-table>
-          </q-card-section>
-        </q-card>
+        <SectionCard class="q-mb-lg">
+          <template #actions>
+            <q-btn flat dense icon="view_column" size="sm" class="kdl-icon-action">
+              <q-menu anchor="top right" self="top left">
+                <q-list dense class="fi-col-menu">
+                  <q-item v-for="col in allSymbolColumnOptions" :key="col.name" dense>
+                    <q-item-section side>
+                      <q-checkbox v-model="visibleColumns" :val="col.name" dense @update:model-value="saveWatchlistColumns" />
+                    </q-item-section>
+                    <q-item-section>{{ col.label }}</q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+            </q-btn>
+          </template>
+          <span class="text-muted">Toggle columns to show</span>
+          <q-table
+            :rows="symbols"
+            :columns="visibleTableColumns"
+            row-key="symbol"
+            flat
+            bordered
+            :loading="loadingSymbols"
+            selection="single"
+            v-model:selected="selectedSymbolRow"
+            @update:selected="onSymbolSelected"
+            :pagination="symbolsPagination"
+            :rows-per-page-options="[25, 50, 100, 0]"
+            dense
+            class="watchlist-table"
+          >
+            <template #body-cell-last_close="props">
+              <q-td :props="props" class="text-right">
+                {{ props.row.last_close != null ? Number(props.row.last_close).toFixed(2) : '—' }}
+              </q-td>
+            </template>
+            <template #body-cell-change="props">
+              <q-td :props="props" class="text-right" :class="props.row.change != null && props.row.change >= 0 ? 'text-positive' : props.row.change != null ? 'text-negative' : ''">
+                {{ props.row.change != null ? Number(props.row.change).toFixed(2) : '—' }}
+              </q-td>
+            </template>
+            <template #body-cell-change_pct="props">
+              <q-td :props="props" class="text-right" :class="props.row.change_pct != null && props.row.change_pct >= 0 ? 'text-positive' : props.row.change_pct != null ? 'text-negative' : ''">
+                {{ props.row.change_pct != null ? Number(props.row.change_pct).toFixed(2) + '%' : '—' }}
+              </q-td>
+            </template>
+            <template #body-cell-pe_ratio="props">
+              <q-td :props="props" class="text-right">
+                {{ props.row.pe_ratio != null ? Number(props.row.pe_ratio).toFixed(1) : '—' }}
+              </q-td>
+            </template>
+            <template #body-cell-forward_pe="props">
+              <q-td :props="props" class="text-right">
+                {{ props.row.forward_pe != null ? Number(props.row.forward_pe).toFixed(1) : '—' }}
+              </q-td>
+            </template>
+            <template #body-cell-dividend_yield="props">
+              <q-td :props="props" class="text-right">
+                {{ props.row.dividend_yield != null ? Number(props.row.dividend_yield).toFixed(2) + '%' : '—' }}
+              </q-td>
+            </template>
+            <template #body-cell-recommendation="props">
+              <q-td :props="props" class="text-left">
+                <span
+                  :class="{
+                    'text-positive': props.row.recommendation === 'Buy',
+                    'text-negative': props.row.recommendation === 'Sell',
+                  }"
+                >
+                  {{ props.row.recommendation || '—' }}
+                </span>
+              </q-td>
+            </template>
+          </q-table>
+        </SectionCard>
       </div>
 
       <div class="col-12 col-lg-8 col-xl-9">
-    <q-card v-if="selectedSymbol" class="q-mb-lg">
-      <q-card-section>
-        <div class="row items-center justify-between q-mb-md">
-          <div class="row items-center q-gutter-md">
-            <span class="text-h6">{{ selectedSymbol }}</span>
-            <span class="text-body1 text-grey-8">{{ selectedSymbolCompany }}</span>
-            <span v-if="selectedSymbolLastClose != null" class="text-h6">{{ Number(selectedSymbolLastClose).toFixed(2) }}</span>
+        <SectionCard v-if="selectedSymbol" class="q-mb-lg">
+          <template #actions>
+            <q-btn label="Refresh prices" color="primary" icon="refresh" :loading="refreshing" dense @click="refreshSelected" />
+            <q-btn label="Refresh extra" color="secondary" icon="sync" :loading="refreshingExtra" dense @click="refreshExtraSelected" />
+          </template>
+
+          <div class="row items-center q-gutter-md q-mb-md">
+            <span class="section-header">{{ selectedSymbol }}</span>
+            <span class="text-muted">{{ selectedSymbolCompany }}</span>
+            <span v-if="selectedSymbolLastClose != null" class="section-header">{{ Number(selectedSymbolLastClose).toFixed(2) }}</span>
             <span v-if="selectedSymbolChange != null" :class="selectedSymbolChange >= 0 ? 'text-positive' : 'text-negative'">
               {{ selectedSymbolChange >= 0 ? '+' : '' }}{{ Number(selectedSymbolChange).toFixed(2) }}
               ({{ selectedSymbolChangePct != null ? (selectedSymbolChangePct >= 0 ? '+' : '') + Number(selectedSymbolChangePct).toFixed(2) + '%' : '—' }})
             </span>
           </div>
-          <div class="row q-gutter-sm">
-            <q-btn label="Refresh prices" color="primary" icon="refresh" :loading="refreshing" dense @click="refreshSelected" />
-            <q-btn label="Refresh extra" color="secondary" icon="sync" :loading="refreshingExtra" dense @click="refreshExtraSelected" />
+
+          <div class="row q-gutter-xs q-mb-md">
+            <q-btn v-for="p in periodOptions" :key="p.key" :label="p.label" :color="selectedPeriod === p.key ? 'primary' : 'grey-7'" flat dense no-caps :outline="selectedPeriod !== p.key" @click="setPeriod(p.key)" />
           </div>
-        </div>
 
-        <div class="row q-gutter-xs q-mb-md">
-          <q-btn v-for="p in periodOptions" :key="p.key" :label="p.label" :color="selectedPeriod === p.key ? 'primary' : 'grey-7'" flat dense no-caps :outline="selectedPeriod !== p.key" @click="setPeriod(p.key)" />
-        </div>
+          <FinancialLineChart v-if="chartLabels.length" :labels="chartLabels" :data="chartData" class="q-mb-lg" />
 
-        <FinancialLineChart v-if="chartLabels.length" :labels="chartLabels" :data="chartData" class="q-mb-lg" />
+          <q-tabs v-model="detailTab" dense align="left" class="q-mb-md">
+            <q-tab name="prices" label="Overview" />
+            <q-tab name="dividends" label="Dividends" />
+            <q-tab name="splits" label="Splits" />
+            <q-tab name="info" label="Company info" />
+            <q-tab name="financials" label="Financials" />
+            <q-tab name="earnings" label="Earnings" />
+            <q-tab name="analyst" label="Analyst" />
+            <q-tab name="ownership" label="Ownership" />
+            <q-tab name="news" label="News" />
+          </q-tabs>
+          <q-separator />
 
-        <q-tabs v-model="detailTab" dense align="left" class="q-mb-md">
-          <q-tab name="prices" label="Overview" />
-          <q-tab name="dividends" label="Dividends" />
-          <q-tab name="splits" label="Splits" />
-          <q-tab name="info" label="Company info" />
-          <q-tab name="financials" label="Financials" />
-          <q-tab name="earnings" label="Earnings" />
-          <q-tab name="analyst" label="Analyst" />
-          <q-tab name="ownership" label="Ownership" />
-          <q-tab name="news" label="News" />
-        </q-tabs>
-        <q-separator />
-
-        <q-tab-panels v-model="detailTab" animated class="q-pt-md">
-          <q-tab-panel name="prices">
-            <div class="row q-col-gutter-sm q-mb-sm">
-              <q-input v-model="startDate" label="From" type="date" dense outlined style="max-width: 160px" />
-              <q-input v-model="endDate" label="To" type="date" dense outlined style="max-width: 160px" />
-              <q-btn label="Load" color="primary" flat dense :loading="loadingHistory" @click="loadHistory" />
-            </div>
-            <q-table
-              :rows="history"
-              :columns="historyColumns"
-              row-key="date"
-              flat
-              bordered
-              :loading="loadingHistory"
-              :rows-per-page-options="[10, 25, 50]"
-              dense
-            />
-          </q-tab-panel>
-
-          <q-tab-panel name="dividends">
-            <p v-if="trailingDividendYieldPct != null" class="text-body2 q-mb-sm">
-              <strong>Trailing dividend yield (12m):</strong> {{ Number(trailingDividendYieldPct).toFixed(2) }}%
-            </p>
-            <q-table
-              :rows="dividends"
-              :columns="dividendColumns"
-              row-key="date"
-              flat
-              bordered
-              :loading="loadingExtra.dividends"
-              dense
-              hide-bottom
-            />
-            <p v-if="!loadingExtra.dividends && dividends.length === 0" class="text-grey-7">No dividends stored. Click "Refresh extra data" to fetch.</p>
-          </q-tab-panel>
-
-          <q-tab-panel name="splits">
-            <q-table
-              :rows="splits"
-              :columns="splitColumns"
-              row-key="date"
-              flat
-              bordered
-              :loading="loadingExtra.splits"
-              dense
-              hide-bottom
-            />
-            <p v-if="!loadingExtra.splits && splits.length === 0" class="text-grey-7">No splits stored. Click "Refresh extra data" to fetch.</p>
-          </q-tab-panel>
-
-          <q-tab-panel name="info">
-            <div v-if="loadingExtra.info" class="text-grey-7">Loading…</div>
-            <pre v-else-if="companyInfo" class="q-pa-sm bg-grey-2 rounded-borders overflow-auto" style="max-height: 400px; font-size: 12px;">{{ JSON.stringify(companyInfo, null, 2) }}</pre>
-            <p v-else class="text-grey-7">No company info. Click "Refresh extra data" to fetch.</p>
-          </q-tab-panel>
-
-          <q-tab-panel name="financials">
-            <q-select v-model="financialsFreq" :options="['yearly', 'quarterly', 'trailing']" dense outlined style="max-width: 140px" class="q-mb-sm" @update:model-value="loadFinancials" />
-            <div v-if="loadingExtra.financials" class="text-grey-7">Loading…</div>
-            <div v-else-if="financialStatements.length">
-              <div v-for="stmt in financialStatements" :key="stmt.statement_type" class="q-mb-lg">
-                <div class="text-subtitle2 q-mb-sm">{{ stmt.statement_type }}</div>
-                <pre class="q-pa-sm bg-grey-2 rounded-borders overflow-auto" style="max-height: 300px; font-size: 11px;">{{ JSON.stringify(stmt.data, null, 2) }}</pre>
+          <q-tab-panels v-model="detailTab" animated class="q-pt-md">
+            <q-tab-panel name="prices">
+              <div class="row q-col-gutter-sm q-mb-sm">
+                <q-input v-model="startDate" label="From" type="date" dense outlined class="fi-date-input" />
+                <q-input v-model="endDate" label="To" type="date" dense outlined class="fi-date-input" />
+                <q-btn label="Load" color="primary" flat dense :loading="loadingHistory" @click="loadHistory" />
               </div>
-            </div>
-            <p v-else class="text-grey-7">No financial statements. Click "Refresh extra data" to fetch.</p>
-          </q-tab-panel>
+              <q-table
+                :rows="history"
+                :columns="historyColumns"
+                row-key="date"
+                flat
+                bordered
+                :loading="loadingHistory"
+                :rows-per-page-options="[10, 25, 50]"
+                dense
+              />
+            </q-tab-panel>
 
-          <q-tab-panel name="earnings">
-            <q-select v-model="earningsFreq" :options="['yearly', 'quarterly', 'trailing']" dense outlined style="max-width: 140px" class="q-mb-sm" @update:model-value="loadEarnings" />
-            <div v-if="loadingExtra.earnings" class="text-grey-7">Loading…</div>
-            <pre v-else-if="earningsData.length" class="q-pa-sm bg-grey-2 rounded-borders overflow-auto" style="max-height: 350px; font-size: 12px;">{{ JSON.stringify(earningsData, null, 2) }}</pre>
-            <p v-else class="text-grey-7">No earnings data. Click "Refresh extra data" to fetch.</p>
-            <div v-if="earningsEstimate && Object.keys(earningsEstimate.data || {}).length" class="q-mt-md">
-              <div class="text-subtitle2 q-mb-sm">Earnings estimate</div>
-              <pre class="q-pa-sm bg-grey-2 rounded-borders overflow-auto" style="max-height: 200px; font-size: 11px;">{{ JSON.stringify(earningsEstimate.data, null, 2) }}</pre>
-            </div>
-          </q-tab-panel>
+            <q-tab-panel name="dividends">
+              <p v-if="trailingDividendYieldPct != null" class="text-muted q-mb-sm">
+                <strong>Trailing dividend yield (12m):</strong> {{ Number(trailingDividendYieldPct).toFixed(2) }}%
+              </p>
+              <q-table
+                :rows="dividends"
+                :columns="dividendColumns"
+                row-key="date"
+                flat
+                bordered
+                :loading="loadingExtra.dividends"
+                dense
+                hide-bottom
+              />
+              <p v-if="!loadingExtra.dividends && dividends.length === 0" class="text-muted">No dividends stored. Click "Refresh extra data" to fetch.</p>
+            </q-tab-panel>
 
-          <q-tab-panel name="analyst">
-            <div v-if="loadingExtra.analyst" class="text-grey-7">Loading…</div>
-            <template v-else>
-              <div v-if="analystPriceTarget && Object.keys(analystPriceTarget.data || {}).length" class="q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">Price target</div>
-                <pre class="q-pa-sm bg-grey-2 rounded-borders" style="font-size: 12px;">{{ JSON.stringify(analystPriceTarget.data, null, 2) }}</pre>
-              </div>
-              <div v-if="analystRecommendations && (analystRecommendations.data || []).length">
-                <div class="text-subtitle2 q-mb-sm">Recommendations</div>
-                <pre class="q-pa-sm bg-grey-2 rounded-borders overflow-auto" style="max-height: 300px; font-size: 11px;">{{ JSON.stringify(analystRecommendations.data, null, 2) }}</pre>
-              </div>
-              <p v-if="(!analystPriceTarget || !Object.keys(analystPriceTarget.data || {}).length) && (!analystRecommendations || !(analystRecommendations.data || []).length)" class="text-grey-7">No analyst data. Click "Refresh extra data" to fetch.</p>
-            </template>
-          </q-tab-panel>
+            <q-tab-panel name="splits">
+              <q-table
+                :rows="splits"
+                :columns="splitColumns"
+                row-key="date"
+                flat
+                bordered
+                :loading="loadingExtra.splits"
+                dense
+                hide-bottom
+              />
+              <p v-if="!loadingExtra.splits && splits.length === 0" class="text-muted">No splits stored. Click "Refresh extra data" to fetch.</p>
+            </q-tab-panel>
 
-          <q-tab-panel name="ownership">
-            <div v-if="loadingExtra.ownership" class="text-grey-7">Loading…</div>
-            <div v-else-if="ownershipData.length">
-              <div v-for="o in ownershipData" :key="o.holder_type" class="q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">{{ o.holder_type }}</div>
-                <pre class="q-pa-sm bg-grey-2 rounded-borders overflow-auto" style="max-height: 250px; font-size: 11px;">{{ JSON.stringify(o.data, null, 2) }}</pre>
-              </div>
-            </div>
-            <p v-else class="text-grey-7">No ownership data. Click "Refresh extra data" to fetch.</p>
-          </q-tab-panel>
+            <q-tab-panel name="info">
+              <div v-if="loadingExtra.info" class="text-muted">Loading…</div>
+              <pre v-else-if="companyInfo" class="fi-json-pre fi-json-pre--tall">{{ JSON.stringify(companyInfo, null, 2) }}</pre>
+              <p v-else class="text-muted">No company info. Click "Refresh extra data" to fetch.</p>
+            </q-tab-panel>
 
-          <q-tab-panel name="news">
-            <div v-if="loadingExtra.news" class="text-grey-7">Loading…</div>
-            <div v-else-if="newsItems.length" class="column q-gutter-md">
-              <article
-                v-for="n in newsItems"
-                :key="n.title + (n.published_at || '')"
-                class="news-article q-pa-md rounded-borders bg-grey-1"
-                style="max-width: 720px;"
-              >
-                <h3 class="text-subtitle1 text-weight-medium q-mt-none q-mb-sm" style="line-height: 1.4;">
-                  <a v-if="n.link" :href="n.link" target="_blank" rel="noopener" class="text-primary" style="text-decoration: none;">{{ n.title }}</a>
-                  <span v-else>{{ n.title }}</span>
-                </h3>
-                <div class="text-caption text-grey-7 q-mb-sm">
-                  <span v-if="n.publisher">{{ n.publisher }}</span>
-                  <span v-if="n.publisher && n.published_at"> · </span>
-                  <span v-if="n.published_at">{{ new Date(n.published_at).toLocaleString() }}</span>
+            <q-tab-panel name="financials">
+              <q-select v-model="financialsFreq" :options="['yearly', 'quarterly', 'trailing']" dense outlined class="fi-freq-select q-mb-sm" @update:model-value="loadFinancials" />
+              <div v-if="loadingExtra.financials" class="text-muted">Loading…</div>
+              <div v-else-if="financialStatements.length">
+                <div v-for="stmt in financialStatements" :key="stmt.statement_type" class="q-mb-lg">
+                  <div class="section-header q-mb-sm">{{ stmt.statement_type }}</div>
+                  <pre class="fi-json-pre fi-json-pre--medium">{{ JSON.stringify(stmt.data, null, 2) }}</pre>
                 </div>
-                <p v-if="n.summary" class="text-body2 q-my-none" style="line-height: 1.6; white-space: pre-wrap; word-break: break-word;">{{ n.summary }}</p>
-              </article>
-            </div>
-            <p v-else class="text-grey-7">No news. Click "Refresh extra data" to fetch.</p>
-          </q-tab-panel>
-        </q-tab-panels>
+              </div>
+              <p v-else class="text-muted">No financial statements. Click "Refresh extra data" to fetch.</p>
+            </q-tab-panel>
 
-        <q-banner v-if="refreshResult" rounded dense :class="refreshResult.error ? 'bg-negative' : 'bg-positive'" class="text-white q-mt-md">
-          {{ refreshResult.error || `Refreshed ${refreshResult.created ?? 0} points.` }}
-        </q-banner>
-        <q-banner v-if="refreshExtraResult" rounded dense :class="refreshExtraResult.error ? 'bg-negative' : 'bg-positive'" class="text-white q-mt-sm">
-          {{ refreshExtraResult.error || (refreshExtraResult.results ? `Extra data refreshed.` : '') }}
-        </q-banner>
-      </q-card-section>
-    </q-card>
+            <q-tab-panel name="earnings">
+              <q-select v-model="earningsFreq" :options="['yearly', 'quarterly', 'trailing']" dense outlined class="fi-freq-select q-mb-sm" @update:model-value="loadEarnings" />
+              <div v-if="loadingExtra.earnings" class="text-muted">Loading…</div>
+              <pre v-else-if="earningsData.length" class="fi-json-pre fi-json-pre--tall">{{ JSON.stringify(earningsData, null, 2) }}</pre>
+              <p v-else class="text-muted">No earnings data. Click "Refresh extra data" to fetch.</p>
+              <div v-if="earningsEstimate && Object.keys(earningsEstimate.data || {}).length" class="q-mt-md">
+                <div class="section-header q-mb-sm">Earnings estimate</div>
+                <pre class="fi-json-pre fi-json-pre--short">{{ JSON.stringify(earningsEstimate.data, null, 2) }}</pre>
+              </div>
+            </q-tab-panel>
 
-    <q-banner v-else class="bg-grey-3 rounded-borders q-mt-md">
-      Select a symbol from the watchlist to view chart, price history and extra data (dividends, company info, financials, earnings, analyst, ownership, news).
-    </q-banner>
+            <q-tab-panel name="analyst">
+              <div v-if="loadingExtra.analyst" class="text-muted">Loading…</div>
+              <template v-else>
+                <div v-if="analystPriceTarget && Object.keys(analystPriceTarget.data || {}).length" class="q-mb-md">
+                  <div class="section-header q-mb-sm">Price target</div>
+                  <pre class="fi-json-pre">{{ JSON.stringify(analystPriceTarget.data, null, 2) }}</pre>
+                </div>
+                <div v-if="analystRecommendations && (analystRecommendations.data || []).length">
+                  <div class="section-header q-mb-sm">Recommendations</div>
+                  <pre class="fi-json-pre fi-json-pre--medium">{{ JSON.stringify(analystRecommendations.data, null, 2) }}</pre>
+                </div>
+                <p v-if="(!analystPriceTarget || !Object.keys(analystPriceTarget.data || {}).length) && (!analystRecommendations || !(analystRecommendations.data || []).length)" class="text-muted">No analyst data. Click "Refresh extra data" to fetch.</p>
+              </template>
+            </q-tab-panel>
+
+            <q-tab-panel name="ownership">
+              <div v-if="loadingExtra.ownership" class="text-muted">Loading…</div>
+              <div v-else-if="ownershipData.length">
+                <div v-for="o in ownershipData" :key="o.holder_type" class="q-mb-md">
+                  <div class="section-header q-mb-sm">{{ o.holder_type }}</div>
+                  <pre class="fi-json-pre fi-json-pre--medium">{{ JSON.stringify(o.data, null, 2) }}</pre>
+                </div>
+              </div>
+              <p v-else class="text-muted">No ownership data. Click "Refresh extra data" to fetch.</p>
+            </q-tab-panel>
+
+            <q-tab-panel name="news">
+              <div v-if="loadingExtra.news" class="text-muted">Loading…</div>
+              <div v-else-if="newsItems.length" class="column q-gutter-md">
+                <article
+                  v-for="n in newsItems"
+                  :key="n.title + (n.published_at || '')"
+                  class="fi-news-article"
+                >
+                  <h3 class="fi-news-article__title">
+                    <a v-if="n.link" :href="n.link" target="_blank" rel="noopener" class="fi-news-article__link">{{ n.title }}</a>
+                    <span v-else>{{ n.title }}</span>
+                  </h3>
+                  <div class="text-muted fi-news-article__meta">
+                    <span v-if="n.publisher">{{ n.publisher }}</span>
+                    <span v-if="n.publisher && n.published_at"> · </span>
+                    <span v-if="n.published_at">{{ new Date(n.published_at).toLocaleString() }}</span>
+                  </div>
+                  <p v-if="n.summary" class="fi-news-article__summary">{{ n.summary }}</p>
+                </article>
+              </div>
+              <p v-else class="text-muted">No news. Click "Refresh extra data" to fetch.</p>
+            </q-tab-panel>
+          </q-tab-panels>
+
+          <q-banner v-if="refreshResult" rounded dense :class="refreshResult.error ? 'bg-negative' : 'bg-positive'" class="text-white q-mt-md">
+            {{ refreshResult.error || `Refreshed ${refreshResult.created ?? 0} points.` }}
+          </q-banner>
+          <q-banner v-if="refreshExtraResult" rounded dense :class="refreshExtraResult.error ? 'bg-negative' : 'bg-positive'" class="text-white q-mt-sm">
+            {{ refreshExtraResult.error || (refreshExtraResult.results ? `Extra data refreshed.` : '') }}
+          </q-banner>
+        </SectionCard>
+
+        <div v-else class="klikk-alert-strip tone-info q-mt-md">
+          Select a symbol from the watchlist to view chart, price history and extra data (dividends, company info, financials, earnings, analyst, ownership, news).
+        </div>
       </div>
     </div>
   </q-page>
@@ -287,6 +280,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import FinancialLineChart from '../components/FinancialLineChart.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
 import {
   getFinancialInvestmentsSymbols,
   getFinancialInvestmentsHistory,
@@ -689,3 +683,83 @@ onMounted(async () => {
   loadSymbols();
 });
 </script>
+
+<style scoped>
+/* JSON viewer pre blocks — tokenised, no inline styles */
+.fi-json-pre {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--kdl-hover-bg);
+  border: 1px solid var(--kdl-border-subtle);
+  color: var(--kdl-text-secondary);
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  overflow-y: auto;
+  white-space: pre;
+}
+.fi-json-pre--short  { max-height: 200px; }
+.fi-json-pre--medium { max-height: 300px; }
+.fi-json-pre--tall   { max-height: 400px; }
+
+/* News article card */
+.fi-news-article {
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--kdl-border-subtle);
+  background: var(--kdl-card-bg);
+  max-width: 720px;
+}
+
+.fi-news-article__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.fi-news-article__link {
+  color: var(--kdl-accent);
+  text-decoration: none;
+}
+
+.fi-news-article__link:hover {
+  text-decoration: underline;
+}
+
+.fi-news-article__meta {
+  margin-bottom: 6px;
+}
+
+.fi-news-article__summary {
+  font-size: 12px;
+  color: var(--kdl-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Column toggle icon button */
+.kdl-icon-action {
+  color: var(--kdl-text-muted);
+}
+
+/* Constrained inputs — no inline style */
+.fi-symbol-input {
+  max-width: 140px;
+}
+
+.fi-date-input {
+  max-width: 160px;
+}
+
+.fi-freq-select {
+  max-width: 140px;
+}
+
+.fi-col-menu {
+  min-width: 200px;
+}
+</style>
