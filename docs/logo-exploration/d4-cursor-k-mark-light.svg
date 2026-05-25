@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none">
+  <!--
+    Direction 4: The Cursor K
+    A K drawn in a monospaced/slab rhythm with a short underscore-cursor
+    below — referencing terminal/console operator software directly.
+    No container. Pure line-weight mark. Works at 20px because the K
+    proportion is chunky and the cursor adds a distinctive base.
+    Accent: klikk-amber (#C8922A) on the cursor only — a single warm note
+    that signals "active / live session" without being loud.
+  -->
+
+  <!-- K vertical stem — slightly heavy to read at small size -->
+  <line x1="5.5" y1="3.5" x2="5.5" y2="14.5" stroke="#1A1917" stroke-width="2" stroke-linecap="round"/>
+  <!-- K upper arm -->
+  <line x1="5.5" y1="9" x2="13.5" y2="3.5" stroke="#1A1917" stroke-width="2" stroke-linecap="round"/>
+  <!-- K lower arm -->
+  <line x1="5.5" y1="9" x2="13.5" y2="14.5" stroke="#1A1917" stroke-width="2" stroke-linecap="round"/>
+  <!-- Cursor underscore — amber accent, sits just below the K -->
+  <line x1="4" y1="17" x2="10" y2="17" stroke="#C8922A" stroke-width="2" stroke-linecap="round"/>
+</svg>

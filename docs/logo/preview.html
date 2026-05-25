@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klikk Financials — Logo Preview</title>
+  <style>
+    /* ── KDL tokens ── */
+    :root {
+      --klikk-surface-light:       #F5F1EB;
+      --klikk-ink-light:           #1A1917;
+      --klikk-ink-secondary-light: rgba(26,25,23,0.40);
+      --klikk-divider-light:       rgba(26,25,23,0.14);
+
+      --klikk-surface-dark:        #141210;
+      --klikk-ink-dark:            #E8E3DC;
+      --klikk-ink-secondary-dark:  rgba(232,227,220,0.38);
+      --klikk-divider-dark:        rgba(232,227,220,0.18);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: #0E0C0B;
+      padding: 0;
+    }
+
+    /* ── Layout ── */
+    .page {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 100vh;
+    }
+
+    .panel {
+      padding: 48px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 48px;
+    }
+
+    .panel--light { background: var(--klikk-surface-light); }
+    .panel--dark  { background: var(--klikk-surface-dark);  }
+
+    /* ── Panel label ── */
+    .panel-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.35;
+    }
+    .panel--light .panel-label { color: var(--klikk-ink-light); }
+    .panel--dark  .panel-label { color: var(--klikk-ink-dark);  }
+
+    /* ── Section ── */
+    .section-title {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      opacity: 0.30;
+    }
+    .panel--light .section-title { color: var(--klikk-ink-light); }
+    .panel--dark  .section-title { color: var(--klikk-ink-dark);  }
+
+    /* ── Mark display ── */
+    .mark-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .mark-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .mark-size-label {
+      font-size: 8px;
+      letter-spacing: 0.08em;
+      opacity: 0.28;
+      font-variant-numeric: tabular-nums;
+    }
+    .panel--light .mark-size-label { color: var(--klikk-ink-light); }
+    .panel--dark  .mark-size-label { color: var(--klikk-ink-dark);  }
+
+    /* ── SVG colour wiring ── */
+    .mark-light-svg { color: var(--klikk-ink-light); }
+    .mark-dark-svg  { color: var(--klikk-ink-dark);  }
+
+    /* ── Lockup display ── */
+    .lockup-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .lockup-light-svg { color: var(--klikk-ink-light); }
+    .lockup-dark-svg  { color: var(--klikk-ink-dark);  }
+
+    /* ── Header simulation ── */
+    .header-sim {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 44px;
+      padding: 0 16px;
+      border-radius: 6px;
+    }
+    .header-sim--light {
+      background: var(--klikk-surface-light);
+      border: 1px solid var(--klikk-divider-light);
+    }
+    .header-sim--dark {
+      background: #1C1917;
+      border: 1px solid var(--klikk-divider-dark);
+    }
+
+    .header-nav-ghost {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .header-nav-pill {
+      width: 48px;
+      height: 6px;
+      border-radius: 3px;
+      opacity: 0.12;
+    }
+    .panel--light .header-nav-pill { background: var(--klikk-ink-light); }
+    .panel--dark  .header-nav-pill { background: var(--klikk-ink-dark);  }
+
+    .header-avatar-ghost {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      opacity: 0.12;
+      margin-left: 8px;
+    }
+    .panel--light .header-avatar-ghost { background: var(--klikk-ink-light); }
+    .panel--dark  .header-avatar-ghost { background: var(--klikk-ink-dark);  }
+
+    /* ── Divider ── */
+    .rule {
+      height: 1px;
+      opacity: 0.12;
+    }
+    .panel--light .rule { background: var(--klikk-ink-light); }
+    .panel--dark  .rule { background: var(--klikk-ink-dark);  }
+
+    /* ── Favicon strip ── */
+    .favicon-strip {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .tab-ghost {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 4px 4px 0 0;
+      font-size: 10px;
+      opacity: 0.22;
+      white-space: nowrap;
+    }
+    .tab-ghost--active {
+      opacity: 1;
+    }
+    .tab-ghost--light-bg {
+      background: rgba(26,25,23,0.06);
+      color: var(--klikk-ink-light);
+    }
+    .tab-ghost--light-bg.tab-ghost--active {
+      background: var(--klikk-surface-light);
+      color: var(--klikk-ink-light);
+    }
+    .tab-ghost--dark-bg {
+      background: rgba(232,227,220,0.06);
+      color: var(--klikk-ink-dark);
+    }
+    .tab-ghost--dark-bg.tab-ghost--active {
+      background: var(--klikk-surface-dark);
+      color: var(--klikk-ink-dark);
+    }
+
+    .tab-title-ghost {
+      display: inline-block;
+      height: 7px;
+      width: 48px;
+      border-radius: 2px;
+      opacity: 0.4;
+    }
+    .tab-ghost--light-bg .tab-title-ghost { background: var(--klikk-ink-light); }
+    .tab-ghost--dark-bg  .tab-title-ghost { background: var(--klikk-ink-dark);  }
+
+    /* ── Token table ── */
+    .token-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9px;
+      letter-spacing: 0.02em;
+    }
+    .token-table td {
+      padding: 5px 0;
+      vertical-align: top;
+      border-bottom: 1px solid;
+    }
+    .panel--light .token-table td {
+      border-color: var(--klikk-divider-light);
+      color: var(--klikk-ink-light);
+    }
+    .panel--dark .token-table td {
+      border-color: var(--klikk-divider-dark);
+      color: var(--klikk-ink-dark);
+    }
+    .token-table td:first-child {
+      opacity: 0.45;
+      width: 44%;
+      padding-right: 8px;
+      font-family: 'Courier New', monospace;
+    }
+    .token-table td:last-child {
+      opacity: 0.75;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════════════════════════════════ LIGHT PANEL ══ -->
+  <div class="panel panel--light">
+    <div>
+      <div class="panel-label">Light — klikk-surface #F5F1EB</div>
+    </div>
+
+    <!-- Mark size ladder -->
+    <div>
+      <div class="section-title">Mark — size ladder</div>
+      <div class="mark-row">
+
+        <!-- 20px -->
+        <div class="mark-item">
+          <svg class="mark-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1"    fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">20px</span>
+        </div>
+
+        <!-- 32px -->
+        <div class="mark-item">
+          <svg class="mark-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="32" height="32" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1"    fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">32px</span>
+        </div>
+
+        <!-- 48px -->
+        <div class="mark-item">
+          <svg class="mark-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="48" height="48" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1"    fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">48px</span>
+        </div>
+
+        <!-- 64px -->
+        <div class="mark-item">
+          <svg class="mark-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="64" height="64" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1"    fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1"    fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">64px</span>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Lockup -->
+    <div>
+      <div class="section-title">Horizontal lockup</div>
+      <div class="lockup-container">
+        <svg class="lockup-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 20" width="164" height="20" fill="none">
+          <rect x="0" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+          <rect x="0" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+          <rect x="0" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+          <text x="20" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="500" letter-spacing="-0.325" fill="currentColor">klikk</text>
+          <text x="62" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="10" font-weight="400" letter-spacing="0.7" fill="currentColor" opacity="0.4">financials</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Header simulation -->
+    <div>
+      <div class="section-title">44px header — in context</div>
+      <div class="header-sim header-sim--light">
+        <svg class="mark-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none">
+          <rect x="4" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+          <rect x="4" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+          <rect x="4" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+        </svg>
+        <svg class="lockup-light-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 20" width="144" height="20" fill="none">
+          <text x="0" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="500" letter-spacing="-0.325" fill="currentColor">klikk</text>
+          <text x="42" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="10" font-weight="400" letter-spacing="0.7" fill="currentColor" opacity="0.4">financials</text>
+        </svg>
+        <div class="header-nav-ghost">
+          <div class="header-nav-pill"></div>
+          <div class="header-nav-pill"></div>
+          <div class="header-nav-pill"></div>
+          <div class="header-avatar-ghost"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Favicon in tab strip -->
+    <div>
+      <div class="section-title">Favicon — tab strip simulation</div>
+      <div class="favicon-strip">
+        <!-- ghost tabs -->
+        <div class="tab-ghost tab-ghost--light-bg">
+          <div style="width:12px;height:12px;border-radius:2px;background:#888;opacity:0.25;flex-shrink:0;"></div>
+          <span class="tab-title-ghost"></span>
+        </div>
+        <div class="tab-ghost tab-ghost--light-bg">
+          <div style="width:12px;height:12px;border-radius:2px;background:#888;opacity:0.25;flex-shrink:0;"></div>
+          <span class="tab-title-ghost"></span>
+        </div>
+        <!-- active tab — klikk financials -->
+        <div class="tab-ghost tab-ghost--light-bg tab-ghost--active">
+          <img src="favicon.svg" width="14" height="14" alt="Klikk Financials favicon" style="flex-shrink:0;">
+          <span style="font-size:10px;opacity:0.7;white-space:nowrap;">klikk financials</span>
+        </div>
+        <div class="tab-ghost tab-ghost--light-bg">
+          <div style="width:12px;height:12px;border-radius:2px;background:#888;opacity:0.25;flex-shrink:0;"></div>
+          <span class="tab-title-ghost"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Token reference -->
+    <div>
+      <div class="section-title">Tokens used</div>
+      <table class="token-table">
+        <tr><td>klikk-surface</td><td>#F5F1EB — page canvas</td></tr>
+        <tr><td>klikk-ink</td><td>#1A1917 — mark + wordmark</td></tr>
+        <tr><td>klikk-ink-secondary</td><td>#1A1917 @ 40% — "financials"</td></tr>
+        <tr><td>klikk-divider</td><td>#1A1917 @ 14% — rules</td></tr>
+      </table>
+    </div>
+
+  </div><!-- /light panel -->
+
+
+  <!-- ══════════════════════════════════════ DARK PANEL ══ -->
+  <div class="panel panel--dark">
+    <div>
+      <div class="panel-label">Dark — klikk-surface #141210</div>
+    </div>
+
+    <!-- Mark size ladder -->
+    <div>
+      <div class="section-title">Mark — size ladder</div>
+      <div class="mark-row">
+
+        <div class="mark-item">
+          <svg class="mark-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">20px</span>
+        </div>
+
+        <div class="mark-item">
+          <svg class="mark-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="32" height="32" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">32px</span>
+        </div>
+
+        <div class="mark-item">
+          <svg class="mark-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="48" height="48" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">48px</span>
+        </div>
+
+        <div class="mark-item">
+          <svg class="mark-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="64" height="64" fill="none">
+            <rect x="4" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+            <rect x="4" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+          </svg>
+          <span class="mark-size-label">64px</span>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Lockup -->
+    <div>
+      <div class="section-title">Horizontal lockup</div>
+      <div class="lockup-container">
+        <svg class="lockup-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 20" width="164" height="20" fill="none">
+          <rect x="0" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+          <rect x="0" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+          <rect x="0" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+          <text x="20" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="500" letter-spacing="-0.325" fill="currentColor">klikk</text>
+          <text x="62" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="10" font-weight="400" letter-spacing="0.7" fill="currentColor" opacity="0.4">financials</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Header simulation -->
+    <div>
+      <div class="section-title">44px header — in context</div>
+      <div class="header-sim header-sim--dark">
+        <svg class="mark-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none">
+          <rect x="4" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+          <rect x="4" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+          <rect x="4" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+        </svg>
+        <svg class="lockup-dark-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 20" width="144" height="20" fill="none">
+          <text x="0" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="500" letter-spacing="-0.325" fill="currentColor">klikk</text>
+          <text x="42" y="14" font-family="'Geist','Inter',ui-sans-serif,system-ui,sans-serif" font-size="10" font-weight="400" letter-spacing="0.7" fill="currentColor" opacity="0.4">financials</text>
+        </svg>
+        <div class="header-nav-ghost">
+          <div class="header-nav-pill"></div>
+          <div class="header-nav-pill"></div>
+          <div class="header-nav-pill"></div>
+          <div class="header-avatar-ghost"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Favicon in tab strip -->
+    <div>
+      <div class="section-title">Favicon — tab strip simulation</div>
+      <div class="favicon-strip">
+        <div class="tab-ghost tab-ghost--dark-bg">
+          <div style="width:12px;height:12px;border-radius:2px;background:#aaa;opacity:0.2;flex-shrink:0;"></div>
+          <span class="tab-title-ghost"></span>
+        </div>
+        <div class="tab-ghost tab-ghost--dark-bg">
+          <div style="width:12px;height:12px;border-radius:2px;background:#aaa;opacity:0.2;flex-shrink:0;"></div>
+          <span class="tab-title-ghost"></span>
+        </div>
+        <!-- active tab -->
+        <div class="tab-ghost tab-ghost--dark-bg tab-ghost--active">
+          <img src="favicon.svg" width="14" height="14" alt="Klikk Financials favicon" style="flex-shrink:0;">
+          <span style="font-size:10px;opacity:0.7;white-space:nowrap;color:#E8E3DC;">klikk financials</span>
+        </div>
+        <div class="tab-ghost tab-ghost--dark-bg">
+          <div style="width:12px;height:12px;border-radius:2px;background:#aaa;opacity:0.2;flex-shrink:0;"></div>
+          <span class="tab-title-ghost"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- Token reference -->
+    <div>
+      <div class="section-title">Tokens used</div>
+      <table class="token-table">
+        <tr><td>klikk-surface</td><td>#141210 — page canvas</td></tr>
+        <tr><td>klikk-ink</td><td>#E8E3DC — mark + wordmark</td></tr>
+        <tr><td>klikk-ink-secondary</td><td>#E8E3DC @ 38% — "financials"</td></tr>
+        <tr><td>klikk-divider</td><td>#E8E3DC @ 18% — rules</td></tr>
+      </table>
+    </div>
+
+  </div><!-- /dark panel -->
+
+</div><!-- /page -->
+</body>
+</html>

@@ -3,10 +3,10 @@
     <!-- Single-row KDL header -->
     <q-header class="kdl-header">
       <q-toolbar class="kdl-toolbar">
-        <!-- Logo / wordmark -->
-        <div class="kdl-wordmark">
-          <span class="kdl-wordmark__klikk">Klikk</span><span class="kdl-wordmark__fin">Financials</span>
-        </div>
+        <!-- Logo / lockup -->
+        <span class="kdl-brand-wrapper">
+          <img src="/logo/lockup.svg" alt="Klikk Financials" class="kdl-brand-lockup" />
+        </span>
 
         <!-- Primary nav — left-adjacent to logo -->
         <nav class="kdl-nav" aria-label="Primary navigation">
@@ -34,7 +34,7 @@
         </button>
 
         <!-- User menu -->
-        <div class="kdl-user-trigger" @click="userMenuOpen = !userMenuOpen" ref="userTriggerRef">
+        <div class="kdl-user-trigger" role="button" :aria-label="`User menu — ${userEmail}`" :aria-expanded="userMenuOpen" @click="userMenuOpen = !userMenuOpen" ref="userTriggerRef">
           <q-icon name="account_circle" size="22px" />
           <q-icon name="expand_more" size="16px" class="kdl-chevron" :class="{ 'kdl-chevron--open': userMenuOpen }" />
         </div>
@@ -127,24 +127,19 @@ function handleLogout() {
   gap: 2px;
 }
 
-/* ── Wordmark — density pass ──────────────────────────── */
-.kdl-wordmark {
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: -0.2px;
+/* ── Brand lockup ─────────────────────────────────────── */
+.kdl-brand-wrapper {
+  display: flex;
+  align-items: center;
   margin-right: 16px;
-  white-space: nowrap;
   flex-shrink: 0;
-}
-.kdl-wordmark__klikk {
-  color: var(--kdl-brand-navy);
-}
-:root[data-theme="dark"] .kdl-wordmark__klikk {
   color: var(--kdl-text-primary);
 }
-.kdl-wordmark__fin {
-  color: var(--kdl-text-muted);
-  font-weight: 500;
+
+.kdl-brand-lockup {
+  height: 20px;
+  width: auto;
+  display: block;
 }
 
 /* ── Primary nav ──────────────────────────────────────── */

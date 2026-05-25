@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none">
+  <!--
+    Direction 3: The Ledger Block
+    A solid rounded-square container. The K is cut as white negative space.
+    At 20px this reads as a confident app-icon-style monogram.
+    Container colour: klikk-ink (#1A1917) on light surface.
+    K counter: warm-stone (#F5F1EB).
+  -->
+  <!-- Container: rounded square -->
+  <rect x="1" y="1" width="18" height="18" rx="4" fill="#1A1917"/>
+  <!-- K vertical stem — white cutout -->
+  <line x1="6.5" y1="5.5" x2="6.5" y2="14.5" stroke="#F5F1EB" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- K upper arm — angled from mid-stem to top-right -->
+  <line x1="6.5" y1="10" x2="13" y2="5.5" stroke="#F5F1EB" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- K lower arm — angled from mid-stem to bottom-right -->
+  <line x1="6.5" y1="10" x2="13" y2="14.5" stroke="#F5F1EB" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

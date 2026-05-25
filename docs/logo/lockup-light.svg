@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 20" width="164" height="20" fill="none" aria-label="Klikk Financials">
+  <!--
+    Horizontal lockup — light theme.
+    Mark: 20×20. Gap: 8px. Wordmark starts at x=28.
+    Typeface: Geist, fallback Inter / ui-sans-serif / system-ui / sans-serif.
+    "klikk"      — weight 500, size 13px, letter-spacing −0.025em, fill currentColor
+    "financials" — weight 400, size 10px, letter-spacing +0.07em,  fill currentColor @ 40% opacity
+    Both text elements use currentColor so the whole lockup inverts via CSS.
+    In production: load Geist via @font-face in app.scss before rendering this component.
+  -->
+
+  <!-- The Tally Mark -->
+  <rect x="0" y="4"   width="12" height="3" rx="1" fill="currentColor"/>
+  <rect x="0" y="8.5" width="8"  height="3" rx="1" fill="currentColor"/>
+  <rect x="0" y="13"  width="4"  height="3" rx="1" fill="currentColor"/>
+
+  <!-- Wordmark: "klikk" -->
+  <text
+    x="20"
+    y="14"
+    font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
+    font-size="13"
+    font-weight="500"
+    letter-spacing="-0.325"
+    fill="currentColor"
+  >klikk</text>
+
+  <!-- Wordmark: "financials" — demoted label -->
+  <text
+    x="62"
+    y="14"
+    font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
+    font-size="10"
+    font-weight="400"
+    letter-spacing="0.7"
+    fill="currentColor"
+    opacity="0.4"
+  >financials</text>
+</svg>

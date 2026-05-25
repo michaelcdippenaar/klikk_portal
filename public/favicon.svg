@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none" aria-label="Klikk Financials">
+  <!--
+    Favicon variant — 16×16 viewBox.
+    Bars are proportionally heavier (h=3.5) and gaps tighter (1px) vs the 20px mark.
+    Widths: 10 / 6 / 3 — steeper step ratio for crisper differentiation at tiny size.
+    Left margin: 2px. Background fill added for browser tab legibility on
+    non-retina displays — warm-stone canvas (#F5F1EB) baked in so the mark
+    reads on any tab-strip background.
+    On dark OS themes the browser renders the SVG as-is; the warm canvas
+    remains visible and the dark marks read correctly either way.
+  -->
+  <!-- Canvas — warm stone -->
+  <rect width="16" height="16" rx="3" fill="#F5F1EB"/>
+
+  <!-- Bar 1 — full (x2, w10) -->
+  <rect x="2" y="2.5"  width="10" height="3" rx="0.75" fill="#1A1917"/>
+  <!-- Bar 2 — mid (x2, w6) -->
+  <rect x="2" y="6.5"  width="6"  height="3" rx="0.75" fill="#1A1917"/>
+  <!-- Bar 3 — short (x2, w3) -->
+  <rect x="2" y="10.5" width="3"  height="3" rx="0.75" fill="#1A1917"/>
+</svg>

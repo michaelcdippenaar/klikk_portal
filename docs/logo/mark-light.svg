@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" fill="none" aria-label="Klikk Financials mark">
+  <!--
+    The Tally Mark — Klikk Financials
+    Three stacked bars, left-aligned, widths 12:8:4 (px in 20px viewBox).
+    The stepped right edge forms an implied diagonal — a K-silhouette without
+    drawing a K. Horizontal strokes survive 1× non-retina rendering cleanly.
+    Uses currentColor so a single SVG inverts via CSS custom property.
+  -->
+  <!-- Bar 1 — full width (x 4 → 16, w 12) -->
+  <rect x="4" y="4" width="12" height="3" rx="1" fill="currentColor"/>
+  <!-- Bar 2 — two-thirds width (x 4 → 12, w 8) -->
+  <rect x="4" y="8.5" width="8" height="3" rx="1" fill="currentColor"/>
+  <!-- Bar 3 — one-third width (x 4 → 8, w 4) -->
+  <rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor"/>
+</svg>
