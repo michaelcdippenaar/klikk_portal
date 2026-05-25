@@ -1,13 +1,17 @@
 <template>
-  <div class="fullscreen flex flex-center bg-grey-1">
-    <q-card style="min-width: 350px">
-      <q-card-section>
-        <div class="text-h6 text-center">Klikk Financials Console</div>
-        <div class="text-subtitle2 text-center text-grey-7 q-mt-sm">Sign in to continue</div>
+  <div class="fullscreen flex flex-center" style="background: var(--kdl-page-bg);">
+    <q-card class="login-card" flat bordered>
+      <q-card-section class="q-pb-xs">
+        <div class="text-subtitle1 text-weight-bold text-center" style="color: var(--kdl-text-primary);">
+          Klikk Financials
+        </div>
+        <div class="text-caption text-center q-mt-xs" style="color: var(--kdl-text-muted);">
+          Sign in to continue
+        </div>
       </q-card-section>
 
-      <q-card-section>
-        <q-form @submit="handleLogin" class="q-gutter-md">
+      <q-card-section class="q-pt-sm">
+        <q-form @submit="handleLogin" class="q-gutter-sm">
           <q-input
             v-model="username"
             label="Username"
@@ -25,16 +29,17 @@
             :rules="[val => !!val || 'Password is required']"
           />
 
-          <div v-if="error" class="text-negative text-caption q-mt-sm">
+          <div v-if="error" class="text-negative text-caption">
             {{ error }}
           </div>
 
-          <div>
+          <div class="q-pt-xs">
             <q-btn
-              label="Login"
+              label="Sign in"
               type="submit"
               color="primary"
               class="full-width"
+              dense
               :loading="loading"
             />
           </div>
@@ -80,7 +85,12 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-.full-height {
-  min-height: 100vh;
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--kdl-card-bg);
+  border-color: var(--kdl-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lifted);
 }
 </style>

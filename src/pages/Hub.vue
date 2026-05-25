@@ -2,24 +2,24 @@
   <q-layout view="hHh lpR fFf" class="bg-grey-2">
     <q-page-container>
       <q-page class="flex flex-center">
-        <div class="column items-center q-gutter-xl" style="max-width: 900px;">
-          <div class="text-h3 text-weight-bold text-primary q-mb-md">
+        <div class="column items-center q-gutter-md" style="max-width: 760px;">
+          <div class="text-h5 text-weight-bold text-primary q-mb-xs">
             Klikk Financials Console
           </div>
-          <div class="text-subtitle1 text-grey-7 q-mb-lg">
+          <div class="text-caption text-grey-7 q-mb-sm">
             Group financial operations, Xero, Investec, and Planning Analytics
           </div>
 
-          <div class="row q-gutter-lg justify-center">
+          <div class="row q-gutter-sm justify-center">
             <q-card
               class="hub-card cursor-pointer col-12 col-md-4"
               bordered
               @click="goToFrontendAdmin()"
             >
-              <q-card-section class="text-center">
-                <q-icon name="admin_panel_settings" size="48px" color="primary" />
-                <div class="text-h6 q-mt-md">Console</div>
-                <div class="text-caption text-grey-7 q-mt-sm">
+              <q-card-section class="text-center q-pa-md">
+                <q-icon name="admin_panel_settings" size="32px" color="primary" />
+                <div class="text-subtitle2 q-mt-sm">Console</div>
+                <div class="text-caption text-grey-7 q-mt-xs">
                   Xero, Investec, and reporting workflows
                 </div>
               </q-card-section>
@@ -30,10 +30,10 @@
               bordered
               @click="openPAW()"
             >
-              <q-card-section class="text-center">
-                <q-icon name="analytics" size="48px" color="primary" />
-                <div class="text-h6 q-mt-md">PAW</div>
-                <div class="text-caption text-grey-7 q-mt-sm">
+              <q-card-section class="text-center q-pa-md">
+                <q-icon name="analytics" size="32px" color="primary" />
+                <div class="text-subtitle2 q-mt-sm">PAW</div>
+                <div class="text-caption text-grey-7 q-mt-xs">
                   TM1 and PAW on the RedHat VM
                 </div>
               </q-card-section>
@@ -44,10 +44,10 @@
               bordered
               @click="goToFrontendAdmin()"
             >
-              <q-card-section class="text-center">
-                <q-icon name="dashboard" size="48px" color="primary" />
-                <div class="text-h6 q-mt-md">AI Agent</div>
-                <div class="text-caption text-grey-7 q-mt-sm">
+              <q-card-section class="text-center q-pa-md">
+                <q-icon name="dashboard" size="32px" color="primary" />
+                <div class="text-subtitle2 q-mt-sm">AI Agent</div>
+                <div class="text-caption text-grey-7 q-mt-xs">
                   Financial assistant and model tools
                 </div>
               </q-card-section>

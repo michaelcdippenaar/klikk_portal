@@ -71,7 +71,8 @@
     background-image: radial-gradient(var(--kdl-dot-grid) 1px, transparent 1px);
     background-size: 24px 24px;
     color: var(--kdl-text-primary);
-    font-size: 16px;
+    font-size: 13px;
+    line-height: 1.35;
     transition: background-color var(--duration-medium) var(--ease-standard),
                 color var(--duration-medium) var(--ease-standard);
   }
@@ -87,20 +88,23 @@
 }
 
 @layer components {
-  /* Typography */
-  .page-title       { @apply text-xl font-bold tracking-tight; color: var(--kdl-text-primary); }
-  .page-description { @apply text-sm mt-1; color: var(--kdl-text-muted); }
-  .section-header   { @apply text-sm font-semibold; color: var(--kdl-text-primary); }
-  .stat-value       { @apply text-2xl font-bold tabular-nums; color: var(--kdl-text-primary); }
+  /* Typography — finance-admin density (portal-level override) */
+  .page-title       { @apply text-xl font-bold tracking-tight; color: var(--kdl-text-primary); line-height: 1.2; }
+  .page-description { @apply text-xs mt-0.5; color: var(--kdl-text-muted); }
+  .section-header   { @apply text-sm font-semibold; color: var(--kdl-text-primary); line-height: 1.2; }
+  .stat-value       { @apply text-2xl font-bold tabular-nums; color: var(--kdl-text-primary); line-height: 1.1; }
   .label-upper      { @apply text-xs font-semibold uppercase tracking-wider; color: var(--kdl-text-hint); }
-  .text-muted       { @apply text-sm; color: var(--kdl-text-muted); }
-  .text-micro       { @apply text-[12px]; color: var(--kdl-text-muted); }
+  .text-muted       { @apply text-xs; color: var(--kdl-text-muted); }
+  .text-micro       { @apply text-[11px]; color: var(--kdl-text-muted); }
+  /* Numeric utility — tabular figures for table cells / currency */
+  .kdl-numeric      { font-variant-numeric: tabular-nums; font-size: 13px; }
 
-  /* Buttons */
+  /* Buttons — density pass: 32px default height, tighter padding */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
       disabled:opacity-50 disabled:cursor-not-allowed
       active:scale-[0.97] active:-translate-y-px;
+    min-height: 32px;
     transition: background-color var(--duration-short) var(--ease-standard),
                 color var(--duration-short) var(--ease-standard),
                 border-color var(--duration-short) var(--ease-standard),
@@ -125,21 +129,22 @@
     box-shadow: var(--glow-accent);
   }
 
-  .btn-sm { @apply px-3 py-1.5 text-xs gap-1.5; }
-  .btn-xs { @apply px-2 py-1 text-xs gap-1 rounded-md; }
+  .btn-sm { @apply px-2.5 py-1 text-xs gap-1; min-height: 28px; }
+  .btn-xs { @apply px-2 py-0.5 text-[11px] gap-1 rounded-md; min-height: 24px; }
 
   @media (max-width: 639px) {
     .btn    { min-height: 44px; }
     .btn-sm { min-height: 38px; }
   }
 
-  /* Inputs */
+  /* Inputs — density pass: ~32px height, tighter padding */
   .input {
-    @apply w-full rounded-lg px-3 py-2.5 outline-none border
+    @apply w-full rounded-lg px-3 py-1.5 outline-none border text-sm
       placeholder:text-gray-400;
     background: var(--kdl-card-bg);
     border-color: var(--kdl-border);
     color: var(--kdl-text-primary);
+    min-height: 32px;
     transition: border-color var(--duration-short) var(--ease-standard),
                 box-shadow var(--duration-short) var(--ease-standard);
   }
@@ -150,11 +155,11 @@
   }
   .input-error     { @apply border-danger-400; }
   .input-success   { @apply border-success-400; }
-  .input-help      { @apply text-xs mt-1; color: var(--kdl-text-hint); }
-  .input-error-msg { @apply text-xs text-danger-600 mt-1; }
-  .label           { @apply block text-sm font-medium mb-1; color: var(--kdl-text-secondary); }
+  .input-help      { @apply text-[11px] mt-0.5; color: var(--kdl-text-hint); }
+  .input-error-msg { @apply text-[11px] text-danger-600 mt-0.5; }
+  .label           { @apply block text-xs font-medium mb-0.5; color: var(--kdl-text-secondary); }
 
-  /* Cards */
+  /* Cards — density pass: xl→lg radius (12px→8px) */
   .card {
     @apply rounded-xl border;
     background: var(--kdl-card-bg);
@@ -201,9 +206,9 @@
   .klikk-badge.tone-neutral   { background: var(--kdl-border-subtle); color: var(--kdl-text-secondary); }
   .klikk-badge.size-sm        { font-size: 12px; padding: 2px 8px; }
 
-  /* Pills */
+  /* Pills — density pass */
   .pill {
-    @apply px-3 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer border;
+    @apply px-2.5 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer border;
     background: var(--kdl-card-bg);
     border-color: var(--kdl-border);
     color: var(--kdl-text-secondary);
@@ -211,45 +216,45 @@
   .pill:hover   { background: var(--kdl-hover-bg); }
   .pill-active  { @apply bg-navy text-white border-navy hover:bg-navy-dark; }
 
-  /* Tables */
+  /* Tables — density pass: tighter cell padding, tabular-nums on all cells */
   .table-scroll { @apply overflow-x-auto; -webkit-overflow-scrolling: touch; }
   .table-wrap   { @apply w-full; }
   .table-wrap thead tr { background: var(--kdl-hover-bg); border-bottom: 1px solid var(--kdl-border); }
-  .table-wrap thead th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider; color: var(--kdl-text-muted); }
+  .table-wrap thead th { @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider; color: var(--kdl-text-muted); }
   .table-wrap tbody tr {
     border-bottom: 1px solid var(--kdl-border-subtle);
     transition: background-color var(--duration-short) var(--ease-standard);
   }
   .table-wrap tbody tr:hover { background: var(--kdl-hover-bg); }
-  .table-wrap tbody td { @apply px-4 py-3.5 tabular-nums; color: var(--kdl-text-secondary); }
+  .table-wrap tbody td { @apply px-3 py-2 text-xs tabular-nums; color: var(--kdl-text-secondary); }
 
-  /* Klikk stat tile */
+  /* Klikk stat tile — density pass */
   .klikk-stat {
     background: var(--kdl-card-bg);
     border: 1px solid var(--kdl-border-subtle);
-    border-radius: 10px;
-    padding: 16px 18px;
+    border-radius: 8px;
+    padding: 12px 14px;
     box-shadow: var(--shadow-soft);
   }
   .klikk-stat .label {
-    font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em;
+    font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em;
     color: var(--kdl-text-muted);
   }
   .klikk-stat .value {
-    font-size: 28px; font-weight: 700; line-height: 1.1; margin-top: 6px;
+    font-size: 22px; font-weight: 700; line-height: 1.1; margin-top: 4px;
     font-variant-numeric: tabular-nums;
     color: var(--kdl-text-primary);
   }
-  .klikk-stat .delta       { font-size: 14px; margin-top: 4px; color: var(--kdl-text-muted); }
+  .klikk-stat .delta       { font-size: 12px; margin-top: 2px; color: var(--kdl-text-muted); }
   .klikk-stat .delta.down  { color: #DC2626; }
   .klikk-stat .delta.up    { color: #0D9488; }
 
-  /* Alert strip */
+  /* Alert strip — density pass */
   .klikk-alert-strip {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 16px; border-radius: 8px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 6px;
     background: #FEF3C7; color: #92400E; border-left: 3px solid #D97706;
-    font-size: 15px; font-weight: 500;
+    font-size: 13px; font-weight: 500;
   }
   .klikk-alert-strip.tone-danger { background: #FEE2E2; color: #991B1B; border-color: #DC2626; }
   .klikk-alert-strip.tone-info   { background: #DBEAFE; color: #1E40AF; border-color: #2563EB; }
@@ -264,7 +269,7 @@
     50%      { opacity: .35; }
   }
 
-  /* Header navigation */
+  /* Header navigation — density pass */
   .header-nav {
     background: rgba(15, 16, 56, 0.92);
     backdrop-filter: blur(20px);
@@ -272,7 +277,7 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   }
   .header-nav-link {
-    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer;
+    @apply flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer;
     color: rgba(255, 255, 255, 0.55);
     transition: color var(--duration-short) var(--ease-standard),
                 background-color var(--duration-short) var(--ease-standard);
@@ -280,16 +285,16 @@
   .header-nav-link:hover         { color: rgba(255, 255, 255, 0.9); background: rgba(255, 255, 255, 0.08); }
   .header-nav-link-active        { color: white !important; background: rgba(255, 255, 255, 0.12); }
 
-  /* Sidebar */
+  /* Sidebar — density pass */
   .sidebar-link {
-    @apply relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium;
+    @apply relative flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium;
     color: var(--kdl-text-secondary);
     transition: background-color var(--duration-short) var(--ease-standard),
                 color var(--duration-short) var(--ease-standard);
   }
   .sidebar-link:hover      { background: var(--kdl-hover-bg); color: var(--kdl-text-primary); }
   .sidebar-link-active     { @apply font-semibold; background: rgba(43,45,110,0.10); color: #2B2D6E; }
-  .sidebar-section-label   { @apply text-xs font-semibold uppercase tracking-wider px-3 mb-1; color: var(--kdl-text-hint); }
+  .sidebar-section-label   { @apply text-[11px] font-semibold uppercase tracking-wider px-2.5 mb-0.5; color: var(--kdl-text-hint); }
 
   @media (prefers-reduced-motion: reduce) {
     *, ::before, ::after {

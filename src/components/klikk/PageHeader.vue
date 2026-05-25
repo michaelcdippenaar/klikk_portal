@@ -43,14 +43,15 @@ defineProps({
 </script>
 
 <style scoped>
+/* PageHeader — finance-admin density pass */
 .kdl-page-header {
-  padding-bottom: 20px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--kdl-border-subtle);
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .kdl-page-header__crumbs {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -58,9 +59,9 @@ defineProps({
 
 .kdl-page-header__row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -70,13 +71,13 @@ defineProps({
 }
 
 .kdl-page-header__tenant {
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 
 .kdl-page-header__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 </style>

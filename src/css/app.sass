@@ -13,6 +13,8 @@
 
 body
   font-family: 'DM Sans', 'Roboto', '-apple-system', 'Helvetica Neue', Helvetica, Arial, sans-serif
+  font-size: 13px
+  line-height: 1.35
 
 // q-page background removed — KDL sets body background via CSS variable
 // (--kdl-page-bg) so that dark mode flips correctly. Keeping a hard-coded
@@ -20,3 +22,39 @@ body
 
 .q-card
   box-shadow: var(--shadow-soft, 0 1px 5px rgba(0, 0, 0, 0.2), 0 2px 2px rgba(0, 0, 0, 0.14), 0 3px 1px -2px rgba(0, 0, 0, 0.12))
+  border-radius: 8px
+
+// ── Finance-admin density: Quasar table + form global tightening ──────────────
+
+// q-table: all tables get dense treatment by default at the portal level.
+// If you add .q-table--dense via the dense prop on a q-table, these cells
+// apply the smaller padding from $table-dense-cell-padding.
+.q-table
+  font-size: 13px
+  th
+    font-size: 11px
+    font-weight: 600
+    text-transform: uppercase
+    letter-spacing: 0.04em
+  td
+    font-variant-numeric: tabular-nums
+
+// q-table dense variant — force all portal tables into dense mode.
+// This affects q-table when dense prop is NOT set; supplement with dense prop
+// on tables for the full quasar dense rendering path.
+.q-table tbody td,
+.q-table thead th
+  padding: 6px 10px
+
+// q-input / q-select density
+.q-field--outlined .q-field__control
+  min-height: 32px
+
+.q-field__marginal
+  height: 32px
+
+// Quasar btn default size reduction
+.q-btn:not(.q-btn--dense)
+  font-size: 12px
+  min-height: 32px
+  padding: 0 10px

@@ -30,12 +30,12 @@
           :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
           @click="toggleTheme"
         >
-          <q-icon :name="isDark ? 'light_mode' : 'dark_mode'" size="20px" />
+          <q-icon :name="isDark ? 'light_mode' : 'dark_mode'" size="16px" />
         </button>
 
         <!-- User menu -->
         <div class="kdl-user-trigger" @click="userMenuOpen = !userMenuOpen" ref="userTriggerRef">
-          <q-icon name="account_circle" size="28px" />
+          <q-icon name="account_circle" size="22px" />
           <q-icon name="expand_more" size="16px" class="kdl-chevron" :class="{ 'kdl-chevron--open': userMenuOpen }" />
         </div>
 
@@ -120,18 +120,19 @@ function handleLogout() {
   color: var(--kdl-text-primary);
 }
 
+/* Header density pass: 56px → 44px */
 .kdl-toolbar {
-  min-height: 56px;
-  padding: 0 20px;
-  gap: 4px;
+  min-height: 44px;
+  padding: 0 16px;
+  gap: 2px;
 }
 
-/* ── Wordmark ─────────────────────────────────────────── */
+/* ── Wordmark — density pass ──────────────────────────── */
 .kdl-wordmark {
   font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.3px;
-  margin-right: 24px;
+  font-size: 13px;
+  letter-spacing: -0.2px;
+  margin-right: 16px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -153,13 +154,14 @@ function handleLogout() {
   gap: 2px;
 }
 
+/* ── Nav items — density pass ─────────────────────────── */
 .kdl-nav__item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--kdl-text-secondary);
   text-decoration: none;
@@ -188,21 +190,21 @@ function handleLogout() {
   flex-shrink: 0;
 }
 
-/* ── Icon button (theme toggle) ───────────────────────── */
+/* ── Icon button (theme toggle) — density pass ────────── */
 .kdl-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
   border: none;
   background: transparent;
   color: var(--kdl-text-secondary);
   cursor: pointer;
   transition: background var(--duration-short) var(--ease-standard),
               color var(--duration-short) var(--ease-standard);
-  margin: 0 4px;
+  margin: 0 2px;
 }
 
 .kdl-icon-btn:hover {
@@ -210,18 +212,18 @@ function handleLogout() {
   color: var(--kdl-text-primary);
 }
 
-/* ── User trigger ─────────────────────────────────────── */
+/* ── User trigger — density pass ─────────────────────── */
 .kdl-user-trigger {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  gap: 2px;
+  padding: 3px 6px;
+  border-radius: 5px;
   cursor: pointer;
   color: var(--kdl-text-secondary);
   transition: background var(--duration-short) var(--ease-standard),
               color var(--duration-short) var(--ease-standard);
-  margin-left: 4px;
+  margin-left: 2px;
 }
 
 .kdl-user-trigger:hover {

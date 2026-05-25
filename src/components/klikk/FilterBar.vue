@@ -87,16 +87,17 @@ onUnmounted(() => {
 }
 
 /* The toggle button is only visible on narrow viewports (controlled by isNarrow ref) */
+/* FilterBar — finance-admin density pass */
 .kdl-filter-bar__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 8px;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
   border: 1px solid var(--kdl-border);
   background: var(--kdl-card-bg);
   color: var(--kdl-text-secondary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   align-self: flex-start;
@@ -110,9 +111,9 @@ onUnmounted(() => {
 .kdl-filter-bar__panel {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  padding: 8px 0;
+  padding: 5px 0;
   /* Quiet utility strip — no card, no shadow, no border */
 }
 </style>

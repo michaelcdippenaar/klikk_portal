@@ -54,27 +54,28 @@ defineProps({
 </script>
 
 <style scoped>
+/* EmptyState — finance-admin density pass: smaller icon ring, less padding */
 .kdl-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 48px 24px;
-  gap: 12px;
+  padding: 28px 16px;
+  gap: 8px;
 }
 
 .kdl-empty-state__ring {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: rgba(43, 45, 110, 0.08);
   color: rgba(43, 45, 110, 0.4);
-  margin-bottom: 4px;
-  font-size: 24px;
+  margin-bottom: 2px;
+  font-size: 16px;
 }
 
 :root[data-theme="dark"] .kdl-empty-state__ring {
@@ -83,28 +84,28 @@ defineProps({
 }
 
 .kdl-empty-state__icon-text {
-  font-size: 22px;
+  font-size: 15px;
   line-height: 1;
 }
 
 .kdl-empty-state__title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--kdl-text-primary);
   margin: 0;
 }
 
 .kdl-empty-state__body {
-  font-size: 15px;
+  font-size: 12px;
   color: var(--kdl-text-muted);
-  max-width: 360px;
+  max-width: 300px;
   margin: 0;
 }
 
 .kdl-empty-state__cta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 6px;
+  margin-top: 2px;
 }
 </style>

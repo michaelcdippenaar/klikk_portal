@@ -19,21 +19,26 @@ module.exports = {
         sans: ['DM Sans', 'system-ui', 'sans-serif'],
       },
       fontSize: {
-        micro: ['12px', { lineHeight: '17px', fontWeight: '500' }],
-        xs:    ['13px', { lineHeight: '18px' }],
-        sm:    ['15px', { lineHeight: '22px' }],
-        base:  ['16px', { lineHeight: '25px' }],
-        lg:    ['18px', { lineHeight: '28px' }],
-        xl:    ['22px', { lineHeight: '30px' }],
-        '2xl': ['28px', { lineHeight: '34px' }],
-        '3xl': ['34px', { lineHeight: '40px' }],
+        // Finance-admin density pass — ~12-15% smaller than general KDL defaults.
+        // Portal-level override; do not merge upstream without review.
+        micro: ['11px', { lineHeight: '15px', fontWeight: '500' }],
+        xs:    ['12px', { lineHeight: '16px' }],
+        sm:    ['13px', { lineHeight: '18px' }],
+        base:  ['13px', { lineHeight: '18px' }],
+        lg:    ['15px', { lineHeight: '22px' }],
+        xl:    ['18px', { lineHeight: '24px' }],
+        '2xl': ['22px', { lineHeight: '28px' }],
+        '3xl': ['28px', { lineHeight: '34px' }],
       },
       borderRadius: {
-        // Klikk radius scale
-        // md  = 6px  (chips, tags)
-        // lg  = 8px  (buttons, inputs)
-        // xl  = 12px (cards, modals)
+        // Finance-admin density pass — one step tighter than general KDL.
+        // md  = 4px  (chips, tags)
+        // lg  = 6px  (buttons, inputs)
+        // xl  = 8px  (cards, modals)
         // full = pill
+        md:  '4px',
+        lg:  '6px',
+        xl:  '8px',
       },
       boxShadow: {
         soft:     'var(--shadow-soft)',

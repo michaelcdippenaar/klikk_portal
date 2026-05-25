@@ -5,7 +5,7 @@
       show-if-above
       bordered
       class="kdl-drawer"
-      :width="240"
+      :width="220"
       :breakpoint="700"
     >
       <div class="kdl-drawer__inner">
@@ -172,11 +172,12 @@ const drawerOpen = ref(true);
   border-right: 1px solid var(--kdl-border-subtle);
 }
 
+/* Drawer — density pass */
 .kdl-drawer__inner {
-  padding: 12px 8px;
+  padding: 8px 6px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 /* ── Nav group ──────────────────────────────────────────── */
@@ -185,16 +186,17 @@ const drawerOpen = ref(true);
   overflow: hidden;
 }
 
+/* Nav group toggle — density pass */
 .kdl-nav-group__toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border: none;
   background: transparent;
-  border-radius: 6px;
-  font-size: 11px;
+  border-radius: 5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -239,13 +241,14 @@ const drawerOpen = ref(true);
   padding-bottom: 4px;
 }
 
+/* Nav items — density pass */
 .kdl-nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px 7px 28px;
-  border-radius: 6px;
-  font-size: 13px;
+  gap: 6px;
+  padding: 5px 8px 5px 22px;
+  border-radius: 5px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--kdl-text-secondary);
   text-decoration: none;

@@ -40,12 +40,13 @@ defineProps({
 </script>
 
 <style scoped>
+/* SectionCard — finance-admin density pass */
 .kdl-section-card__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 20px;
+  gap: 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--kdl-border-subtle);
 }
 
@@ -57,11 +58,11 @@ defineProps({
 .kdl-section-card__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .kdl-section-card__body {
-  padding: 20px;
+  padding: 14px;
 }
 </style>

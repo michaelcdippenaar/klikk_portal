@@ -212,12 +212,13 @@ function formatTime(ts) {
 </script>
 
 <style scoped>
+/* ResultPanel — finance-admin density pass */
 .kdl-result-panel {
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--kdl-border-subtle);
   background: var(--kdl-raised-bg);
-  padding: 12px 16px;
-  font-size: 15px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .kdl-result-panel--loading {
@@ -266,10 +267,10 @@ function formatTime(ts) {
 .kdl-result-panel__success-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: #0d9488;
   font-weight: 500;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 :root[data-theme="dark"] .kdl-result-panel__success-header {
@@ -291,12 +292,12 @@ function formatTime(ts) {
   margin-left: auto;
 }
 
-/* Counts */
+/* Counts — density pass */
 .kdl-result-panel__counts {
   display: flex;
-  gap: 20px;
+  gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .kdl-result-panel__count-item {
@@ -306,14 +307,14 @@ function formatTime(ts) {
 }
 
 .kdl-result-panel__count-value {
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.1;
   color: var(--kdl-text-primary);
 }
 
 .kdl-result-panel__count-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
