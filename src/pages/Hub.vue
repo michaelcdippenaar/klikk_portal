@@ -3,7 +3,7 @@
     <q-page-container>
       <q-page class="flex flex-center">
         <div class="column items-center q-gutter-md" style="max-width: 760px;">
-          <div class="text-h5 text-weight-bold text-primary q-mb-xs">
+          <div class="text-h4 text-weight-bold text-primary q-mb-xs">
             Klikk Financials Console
           </div>
           <div class="text-caption text-grey-7 q-mb-sm">
