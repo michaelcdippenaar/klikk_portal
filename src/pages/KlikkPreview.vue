@@ -501,6 +501,153 @@
       </div>
     </div>
 
+    <!-- ⑰ KDialog — Reka-based modal dialog primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑰ KDialog — modal dialog (sm / md / lg)</span>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <KDialog v-model="dialogSm" title="Confirm action" description="This cannot be undone. Are you sure?" size="sm">
+          <template #trigger>
+            <button class="btn-ghost btn-sm">Open sm dialog</button>
+          </template>
+          <p style="font-size: 14px; color: var(--kdl-text-secondary); margin: 0;">
+            This is the body content of the small dialog. Ideal for confirmations and short prompts.
+          </p>
+          <template #footer>
+            <button class="btn-ghost btn-sm" @click="dialogSm = false">Cancel</button>
+            <button class="btn-primary btn-sm" @click="dialogSm = false">Confirm</button>
+          </template>
+        </KDialog>
+
+        <KDialog v-model="dialogMd" title="Post journals" description="142 journals will be posted to Xero.">
+          <template #trigger>
+            <button class="btn-ghost btn-sm">Open md dialog</button>
+          </template>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <p style="font-size: 14px; color: var(--kdl-text-secondary); margin: 0;">Review before posting. This action will create journal entries in Xero and cannot be reversed.</p>
+            <div class="card" style="padding: 12px;">
+              <p class="text-micro" style="margin: 0;">Journals ready: <strong>142</strong></p>
+            </div>
+          </div>
+          <template #footer>
+            <button class="btn-ghost btn-sm" @click="dialogMd = false">Cancel</button>
+            <button class="btn-accent btn-sm" @click="dialogMd = false">Post to Xero</button>
+          </template>
+        </KDialog>
+
+        <KDialog v-model="dialogLg" title="Transaction detail" size="lg">
+          <template #trigger>
+            <button class="btn-ghost btn-sm">Open lg dialog</button>
+          </template>
+          <p style="font-size: 14px; color: var(--kdl-text-secondary); margin: 0;">
+            Wider dialog for data tables and multi-column forms. Renders at 720px max-width.
+          </p>
+          <template #footer>
+            <button class="btn-ghost btn-sm" @click="dialogLg = false">Close</button>
+          </template>
+        </KDialog>
+      </div>
+    </div>
+
+    <!-- ⑱ KMenu + KMenuItem + KMenuSeparator — Reka-based dropdown menu -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑱ KMenu + KMenuItem + KMenuSeparator — dropdown menu</span>
+      <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;">
+        <!-- Basic menu -->
+        <KMenu v-model="menuOpen" align="start">
+          <template #trigger>
+            <button class="btn-ghost btn-sm" :aria-expanded="menuOpen">Actions</button>
+          </template>
+          <KMenuItem icon="edit" @select="menuOpen = false">Edit record</KMenuItem>
+          <KMenuItem icon="copy" @select="menuOpen = false">Duplicate</KMenuItem>
+          <KMenuItem icon="download" @select="menuOpen = false" shortcut="⌘D">Export CSV</KMenuItem>
+          <KMenuSeparator />
+          <KMenuItem icon="trash" @select="menuOpen = false">Delete</KMenuItem>
+        </KMenu>
+
+        <!-- Menu with disabled item -->
+        <KMenu v-model="menuOpen2" align="start">
+          <template #trigger>
+            <button class="btn-ghost btn-sm" :aria-expanded="menuOpen2">
+              <!-- Lucide more-horizontal -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            </button>
+          </template>
+          <KMenuItem icon="eye" @select="menuOpen2 = false">View</KMenuItem>
+          <KMenuItem icon="edit" @select="menuOpen2 = false">Edit</KMenuItem>
+          <KMenuItem icon="external-link" @select="menuOpen2 = false" shortcut="↗">Open in Xero</KMenuItem>
+          <KMenuSeparator />
+          <KMenuItem icon="trash" :disabled="true">Delete (disabled)</KMenuItem>
+        </KMenu>
+      </div>
+    </div>
+
+    <!-- ⑲ KTooltip — Reka-based tooltip primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑲ KTooltip — hover / focus tooltip</span>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+        <KTooltip text="Post journals to Xero">
+          <button class="btn-primary btn-sm">Post</button>
+        </KTooltip>
+
+        <KTooltip text="Export filtered rows to CSV" side="right">
+          <button class="btn-ghost btn-sm">Export</button>
+        </KTooltip>
+
+        <KTooltip text="Last synced 4 minutes ago" side="bottom" :delay="200">
+          <span style="cursor: help; font-size: 13px; color: var(--kdl-text-muted); border-bottom: 1px dashed var(--kdl-border);">Sync status</span>
+        </KTooltip>
+
+        <KTooltip text="Navigate to the settings page" side="left">
+          <button class="btn-ghost btn-sm">Settings</button>
+        </KTooltip>
+      </div>
+    </div>
+
+    <!-- ⑳ KPopover — Reka-based arbitrary-content popover -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑳ KPopover — arbitrary content popover</span>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start;">
+        <KPopover v-model="popoverFilter">
+          <template #trigger>
+            <button class="btn-ghost btn-sm" :aria-expanded="popoverFilter">
+              <!-- Lucide filter -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              Filters
+            </button>
+          </template>
+          <div style="display: flex; flex-direction: column; gap: 10px; min-width: 240px;">
+            <p class="label-upper" style="margin: 0; font-size: 10px;">Filter by status</p>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kdl-text-secondary); cursor: pointer;">
+              <input type="checkbox" checked /> Posted
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kdl-text-secondary); cursor: pointer;">
+              <input type="checkbox" /> Draft
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kdl-text-secondary); cursor: pointer;">
+              <input type="checkbox" /> Failed
+            </label>
+            <div style="display: flex; justify-content: flex-end; gap: 6px; padding-top: 6px; border-top: 1px solid var(--kdl-border-subtle);">
+              <button class="btn-ghost btn-xs" @click="popoverFilter = false">Reset</button>
+              <button class="btn-primary btn-xs" @click="popoverFilter = false">Apply</button>
+            </div>
+          </div>
+        </KPopover>
+      </div>
+    </div>
+
+    <!-- ㉑ KToast — toast notifications via useToast() -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">㉑ KToast — toast notification system</span>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-success btn-sm" @click="toast.success('142 journals posted successfully.')">Success toast</button>
+        <button class="btn-danger btn-sm" @click="toast.error('Xero API returned 503 — connection timeout.', { title: 'Connection failed' })">Error toast</button>
+        <button class="btn-ghost btn-sm" @click="toast.info('Next sync scheduled for 02:00 SAST.')">Info toast</button>
+        <button class="btn-ghost btn-sm" @click="toast.warn('Approaching Xero API rate limit. Slowing requests.', { title: 'Rate limit warning' })">Warning toast</button>
+        <button class="btn-ghost btn-sm" @click="toast.success('Copied to clipboard.', { duration: 2000 })">Short (2s)</button>
+        <button class="btn-ghost btn-sm" @click="toast.info('This toast stays until dismissed.', { duration: 0 })">Sticky</button>
+      </div>
+    </div>
+
     <!-- ⑯ KChip — removable filter pill primitive -->
     <div class="klikk-preview-section">
       <span class="label-upper" style="display: block; margin-bottom: 12px;">⑯ KChip — removable filter pill</span>
@@ -569,6 +716,13 @@ import MetricTile from '../components/klikk/MetricTile.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KBadge from '../components/klikk/KBadge.vue';
 import KChip from '../components/klikk/KChip.vue';
+import KDialog from '../components/klikk/KDialog.vue';
+import KMenu from '../components/klikk/KMenu.vue';
+import KMenuItem from '../components/klikk/KMenuItem.vue';
+import KMenuSeparator from '../components/klikk/KMenuSeparator.vue';
+import KTooltip from '../components/klikk/KTooltip.vue';
+import KPopover from '../components/klikk/KPopover.vue';
+import { useToast } from '../composables/useToast.js';
 
 const { isDark, toggleTheme } = useTheme();
 
@@ -625,6 +779,15 @@ const demoChips = ref(['Invoices', 'ZAR only', 'Q1 2024', 'Bosch en Dal']);
 function removeChip(chip) {
   demoChips.value = demoChips.value.filter((c) => c !== chip);
 }
+
+// ─── Overlay demo state (Phase 1.B) ──────────────────────────────────────
+const dialogSm = ref(false);
+const dialogMd = ref(false);
+const dialogLg = ref(false);
+const menuOpen = ref(false);
+const menuOpen2 = ref(false);
+const popoverFilter = ref(false);
+const toast = useToast();
 </script>
 
 <style scoped>
