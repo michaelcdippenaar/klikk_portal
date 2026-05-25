@@ -1,5 +1,5 @@
 <template>
-  <q-page class="q-pa-md">
+  <AppPage>
     <PageHeader title="Planning Analytics" subtitle="TM1 pipeline and scenario analysis">
       <template #tenantContext>
         <TenantSelector />
@@ -13,220 +13,282 @@
     />
 
     <div v-else>
-      <q-tabs v-model="tab" dense active-color="primary" indicator-color="primary" align="left" class="q-mb-xs">
-        <q-tab name="setup" label="Setup" icon="settings" />
-        <q-tab name="pipeline" label="Pipeline" icon="play_circle" />
-        <q-tab name="tracking-mapping" label="Tracking Mapping" icon="swap_horiz" />
-      </q-tabs>
-      <q-separator />
+      <KTabs
+        :tabs="[
+          { name: 'setup', label: 'Setup' },
+          { name: 'pipeline', label: 'Pipeline' },
+          { name: 'tracking-mapping', label: 'Tracking Mapping' },
+        ]"
+        v-model="tab"
+        :url-sync="false"
+        class="mb-3"
+      />
 
-      <q-tab-panels v-model="tab" animated>
-        <!-- ===================== SETUP TAB ===================== -->
-        <q-tab-panel name="setup">
-          <!-- My TM1 Credentials -->
-          <SectionCard title="My TM1 Credentials" description="Your personal TM1 login. All TM1 operations will use these credentials." class="q-mb-md">
-            <div class="row q-col-gutter-sm">
-              <div class="col-12 col-sm-6 col-md-4">
-                <q-input v-model="myCreds.tm1_username" label="TM1 Username" dense outlined />
-              </div>
-              <div class="col-12 col-sm-6 col-md-4">
-                <q-input v-model="myCreds.tm1_password" label="TM1 Password" type="password" dense outlined />
-              </div>
+      <!-- ===================== SETUP TAB ===================== -->
+      <div v-show="tab === 'setup'">
+        <!-- My TM1 Credentials -->
+        <SectionCard title="My TM1 Credentials" description="Your personal TM1 login. All TM1 operations will use these credentials." class="mb-4">
+          <div class="flex flex-wrap gap-3">
+            <div class="flex-1 min-w-48">
+              <KInput v-model="myCreds.tm1_username" label="TM1 Username" />
             </div>
-            <div class="q-mt-sm q-gutter-sm">
-              <q-btn label="Save credentials" color="primary" :loading="savingCreds" @click="handleSaveCreds" no-caps />
-              <q-btn label="Remove" flat color="negative" :loading="removingCreds" @click="handleRemoveCreds" no-caps />
+            <div class="flex-1 min-w-48">
+              <KInput v-model="myCreds.tm1_password" label="TM1 Password" type="password" />
             </div>
-            <div v-if="credsResult" class="q-mt-sm">
-              <q-banner :class="credsResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
-                {{ credsResult.message }}
-              </q-banner>
-            </div>
-          </SectionCard>
-
-          <!-- TM1 Server -->
-          <SectionCard title="TM1 Server" class="q-mb-md">
-            <div class="row q-col-gutter-sm">
-              <div class="col-12 col-md-6">
-                <q-input v-model="tm1.baseUrl" label="Base URL" dense outlined placeholder="http://host:port/api/v1/" />
-              </div>
-              <div class="col-12 col-sm-6 col-md-3">
-                <q-input v-model="tm1.user" label="Username" dense outlined />
-              </div>
-              <div class="col-12 col-sm-6 col-md-3">
-                <q-input v-model="tm1.password" label="Password" type="password" dense outlined />
-              </div>
-            </div>
-            <div class="q-mt-sm q-gutter-sm">
-              <q-btn label="Test connection" color="secondary" :loading="testingConnection" @click="handleTestConnection" no-caps />
-              <q-btn label="Save" color="primary" :loading="savingServer" @click="handleSaveServer" no-caps />
-            </div>
-            <div v-if="connectionResult" class="q-mt-sm">
-              <q-banner :class="connectionResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
-                {{ connectionResult.message }}
-              </q-banner>
-            </div>
-          </SectionCard>
-
-          <!-- TM1 Processes -->
-          <SectionCard title="TM1 Processes">
-            <div v-for="(proc, idx) in tm1Processes" :key="idx" class="row q-col-gutter-sm q-mb-sm items-center">
-              <div class="col-auto">
-                <q-checkbox v-model="proc.enabled" dense />
-              </div>
-              <div class="col">
-                <q-input v-model="proc.process_name" label="Process name" dense outlined />
-              </div>
-              <div class="col">
-                <q-input v-model="proc.paramString" label="Parameters (key=val, ...)" dense outlined hint="e.g. pSource=ODBC,pYear=2025" />
-              </div>
-              <div class="col-auto">
-                <q-btn flat round dense icon="delete" color="negative" @click="tm1Processes.splice(idx, 1)" />
-              </div>
-            </div>
-            <div class="q-gutter-sm q-mt-sm">
-              <q-btn label="Add process" icon="add" flat color="primary" @click="addProcess" no-caps />
-              <q-btn label="Save processes" color="primary" :loading="savingProcesses" @click="handleSaveProcesses" no-caps />
-            </div>
-          </SectionCard>
-        </q-tab-panel>
-
-        <!-- ===================== PIPELINE TAB ===================== -->
-        <q-tab-panel name="pipeline">
-          <!-- Steps to run -->
-          <SectionCard title="Steps to run" class="q-mb-md">
-            <div v-for="(s, idx) in steps" :key="idx" class="row items-center q-mb-xs">
-              <q-checkbox v-model="s.selected" :label="s.label" dense class="col" />
-              <q-btn flat dense size="sm" label="Run" icon="play_arrow" color="primary" :loading="s.status === 'running'" :disable="pipelineRunning" @click="runSingleStep(idx)" no-caps />
-            </div>
-          </SectionCard>
-
-          <!-- Options -->
-          <SectionCard title="Options" class="q-mb-md">
-            <q-checkbox v-model="pipelineOpts.loadAll" label="Load all data (ignore last update)" dense class="q-mr-md" />
-            <q-checkbox v-model="pipelineOpts.rebuildTrailBalance" label="Rebuild trail balance" dense class="q-mr-md" />
-            <q-checkbox v-model="pipelineOpts.excludeManualJournals" label="Exclude manual journals" dense class="q-mr-md" />
-            <q-checkbox v-model="pipelineOpts.calculatePnlYtd" label="Calculate Balance Sheet YTD (balance to date)" dense />
-          </SectionCard>
-
-          <q-btn label="Run selected steps" icon="play_circle" color="primary" :loading="pipelineRunning" @click="runSelectedSteps" no-caps class="q-mb-md" />
-
-          <p class="text-muted q-mb-md">
-            TM1 "success" means the process was started. Check TM1 Process Monitor for actual outcome. TM1 steps may take several minutes.
-          </p>
-
-          <!-- Progress -->
-          <SectionCard v-if="steps.some(s => s.status !== 'idle')" title="Progress">
-            <q-list separator>
-              <q-item v-for="(s, idx) in steps" :key="'p' + idx" :class="stepRowClass(s)">
-                <q-item-section avatar>
-                  <q-spinner v-if="s.status === 'running'" color="primary" size="1.5em" />
-                  <q-icon v-else-if="s.status === 'done'" name="check_circle" color="positive" />
-                  <q-icon v-else-if="s.status === 'error'" name="error" color="negative" />
-                  <q-icon v-else-if="s.status === 'skipped'" name="remove_circle_outline" class="pa-step-icon--skipped" />
-                  <q-icon v-else name="radio_button_unchecked" class="pa-step-icon--idle" />
-                </q-item-section>
-                <q-item-section>
-                  <q-item-label>{{ s.label }}</q-item-label>
-                  <q-item-label caption v-if="s.message">{{ s.message }}</q-item-label>
-                </q-item-section>
-                <q-item-section side v-if="s.elapsed != null">
-                  {{ s.elapsed }}s
-                </q-item-section>
-              </q-item>
-            </q-list>
-          </SectionCard>
-        </q-tab-panel>
-
-        <!-- ===================== TRACKING MAPPING TAB ===================== -->
-        <q-tab-panel name="tracking-mapping">
-          <!-- Header row -->
-          <div class="row items-center q-mb-md q-gutter-sm">
-            <div class="section-header">Xero Tracking Category 1 → TM1 Dimensions</div>
-            <q-space />
-            <q-chip v-if="mappingRows.length" :color="mappingUnmappedCount > 0 ? 'orange' : 'positive'" text-color="white" icon="info" dense>
-              {{ mappingUnmappedCount }} unmapped in tracking_1
-            </q-chip>
-            <q-btn label="Refresh" icon="refresh" flat color="primary" no-caps :loading="mappingLoading" @click="loadTrackingMapping" />
           </div>
-
-          <!-- Error -->
-          <q-banner v-if="mappingError" class="bg-negative text-white q-mb-md" dense rounded>
-            {{ mappingError }}
-          </q-banner>
-
-          <!-- Loading skeleton -->
-          <div v-if="mappingLoading && !mappingRows.length" class="q-gutter-sm">
-            <q-skeleton height="40px" v-for="n in 5" :key="n" />
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-primary" :disabled="savingCreds" @click="handleSaveCreds">
+              <span v-if="savingCreds" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Saving…
+              </span>
+              <span v-else>Save credentials</span>
+            </button>
+            <button class="btn btn-ghost text-error" :disabled="removingCreds" @click="handleRemoveCreds">
+              <span v-if="removingCreds" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Removing…
+              </span>
+              <span v-else>Remove</span>
+            </button>
           </div>
+          <div v-if="credsResult" class="mt-3">
+            <KAlert :variant="credsResult.success ? 'success' : 'error'" :body="credsResult.message" />
+          </div>
+        </SectionCard>
 
-          <!-- Table -->
-          <q-table
-            v-else
-            :rows="mappingRows"
-            :columns="mappingColumns"
-            row-key="xero_name"
-            dense
-            flat
-            bordered
-            :rows-per-page-options="[0]"
-            hide-bottom
-          >
-            <template #body-cell-in_tracking1="props">
-              <q-td :props="props" class="text-center">
-                <q-icon v-if="props.value" name="check_circle" color="positive" />
-                <q-icon v-else name="cancel" color="negative" />
-              </q-td>
-            </template>
-            <template #body-cell-in_cost_object="props">
-              <q-td :props="props" class="text-center">
-                <q-icon v-if="props.value" name="check_circle" color="positive" />
-                <q-icon v-else name="cancel" color="negative" />
-              </q-td>
-            </template>
-            <template #body-cell-actions="props">
-              <q-td :props="props">
-                <div class="row q-gutter-xs">
-                  <q-btn
-                    label="+ tracking_1"
-                    size="xs"
-                    flat
-                    no-caps
-                    color="primary"
-                    :disable="props.row.in_tracking1 || !!mappingInFlight[props.row.xero_name + '_t1']"
-                    :loading="!!mappingInFlight[props.row.xero_name + '_t1']"
-                    @click="addToTm1(props.row, true, false)"
-                  />
-                  <q-btn
-                    label="+ cost_object"
-                    size="xs"
-                    flat
-                    no-caps
-                    color="secondary"
-                    :disable="props.row.in_cost_object || !!mappingInFlight[props.row.xero_name + '_co']"
-                    :loading="!!mappingInFlight[props.row.xero_name + '_co']"
-                    @click="addToTm1(props.row, false, true)"
-                  />
-                </div>
-              </q-td>
-            </template>
-          </q-table>
-        </q-tab-panel>
-      </q-tab-panels>
+        <!-- TM1 Server -->
+        <SectionCard title="TM1 Server" class="mb-4">
+          <div class="flex flex-wrap gap-3">
+            <div class="flex-1 min-w-64">
+              <KInput v-model="tm1.baseUrl" label="Base URL" placeholder="http://host:port/api/v1/" />
+            </div>
+            <div class="flex-1 min-w-40">
+              <KInput v-model="tm1.user" label="Username" />
+            </div>
+            <div class="flex-1 min-w-40">
+              <KInput v-model="tm1.password" label="Password" type="password" />
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-secondary" :disabled="testingConnection" @click="handleTestConnection">
+              <span v-if="testingConnection" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Testing…
+              </span>
+              <span v-else>Test connection</span>
+            </button>
+            <button class="btn btn-primary" :disabled="savingServer" @click="handleSaveServer">
+              <span v-if="savingServer" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Saving…
+              </span>
+              <span v-else>Save</span>
+            </button>
+          </div>
+          <div v-if="connectionResult" class="mt-3">
+            <KAlert :variant="connectionResult.success ? 'success' : 'error'" :body="connectionResult.message" />
+          </div>
+        </SectionCard>
+
+        <!-- TM1 Processes -->
+        <SectionCard title="TM1 Processes">
+          <div v-for="(proc, idx) in tm1Processes" :key="idx" class="flex gap-3 mb-3 items-center">
+            <KCheckbox v-model="proc.enabled" />
+            <div class="flex-1 min-w-0">
+              <KInput v-model="proc.process_name" label="Process name" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <KInput v-model="proc.paramString" label="Parameters (key=val, ...)" help-text="e.g. pSource=ODBC,pYear=2025" />
+            </div>
+            <button class="btn btn-ghost text-error p-1" @click="tm1Processes.splice(idx, 1)" title="Remove process">
+              <!-- Lucide trash-2 -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-ghost" @click="addProcess">
+              <!-- Lucide plus -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add process
+            </button>
+            <button class="btn btn-primary" :disabled="savingProcesses" @click="handleSaveProcesses">
+              <span v-if="savingProcesses" class="inline-flex items-center gap-1">
+                <KSpinner size="14" /> Saving…
+              </span>
+              <span v-else>Save processes</span>
+            </button>
+          </div>
+        </SectionCard>
+      </div>
+
+      <!-- ===================== PIPELINE TAB ===================== -->
+      <div v-show="tab === 'pipeline'">
+        <!-- Steps to run -->
+        <SectionCard title="Steps to run" class="mb-4">
+          <div v-for="(s, idx) in steps" :key="idx" class="flex items-center gap-3 mb-2">
+            <KCheckbox v-model="s.selected" :label="s.label" />
+            <button
+              class="btn btn-ghost btn-sm ml-auto"
+              :disabled="pipelineRunning || s.status === 'running'"
+              @click="runSingleStep(idx)"
+            >
+              <!-- Lucide play -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run
+            </button>
+          </div>
+        </SectionCard>
+
+        <!-- Options -->
+        <SectionCard title="Options" class="mb-4">
+          <div class="flex flex-wrap gap-4">
+            <KCheckbox v-model="pipelineOpts.loadAll" label="Load all data (ignore last update)" />
+            <KCheckbox v-model="pipelineOpts.rebuildTrailBalance" label="Rebuild trail balance" />
+            <KCheckbox v-model="pipelineOpts.excludeManualJournals" label="Exclude manual journals" />
+            <KCheckbox v-model="pipelineOpts.calculatePnlYtd" label="Calculate Balance Sheet YTD (balance to date)" />
+          </div>
+        </SectionCard>
+
+        <button class="btn btn-primary mb-4" :disabled="pipelineRunning" @click="runSelectedSteps">
+          <span v-if="pipelineRunning" class="inline-flex items-center gap-1">
+            <KSpinner size="14" /> Running…
+          </span>
+          <span v-else class="inline-flex items-center gap-1">
+            <!-- Lucide play-circle -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            Run selected steps
+          </span>
+        </button>
+
+        <p class="text-muted text-sm mb-4">
+          TM1 "success" means the process was started. Check TM1 Process Monitor for actual outcome. TM1 steps may take several minutes.
+        </p>
+
+        <!-- Progress -->
+        <SectionCard v-if="steps.some(s => s.status !== 'idle')" title="Progress">
+          <div class="divide-y divide-kdl-border-subtle">
+            <div
+              v-for="(s, idx) in steps"
+              :key="'p' + idx"
+              class="flex items-center gap-3 py-2"
+              :class="stepRowClass(s)"
+            >
+              <span class="flex-shrink-0" aria-hidden="true">
+                <KSpinner v-if="s.status === 'running'" size="18" />
+                <!-- check-circle -->
+                <svg v-else-if="s.status === 'done'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="text-success"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <!-- x-circle -->
+                <svg v-else-if="s.status === 'error'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="text-error"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <!-- minus-circle skipped -->
+                <svg v-else-if="s.status === 'skipped'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="pa-step-icon--skipped"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                <!-- circle idle -->
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="pa-step-icon--idle"><circle cx="12" cy="12" r="10"/></svg>
+              </span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium">{{ s.label }}</div>
+                <div v-if="s.message" class="text-xs text-muted">{{ s.message }}</div>
+              </div>
+              <span v-if="s.elapsed != null" class="text-xs text-muted flex-shrink-0">{{ s.elapsed }}s</span>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      <!-- ===================== TRACKING MAPPING TAB ===================== -->
+      <div v-show="tab === 'tracking-mapping'">
+        <!-- Header row -->
+        <div class="flex items-center gap-3 mb-4 flex-wrap">
+          <div class="section-header">Xero Tracking Category 1 → TM1 Dimensions</div>
+          <div class="ml-auto flex items-center gap-2">
+            <span v-if="mappingRows.length">
+              <KBadge :tone="mappingUnmappedCount > 0 ? 'warning' : 'success'">
+                {{ mappingUnmappedCount }} unmapped in tracking_1
+              </KBadge>
+            </span>
+            <button class="btn btn-ghost btn-sm" :disabled="mappingLoading" @click="loadTrackingMapping">
+              <!-- Lucide refresh-cw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <KAlert v-if="mappingError" variant="error" :body="mappingError" class="mb-4" />
+
+        <!-- Loading skeleton -->
+        <div v-if="mappingLoading && !mappingRows.length" class="flex flex-col gap-2">
+          <div v-for="n in 5" :key="n" class="h-10 rounded bg-kdl-border-subtle animate-pulse" />
+        </div>
+
+        <!-- Table -->
+        <KTable
+          v-else
+          :columns="mappingKColumns"
+          :data="mappingRows"
+          :loading="mappingLoading"
+          dense
+          pagination="none"
+        >
+          <template #cell-in_tracking1="{ value }">
+            <span class="flex justify-center">
+              <!-- check-circle -->
+              <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="text-success"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <!-- x-circle -->
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="text-error"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            </span>
+          </template>
+          <template #cell-in_cost_object="{ value }">
+            <span class="flex justify-center">
+              <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="text-success"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="text-error"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            </span>
+          </template>
+          <template #cell-actions="{ row }">
+            <div class="flex gap-1">
+              <button
+                class="btn btn-ghost btn-xs"
+                :disabled="row.in_tracking1 || !!mappingInFlight[row.xero_name + '_t1']"
+                @click="addToTm1(row, true, false)"
+              >
+                <KSpinner v-if="!!mappingInFlight[row.xero_name + '_t1']" size="12" />
+                <span v-else>+ tracking_1</span>
+              </button>
+              <button
+                class="btn btn-ghost btn-xs"
+                :disabled="row.in_cost_object || !!mappingInFlight[row.xero_name + '_co']"
+                @click="addToTm1(row, false, true)"
+              >
+                <KSpinner v-if="!!mappingInFlight[row.xero_name + '_co']" size="12" />
+                <span v-else>+ cost_object</span>
+              </button>
+            </div>
+          </template>
+        </KTable>
+      </div>
     </div>
-  </q-page>
+  </AppPage>
 </template>
 
 <script>
-import { defineComponent, ref, reactive, onMounted, computed } from 'vue';
+import { defineComponent, ref, reactive, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import EmptyState from '../components/klikk/EmptyState.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KBadge from '../components/klikk/KBadge.vue';
+import KCheckbox from '../components/klikk/KCheckbox.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 
 export default defineComponent({
   name: 'PlanningAnalytics',
-  components: { PageHeader, SectionCard, EmptyState, TenantSelector },
+  components: {
+    AppPage, PageHeader, SectionCard, EmptyState,
+    KAlert, KBadge, KCheckbox, KInput, KSpinner, KTable, KTabs,
+    TenantSelector,
+  },
   setup() {
     const tab = ref('pipeline');
     const tenantId = ref(null);
@@ -262,11 +324,12 @@ export default defineComponent({
     const mappingInFlight = ref({});
     const mappingUnmappedCount = ref(0);
 
-    const mappingColumns = [
-      { name: 'xero_name', label: 'Xero Name', field: 'xero_name', align: 'left', sortable: true },
-      { name: 'in_tracking1', label: 'In tracking_1', field: 'in_tracking1', align: 'center', sortable: true },
-      { name: 'in_cost_object', label: 'In cost_object', field: 'in_cost_object', align: 'center', sortable: true },
-      { name: 'actions', label: 'Actions', field: 'actions', align: 'left' },
+    // KTable column defs (TanStack-style)
+    const mappingKColumns = [
+      { accessorKey: 'xero_name', header: 'Xero Name', enableSorting: true },
+      { accessorKey: 'in_tracking1', header: 'In tracking_1', enableSorting: true, meta: { width: '130px' } },
+      { accessorKey: 'in_cost_object', header: 'In cost_object', enableSorting: true, meta: { width: '130px' } },
+      { accessorKey: 'actions', header: 'Actions', enableSorting: false },
     ];
 
     async function loadTrackingMapping() {
@@ -304,7 +367,6 @@ export default defineComponent({
         mappingInFlight.value = updated;
       }
     }
-
 
     function buildSteps() {
       const base = [
@@ -478,7 +540,6 @@ export default defineComponent({
     async function runSingleStep(idx) {
       if (pipelineRunning.value) return;
       pipelineRunning.value = true;
-      // Reset all step statuses before running
       steps.value.forEach((s, i) => {
         if (i !== idx) steps.value[i] = { ...s, status: 'idle', message: '', elapsed: null };
       });
@@ -489,7 +550,6 @@ export default defineComponent({
     async function runSelectedSteps() {
       if (pipelineRunning.value) return;
       pipelineRunning.value = true;
-      // Reset all step statuses
       steps.value.forEach((s, i) => {
         steps.value[i] = { ...s, status: 'idle', message: '', elapsed: null };
       });
@@ -532,7 +592,7 @@ export default defineComponent({
       addProcess, handleTestConnection, handleSaveServer, handleSaveProcesses,
       runSingleStep, runSelectedSteps, stepRowClass, buildSteps,
       mappingRows, mappingLoading, mappingError, mappingInFlight, mappingUnmappedCount,
-      mappingColumns, loadTrackingMapping, addToTm1,
+      mappingKColumns, loadTrackingMapping, addToTm1,
     };
   },
 });
