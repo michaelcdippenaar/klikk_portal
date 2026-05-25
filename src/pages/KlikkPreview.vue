@@ -149,18 +149,164 @@
       </div>
     </div>
 
+    <!-- ⑥ KInput — finance-admin input primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑥ KInput — finance-admin primitive</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+        <KInput v-model="demoEmail" label="Email address" type="email" placeholder="you@example.com" />
+        <KInput v-model="demoAmount" label="Amount" prefix="R" placeholder="0.00" type="number" />
+        <KInput
+          v-model="demoRef"
+          label="Reference"
+          :error="demoRef.length > 0 && demoRef.length < 3"
+          error-message="Reference must be at least 3 characters"
+          help-text="Used for bank reconciliation matching"
+        />
+        <KInput v-model="demoSearch" label="Search transactions" icon="search" placeholder="Search…" />
+        <KInput v-model="demoDisabled" label="Disabled field" disabled placeholder="Cannot edit" />
+        <KInput v-model="demoSuffix" label="Currency" prefix="R" suffix="ZAR" placeholder="0.00" />
+      </div>
+    </div>
+
+    <!-- ⑦ KAlert — finance-admin alert primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑦ KAlert — finance-admin primitive</span>
+      <div style="display: flex; flex-direction: column; gap: 10px; max-width: 680px;">
+        <KAlert variant="info" title="Sync scheduled" body="Next Xero sync runs at 02:00 SAST. No action required." />
+        <KAlert variant="success" title="Journals posted" body="All 142 journals were posted successfully to Xero." dismissible />
+        <KAlert variant="warning" title="API rate limit" body="Xero returned 429 (Too Many Requests). Retrying in 30 seconds." />
+        <KAlert variant="error" title="Connection failed" :dismissible="true">
+          Authentication error — check your <strong>Xero credentials</strong> in Setup.
+        </KAlert>
+      </div>
+    </div>
+
+    <!-- ⑨ KOperationCard — operator-card primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑨ KOperationCard — operator-card primitive</span>
+      <div style="display: flex; flex-direction: column; gap: 16px; max-width: 680px;">
+
+        <!-- Demo 1: running state with metric -->
+        <KOperationCard
+          title="Xero Journal Sync"
+          description="Posts approved journals to the Xero ledger"
+          state="running"
+          :last-run-at="demoRunningDate"
+          metric="142 rows · 28s"
+          :primary-action="{ label: 'View logs', handler: () => {} }"
+        />
+
+        <!-- Demo 2: failed state with lastError -->
+        <KOperationCard
+          title="Bank Reconciliation"
+          description="Matches Investec transactions to Xero payments"
+          state="failed"
+          :last-run-at="demoFailedDate"
+          :primary-action="{ label: 'Retry', handler: () => {} }"
+          last-error="Xero API returned 503 — connection timeout after 30s. Check credentials in Setup."
+        />
+
+      </div>
+    </div>
+
+    <!-- ⑧ KTabs — finance-admin tabs primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑧ KTabs — finance-admin primitive (pills + underline)</span>
+      <div style="display: flex; flex-direction: column; gap: 24px; max-width: 680px;">
+        <!-- Pills (default) -->
+        <div>
+          <p class="preview-variant-label">Variant: pills (default)</p>
+          <KTabs
+            :tabs="demoTabs"
+            v-model="activePillTab"
+            :url-sync="false"
+            aria-label="Finance sections demo"
+          />
+          <div class="preview-tab-content">
+            Active tab: <strong>{{ activePillTab }}</strong>
+          </div>
+        </div>
+
+        <!-- Pills with icons and counts -->
+        <div>
+          <p class="preview-variant-label">Variant: pills with icons + counts</p>
+          <KTabs
+            :tabs="demoTabsWithIcons"
+            v-model="activeIconTab"
+            :url-sync="false"
+            aria-label="Finance sections with icons demo"
+          />
+        </div>
+
+        <!-- Underline -->
+        <div>
+          <p class="preview-variant-label">Variant: underline</p>
+          <KTabs
+            variant="underline"
+            :tabs="demoTabs"
+            v-model="activeUnderlineTab"
+            :url-sync="false"
+            aria-label="Finance sections underline demo"
+          />
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue';
 import { useTheme } from '../composables/useTheme';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import EmptyState from '../components/klikk/EmptyState.vue';
 import FilterBar from '../components/klikk/FilterBar.vue';
 import ResultPanel from '../components/klikk/ResultPanel.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KTabs from '../components/klikk/KTabs.vue';
+import KOperationCard from '../components/klikk/KOperationCard.vue';
 
 const { isDark, toggleTheme } = useTheme();
+
+// ─── KOperationCard demo state ────────────────────────────────────────────
+// running demo: 4 minutes ago
+const demoRunningDate = new Date(Date.now() - 4 * 60 * 1000);
+// failed demo: yesterday at 09:12
+const demoFailedDate = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  d.setHours(9, 12, 0, 0);
+  return d;
+})();
+
+// ─── KInput demo state ─────────────────────────────────────────────────────
+const demoEmail = ref('');
+const demoAmount = ref('');
+const demoRef = ref('');
+const demoSearch = ref('');
+const demoDisabled = ref('');
+const demoSuffix = ref('');
+
+// ─── KTabs demo state ──────────────────────────────────────────────────────
+const demoTabs = [
+  { name: 'overview', label: 'Overview' },
+  { name: 'journals', label: 'Journals' },
+  { name: 'payments', label: 'Payments' },
+  { name: 'reports',  label: 'Reports' },
+];
+
+const demoTabsWithIcons = [
+  { name: 'summary',   label: 'Summary',   icon: 'layout-dashboard', count: 3 },
+  { name: 'detail',    label: 'Detail',    icon: 'list' },
+  { name: 'analytics', label: 'Analytics', icon: 'bar-chart' },
+  { name: 'settings',  label: 'Settings',  icon: 'settings' },
+];
+
+const activePillTab = ref('overview');
+const activeIconTab = ref('summary');
+const activeUnderlineTab = ref('overview');
 </script>
 
 <style scoped>
@@ -183,5 +329,19 @@ const { isDark, toggleTheme } = useTheme();
 .section-body-text {
   color: var(--kdl-text-muted);
   font-size: 15px;
+}
+.preview-variant-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--kdl-text-hint);
+  margin: 0 0 8px;
+}
+.preview-tab-content {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--kdl-border-subtle);
+  font-size: 13px;
+  color: var(--kdl-text-muted);
 }
 </style>
