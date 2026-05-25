@@ -16,10 +16,6 @@ export default defineConfig({
       components: fileURLToPath(new URL('./src/components', import.meta.url)),
       stores: fileURLToPath(new URL('./src/stores', import.meta.url)),
       assets: fileURLToPath(new URL('./src/assets', import.meta.url)),
-      // Redirect any remaining `from 'quasar'` imports to the stub shim so
-      // the five pages not yet migrated (Credentials, XeroConnect, AiAgent,
-      // AgentMonitor, AiAgentSetup) don't break the build.
-      quasar: fileURLToPath(new URL('./src/components/_QuasarStubs.js', import.meta.url)),
     },
   },
 
