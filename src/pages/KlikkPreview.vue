@@ -160,17 +160,18 @@
       </div>
     </div>
 
-    <!-- Quasar component check (confirm q-btn picks up KDL primary colour) -->
+    <!-- KDL button variant showcase — replaces the old Quasar q-btn colour check -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">Quasar q-btn colour check</span>
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">KDL button variants</span>
       <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-        <q-btn color="primary" label="Primary" />
-        <q-btn color="secondary" label="Secondary" />
-        <q-btn color="positive" label="Positive" />
-        <q-btn color="negative" label="Negative" />
-        <q-btn color="accent" label="Accent" />
-        <q-btn color="primary" outline label="Outlined" />
-        <q-btn color="primary" flat label="Flat" />
+        <button class="btn-primary">Primary</button>
+        <button class="btn-ghost">Ghost</button>
+        <button class="btn-accent">Accent</button>
+        <button class="btn-success">Success</button>
+        <button class="btn-danger">Danger</button>
+        <button class="btn-primary btn-sm">Primary sm</button>
+        <button class="btn-ghost btn-sm">Ghost sm</button>
+        <button class="btn-primary" disabled>Disabled</button>
       </div>
     </div>
 
