@@ -6,13 +6,14 @@
       </template>
     </PageHeader>
 
-    <div v-if="!tenantId" class="q-pa-lg text-center">
-      <q-icon name="info" size="3em" color="grey-5" />
-      <div class="text-h6 q-mt-md text-grey-7">Please select a tenant first</div>
-    </div>
+    <EmptyState
+      v-if="!tenantId"
+      title="Please select a tenant first"
+      body="Use the tenant selector above to pick an organisation."
+    />
 
     <div v-else>
-      <q-tabs v-model="tab" dense class="text-grey" active-color="primary" indicator-color="primary" align="left">
+      <q-tabs v-model="tab" dense active-color="primary" indicator-color="primary" align="left" class="q-mb-xs">
         <q-tab name="setup" label="Setup" icon="settings" />
         <q-tab name="pipeline" label="Pipeline" icon="play_circle" />
         <q-tab name="tracking-mapping" label="Tracking Mapping" icon="swap_horiz" />
@@ -23,219 +24,193 @@
         <!-- ===================== SETUP TAB ===================== -->
         <q-tab-panel name="setup">
           <!-- My TM1 Credentials -->
-          <q-card class="q-mb-md">
-            <q-card-section>
-              <div class="text-subtitle1 q-mb-xs">My TM1 Credentials</div>
-              <div class="text-caption text-grey-7 q-mb-sm">Your personal TM1 login. All TM1 operations will use these credentials.</div>
-              <div class="row q-col-gutter-sm">
-                <div class="col-12 col-sm-6 col-md-4">
-                  <q-input v-model="myCreds.tm1_username" label="TM1 Username" dense outlined />
-                </div>
-                <div class="col-12 col-sm-6 col-md-4">
-                  <q-input v-model="myCreds.tm1_password" label="TM1 Password" type="password" dense outlined />
-                </div>
+          <SectionCard title="My TM1 Credentials" description="Your personal TM1 login. All TM1 operations will use these credentials." class="q-mb-md">
+            <div class="row q-col-gutter-sm">
+              <div class="col-12 col-sm-6 col-md-4">
+                <q-input v-model="myCreds.tm1_username" label="TM1 Username" dense outlined />
               </div>
-              <div class="q-mt-sm q-gutter-sm">
-                <q-btn label="Save credentials" color="primary" :loading="savingCreds" @click="handleSaveCreds" no-caps />
-                <q-btn label="Remove" flat color="negative" :loading="removingCreds" @click="handleRemoveCreds" no-caps />
+              <div class="col-12 col-sm-6 col-md-4">
+                <q-input v-model="myCreds.tm1_password" label="TM1 Password" type="password" dense outlined />
               </div>
-              <div v-if="credsResult" class="q-mt-sm">
-                <q-banner :class="credsResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
-                  {{ credsResult.message }}
-                </q-banner>
-              </div>
-            </q-card-section>
-          </q-card>
+            </div>
+            <div class="q-mt-sm q-gutter-sm">
+              <q-btn label="Save credentials" color="primary" :loading="savingCreds" @click="handleSaveCreds" no-caps />
+              <q-btn label="Remove" flat color="negative" :loading="removingCreds" @click="handleRemoveCreds" no-caps />
+            </div>
+            <div v-if="credsResult" class="q-mt-sm">
+              <q-banner :class="credsResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
+                {{ credsResult.message }}
+              </q-banner>
+            </div>
+          </SectionCard>
 
           <!-- TM1 Server -->
-          <q-card class="q-mb-md">
-            <q-card-section>
-              <div class="text-subtitle1 q-mb-sm">TM1 Server</div>
-              <div class="row q-col-gutter-sm">
-                <div class="col-12 col-md-6">
-                  <q-input v-model="tm1.baseUrl" label="Base URL" dense outlined placeholder="http://host:port/api/v1/" />
-                </div>
-                <div class="col-12 col-sm-6 col-md-3">
-                  <q-input v-model="tm1.user" label="Username" dense outlined />
-                </div>
-                <div class="col-12 col-sm-6 col-md-3">
-                  <q-input v-model="tm1.password" label="Password" type="password" dense outlined />
-                </div>
+          <SectionCard title="TM1 Server" class="q-mb-md">
+            <div class="row q-col-gutter-sm">
+              <div class="col-12 col-md-6">
+                <q-input v-model="tm1.baseUrl" label="Base URL" dense outlined placeholder="http://host:port/api/v1/" />
               </div>
-              <div class="q-mt-sm q-gutter-sm">
-                <q-btn label="Test connection" color="secondary" :loading="testingConnection" @click="handleTestConnection" no-caps />
-                <q-btn label="Save" color="primary" :loading="savingServer" @click="handleSaveServer" no-caps />
+              <div class="col-12 col-sm-6 col-md-3">
+                <q-input v-model="tm1.user" label="Username" dense outlined />
               </div>
-              <div v-if="connectionResult" class="q-mt-sm">
-                <q-banner :class="connectionResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
-                  {{ connectionResult.message }}
-                </q-banner>
+              <div class="col-12 col-sm-6 col-md-3">
+                <q-input v-model="tm1.password" label="Password" type="password" dense outlined />
               </div>
-            </q-card-section>
-          </q-card>
+            </div>
+            <div class="q-mt-sm q-gutter-sm">
+              <q-btn label="Test connection" color="secondary" :loading="testingConnection" @click="handleTestConnection" no-caps />
+              <q-btn label="Save" color="primary" :loading="savingServer" @click="handleSaveServer" no-caps />
+            </div>
+            <div v-if="connectionResult" class="q-mt-sm">
+              <q-banner :class="connectionResult.success ? 'bg-positive text-white' : 'bg-negative text-white'" dense rounded>
+                {{ connectionResult.message }}
+              </q-banner>
+            </div>
+          </SectionCard>
 
           <!-- TM1 Processes -->
-          <q-card>
-            <q-card-section>
-              <div class="text-subtitle1 q-mb-sm">TM1 Processes</div>
-              <div v-for="(proc, idx) in tm1Processes" :key="idx" class="row q-col-gutter-sm q-mb-sm items-center">
-                <div class="col-auto">
-                  <q-checkbox v-model="proc.enabled" dense />
-                </div>
-                <div class="col">
-                  <q-input v-model="proc.process_name" label="Process name" dense outlined />
-                </div>
-                <div class="col">
-                  <q-input v-model="proc.paramString" label="Parameters (key=val, ...)" dense outlined hint="e.g. pSource=ODBC,pYear=2025" />
-                </div>
-                <div class="col-auto">
-                  <q-btn flat round dense icon="delete" color="negative" @click="tm1Processes.splice(idx, 1)" />
-                </div>
+          <SectionCard title="TM1 Processes">
+            <div v-for="(proc, idx) in tm1Processes" :key="idx" class="row q-col-gutter-sm q-mb-sm items-center">
+              <div class="col-auto">
+                <q-checkbox v-model="proc.enabled" dense />
               </div>
-              <div class="q-gutter-sm q-mt-sm">
-                <q-btn label="Add process" icon="add" flat color="primary" @click="addProcess" no-caps />
-                <q-btn label="Save processes" color="primary" :loading="savingProcesses" @click="handleSaveProcesses" no-caps />
+              <div class="col">
+                <q-input v-model="proc.process_name" label="Process name" dense outlined />
               </div>
-            </q-card-section>
-          </q-card>
+              <div class="col">
+                <q-input v-model="proc.paramString" label="Parameters (key=val, ...)" dense outlined hint="e.g. pSource=ODBC,pYear=2025" />
+              </div>
+              <div class="col-auto">
+                <q-btn flat round dense icon="delete" color="negative" @click="tm1Processes.splice(idx, 1)" />
+              </div>
+            </div>
+            <div class="q-gutter-sm q-mt-sm">
+              <q-btn label="Add process" icon="add" flat color="primary" @click="addProcess" no-caps />
+              <q-btn label="Save processes" color="primary" :loading="savingProcesses" @click="handleSaveProcesses" no-caps />
+            </div>
+          </SectionCard>
         </q-tab-panel>
 
         <!-- ===================== PIPELINE TAB ===================== -->
         <q-tab-panel name="pipeline">
           <!-- Steps to run -->
-          <q-card class="q-mb-md">
-            <q-card-section>
-              <div class="text-subtitle1 q-mb-sm">Steps to run</div>
-              <div v-for="(s, idx) in steps" :key="idx" class="row items-center q-mb-xs">
-                <q-checkbox v-model="s.selected" :label="s.label" dense class="col" />
-                <q-btn flat dense size="sm" label="Run" icon="play_arrow" color="primary" :loading="s.status === 'running'" :disable="pipelineRunning" @click="runSingleStep(idx)" no-caps />
-              </div>
-            </q-card-section>
-          </q-card>
+          <SectionCard title="Steps to run" class="q-mb-md">
+            <div v-for="(s, idx) in steps" :key="idx" class="row items-center q-mb-xs">
+              <q-checkbox v-model="s.selected" :label="s.label" dense class="col" />
+              <q-btn flat dense size="sm" label="Run" icon="play_arrow" color="primary" :loading="s.status === 'running'" :disable="pipelineRunning" @click="runSingleStep(idx)" no-caps />
+            </div>
+          </SectionCard>
 
           <!-- Options -->
-          <q-card class="q-mb-md">
-            <q-card-section>
-              <div class="text-subtitle1 q-mb-sm">Options</div>
-              <q-checkbox v-model="pipelineOpts.loadAll" label="Load all data (ignore last update)" dense class="q-mr-md" />
-              <q-checkbox v-model="pipelineOpts.rebuildTrailBalance" label="Rebuild trail balance" dense class="q-mr-md" />
-              <q-checkbox v-model="pipelineOpts.excludeManualJournals" label="Exclude manual journals" dense class="q-mr-md" />
-              <q-checkbox v-model="pipelineOpts.calculatePnlYtd" label="Calculate Balance Sheet YTD (balance to date)" dense />
-            </q-card-section>
-          </q-card>
+          <SectionCard title="Options" class="q-mb-md">
+            <q-checkbox v-model="pipelineOpts.loadAll" label="Load all data (ignore last update)" dense class="q-mr-md" />
+            <q-checkbox v-model="pipelineOpts.rebuildTrailBalance" label="Rebuild trail balance" dense class="q-mr-md" />
+            <q-checkbox v-model="pipelineOpts.excludeManualJournals" label="Exclude manual journals" dense class="q-mr-md" />
+            <q-checkbox v-model="pipelineOpts.calculatePnlYtd" label="Calculate Balance Sheet YTD (balance to date)" dense />
+          </SectionCard>
 
           <q-btn label="Run selected steps" icon="play_circle" color="primary" :loading="pipelineRunning" @click="runSelectedSteps" no-caps class="q-mb-md" />
 
-          <div class="text-caption text-grey-7 q-mb-md">
+          <p class="text-muted q-mb-md">
             TM1 "success" means the process was started. Check TM1 Process Monitor for actual outcome. TM1 steps may take several minutes.
-          </div>
+          </p>
 
           <!-- Progress -->
-          <q-card v-if="steps.some(s => s.status !== 'idle')">
-            <q-card-section>
-              <div class="text-subtitle1 q-mb-sm">Progress</div>
-              <q-list separator>
-                <q-item v-for="(s, idx) in steps" :key="'p' + idx" :class="stepRowClass(s)">
-                  <q-item-section avatar>
-                    <q-spinner v-if="s.status === 'running'" color="primary" size="1.5em" />
-                    <q-icon v-else-if="s.status === 'done'" name="check_circle" color="positive" />
-                    <q-icon v-else-if="s.status === 'error'" name="error" color="negative" />
-                    <q-icon v-else-if="s.status === 'skipped'" name="remove_circle_outline" color="grey" />
-                    <q-icon v-else name="radio_button_unchecked" color="grey-4" />
-                  </q-item-section>
-                  <q-item-section>
-                    <q-item-label>{{ s.label }}</q-item-label>
-                    <q-item-label caption v-if="s.message">{{ s.message }}</q-item-label>
-                  </q-item-section>
-                  <q-item-section side v-if="s.elapsed != null">
-                    {{ s.elapsed }}s
-                  </q-item-section>
-                </q-item>
-              </q-list>
-            </q-card-section>
-          </q-card>
+          <SectionCard v-if="steps.some(s => s.status !== 'idle')" title="Progress">
+            <q-list separator>
+              <q-item v-for="(s, idx) in steps" :key="'p' + idx" :class="stepRowClass(s)">
+                <q-item-section avatar>
+                  <q-spinner v-if="s.status === 'running'" color="primary" size="1.5em" />
+                  <q-icon v-else-if="s.status === 'done'" name="check_circle" color="positive" />
+                  <q-icon v-else-if="s.status === 'error'" name="error" color="negative" />
+                  <q-icon v-else-if="s.status === 'skipped'" name="remove_circle_outline" class="pa-step-icon--skipped" />
+                  <q-icon v-else name="radio_button_unchecked" class="pa-step-icon--idle" />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label>{{ s.label }}</q-item-label>
+                  <q-item-label caption v-if="s.message">{{ s.message }}</q-item-label>
+                </q-item-section>
+                <q-item-section side v-if="s.elapsed != null">
+                  {{ s.elapsed }}s
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </SectionCard>
         </q-tab-panel>
 
         <!-- ===================== TRACKING MAPPING TAB ===================== -->
         <q-tab-panel name="tracking-mapping">
-          <div v-if="!tenantId" class="q-pa-lg text-center">
-            <q-icon name="info" size="3em" color="grey-5" />
-            <div class="text-h6 q-mt-md text-grey-7">Please select a tenant first</div>
+          <!-- Header row -->
+          <div class="row items-center q-mb-md q-gutter-sm">
+            <div class="section-header">Xero Tracking Category 1 → TM1 Dimensions</div>
+            <q-space />
+            <q-chip v-if="mappingRows.length" :color="mappingUnmappedCount > 0 ? 'orange' : 'positive'" text-color="white" icon="info" dense>
+              {{ mappingUnmappedCount }} unmapped in tracking_1
+            </q-chip>
+            <q-btn label="Refresh" icon="refresh" flat color="primary" no-caps :loading="mappingLoading" @click="loadTrackingMapping" />
           </div>
 
-          <div v-else>
-            <!-- Header row -->
-            <div class="row items-center q-mb-md q-gutter-sm">
-              <div class="text-subtitle1">Xero Tracking Category 1 → TM1 Dimensions</div>
-              <q-space />
-              <q-chip v-if="mappingRows.length" :color="mappingUnmappedCount > 0 ? 'orange' : 'positive'" text-color="white" icon="info" dense>
-                {{ mappingUnmappedCount }} unmapped in tracking_1
-              </q-chip>
-              <q-btn label="Refresh" icon="refresh" flat color="primary" no-caps :loading="mappingLoading" @click="loadTrackingMapping" />
-            </div>
+          <!-- Error -->
+          <q-banner v-if="mappingError" class="bg-negative text-white q-mb-md" dense rounded>
+            {{ mappingError }}
+          </q-banner>
 
-            <!-- Error -->
-            <q-banner v-if="mappingError" class="bg-negative text-white q-mb-md" dense rounded>
-              {{ mappingError }}
-            </q-banner>
-
-            <!-- Loading skeleton -->
-            <div v-if="mappingLoading && !mappingRows.length" class="q-gutter-sm">
-              <q-skeleton height="40px" v-for="n in 5" :key="n" />
-            </div>
-
-            <!-- Table -->
-            <q-table
-              v-else
-              :rows="mappingRows"
-              :columns="mappingColumns"
-              row-key="xero_name"
-              dense
-              flat
-              bordered
-              :rows-per-page-options="[0]"
-              hide-bottom
-            >
-              <template #body-cell-in_tracking1="props">
-                <q-td :props="props" class="text-center">
-                  <q-icon v-if="props.value" name="check_circle" color="positive" />
-                  <q-icon v-else name="cancel" color="negative" />
-                </q-td>
-              </template>
-              <template #body-cell-in_cost_object="props">
-                <q-td :props="props" class="text-center">
-                  <q-icon v-if="props.value" name="check_circle" color="positive" />
-                  <q-icon v-else name="cancel" color="negative" />
-                </q-td>
-              </template>
-              <template #body-cell-actions="props">
-                <q-td :props="props">
-                  <div class="row q-gutter-xs">
-                    <q-btn
-                      label="+ tracking_1"
-                      size="xs"
-                      flat
-                      no-caps
-                      color="primary"
-                      :disable="props.row.in_tracking1 || !!mappingInFlight[props.row.xero_name + '_t1']"
-                      :loading="!!mappingInFlight[props.row.xero_name + '_t1']"
-                      @click="addToTm1(props.row, true, false)"
-                    />
-                    <q-btn
-                      label="+ cost_object"
-                      size="xs"
-                      flat
-                      no-caps
-                      color="secondary"
-                      :disable="props.row.in_cost_object || !!mappingInFlight[props.row.xero_name + '_co']"
-                      :loading="!!mappingInFlight[props.row.xero_name + '_co']"
-                      @click="addToTm1(props.row, false, true)"
-                    />
-                  </div>
-                </q-td>
-              </template>
-            </q-table>
+          <!-- Loading skeleton -->
+          <div v-if="mappingLoading && !mappingRows.length" class="q-gutter-sm">
+            <q-skeleton height="40px" v-for="n in 5" :key="n" />
           </div>
+
+          <!-- Table -->
+          <q-table
+            v-else
+            :rows="mappingRows"
+            :columns="mappingColumns"
+            row-key="xero_name"
+            dense
+            flat
+            bordered
+            :rows-per-page-options="[0]"
+            hide-bottom
+          >
+            <template #body-cell-in_tracking1="props">
+              <q-td :props="props" class="text-center">
+                <q-icon v-if="props.value" name="check_circle" color="positive" />
+                <q-icon v-else name="cancel" color="negative" />
+              </q-td>
+            </template>
+            <template #body-cell-in_cost_object="props">
+              <q-td :props="props" class="text-center">
+                <q-icon v-if="props.value" name="check_circle" color="positive" />
+                <q-icon v-else name="cancel" color="negative" />
+              </q-td>
+            </template>
+            <template #body-cell-actions="props">
+              <q-td :props="props">
+                <div class="row q-gutter-xs">
+                  <q-btn
+                    label="+ tracking_1"
+                    size="xs"
+                    flat
+                    no-caps
+                    color="primary"
+                    :disable="props.row.in_tracking1 || !!mappingInFlight[props.row.xero_name + '_t1']"
+                    :loading="!!mappingInFlight[props.row.xero_name + '_t1']"
+                    @click="addToTm1(props.row, true, false)"
+                  />
+                  <q-btn
+                    label="+ cost_object"
+                    size="xs"
+                    flat
+                    no-caps
+                    color="secondary"
+                    :disable="props.row.in_cost_object || !!mappingInFlight[props.row.xero_name + '_co']"
+                    :loading="!!mappingInFlight[props.row.xero_name + '_co']"
+                    @click="addToTm1(props.row, false, true)"
+                  />
+                </div>
+              </q-td>
+            </template>
+          </q-table>
         </q-tab-panel>
       </q-tab-panels>
     </div>
@@ -245,11 +220,13 @@
 <script>
 import { defineComponent, ref, reactive, onMounted, computed } from 'vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import EmptyState from '../components/klikk/EmptyState.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 
 export default defineComponent({
   name: 'PlanningAnalytics',
-  components: { PageHeader, TenantSelector },
+  components: { PageHeader, SectionCard, EmptyState, TenantSelector },
   setup() {
     const tab = ref('pipeline');
     const tenantId = ref(null);
@@ -528,8 +505,8 @@ export default defineComponent({
     }
 
     function stepRowClass(s) {
-      if (s.status === 'done') return 'bg-green-1';
-      if (s.status === 'error') return 'bg-red-1';
+      if (s.status === 'done') return 'pa-step-row--done';
+      if (s.status === 'error') return 'pa-step-row--error';
       return '';
     }
 
@@ -560,3 +537,28 @@ export default defineComponent({
   },
 });
 </script>
+
+<style scoped>
+/* Pipeline step row status colours — KDL tokens */
+.pa-step-row--done {
+  background: rgba(13, 148, 136, 0.06);
+}
+.pa-step-row--error {
+  background: rgba(220, 38, 38, 0.06);
+}
+
+:root[data-theme="dark"] .pa-step-row--done {
+  background: rgba(45, 212, 191, 0.08);
+}
+:root[data-theme="dark"] .pa-step-row--error {
+  background: rgba(248, 113, 113, 0.08);
+}
+
+/* Step icon states */
+.pa-step-icon--skipped {
+  color: var(--kdl-text-muted);
+}
+.pa-step-icon--idle {
+  color: var(--kdl-text-hint);
+}
+</style>
