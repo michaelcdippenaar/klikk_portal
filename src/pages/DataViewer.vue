@@ -1,5 +1,5 @@
 <template>
-  <q-page class="q-pa-md">
+  <div class="p-4">
     <PageHeader title="Data Viewer" subtitle="Explore trial balance, P&amp;L summaries, and line items">
       <template #tenantContext>
         <TenantSelector />
@@ -13,7 +13,9 @@
       body="Select a tenant to explore financial data."
     >
       <template #cta>
-        <q-btn label="Select Tenant" color="primary" outline size="sm" @click="$router.push({ name: 'credentials' })" />
+        <button class="btn btn-primary btn-sm" @click="$router.push({ name: 'credentials' })">
+          Select Tenant
+        </button>
       </template>
     </EmptyState>
 
@@ -24,11 +26,11 @@
         :result="{ status: 'error', completedAt: null, error: pageError }"
         title="Load failed"
         compact
-        class="q-mb-sm"
+        class="mb-2"
       />
 
       <!-- Recon-view segmented control — promoted out of buried card header -->
-      <div class="dv-toolbar q-mb-sm">
+      <div class="dv-toolbar mb-2">
         <KTabs :tabs="dataTabs" v-model="tab" />
         <div v-if="tab === 'trail-balance'" class="dv-toolbar__recon">
           <button
@@ -52,7 +54,7 @@
         <p class="dv-tab-hint">Operational coverage and reconciliation status for income statement accounts.</p>
 
         <!-- Refresh button + freshness -->
-        <div class="dv-freshness-row q-mb-sm">
+        <div class="dv-freshness-row mb-2">
           <FreshnessChip
             :value="summaryLoadedAt"
             prefix="Loaded"
@@ -64,17 +66,16 @@
           </button>
         </div>
 
-        <!-- Operational coverage metrics — replaces raw db-row-count klikk-stats -->
-        <SectionCard class="q-mb-md">
+        <!-- Operational coverage metrics -->
+        <SectionCard class="mb-4">
           <template #actions>
-            <q-btn
-              label="Refresh All"
-              color="primary"
-              outline
-              size="sm"
-              :loading="dataStore.loading"
+            <button
+              class="btn btn-primary btn-sm btn-outline"
+              :disabled="dataStore.loading"
               @click="refreshSummary"
-            />
+            >
+              Refresh All
+            </button>
           </template>
           <div v-if="dataStore.summary" class="dv-metrics-row">
             <MetricTile
@@ -102,11 +103,11 @@
           />
         </SectionCard>
 
-        <!-- Reconciliation Diagnostics — structured dl, not prose -->
+        <!-- Reconciliation Diagnostics -->
         <SectionCard
           v-if="dataStore.accountSummary?.diagnostics"
           title="Reconciliation Diagnostics"
-          class="q-mb-md"
+          class="mb-4"
         >
           <dl class="dv-diag-list">
             <div class="dv-diag-item">
@@ -128,9 +129,8 @@
         </SectionCard>
 
         <!-- Income Statement Accounts -->
-        <SectionCard title="Income Statement Accounts" class="q-mb-md">
+        <SectionCard title="Income Statement Accounts" class="mb-4">
           <template #actions>
-            <!-- StatusPills replacing q-badges; single inline balance summary -->
             <template v-if="dataStore.accountSummary">
               <div class="dv-is-status" role="group" aria-label="Income statement reconciliation summary">
                 <StatusPill
@@ -151,7 +151,6 @@
                   :icon="true"
                   size="sm"
                 />
-                <!-- Info tooltip explaining the tones -->
                 <span class="dv-is-info" tabindex="0" title="Matched: DB total agrees with Xero P&amp;L. Diff: totals disagree — investigate in Comparison tab. No Xero: account has no Xero P&amp;L data for the period.">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-label="Explanation of status tones"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                 </span>
@@ -171,7 +170,7 @@
           />
 
           <!-- Freshness + re-fetch -->
-          <div class="dv-freshness-row q-mb-sm">
+          <div class="dv-freshness-row mb-2">
             <FreshnessChip
               :value="acctSummaryLoadedAt"
               prefix="Loaded"
@@ -187,7 +186,7 @@
             v-if="acctSummaryError"
             variant="error"
             :title="acctSummaryError"
-            class="q-mb-sm"
+            class="mb-2"
             dismissible
           />
 
@@ -198,64 +197,54 @@
             body="Set a period above and click Load to view income statement accounts."
           >
             <template #cta>
-              <q-btn label="Load now" color="primary" size="sm" outline @click="loadAccountSummary" />
+              <button class="btn btn-primary btn-sm btn-outline" @click="loadAccountSummary">Load now</button>
             </template>
           </EmptyState>
 
-          <q-table
+          <KTable
             v-if="dataStore.accountSummary"
-            :rows="dataStore.accountSummary.income_statement.accounts"
             :columns="accountSummaryColumns"
-            row-key="account_code"
-            :filter="acctFilter"
-            :pagination="{ rowsPerPage: 25 }"
-            selection="single"
-            dense
-            flat
-            bordered
+            :data="filteredAccountSummaryRows"
+            :loading="dataStore.loading"
+            :dense="true"
+            pagination="client"
+            :page-size="25"
           >
-            <template v-slot:top-right>
+            <template #toolbar>
               <KInput
-                ref="acctFilterInput"
                 v-model="acctFilter"
                 placeholder="Filter accounts…"
-                icon="filter"
                 class="filter-input-md"
               >
                 <template #icon><DvFilterIcon /></template>
               </KInput>
             </template>
-            <template v-slot:body-cell-db_total="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ format(props.value) }}</q-td>
+            <template #cell-db_total="{ value }">
+              <span class="kdl-numeric">{{ format(value) }}</span>
             </template>
-            <template v-slot:body-cell-xero_total="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ props.value != null ? format(props.value) : '-' }}</q-td>
+            <template #cell-xero_total="{ value }">
+              <span class="kdl-numeric">{{ value != null ? format(value) : '-' }}</span>
             </template>
-            <template v-slot:body-cell-diff="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null" :class="diffClass(props.value)" class="text-weight-semibold">{{ format(props.value) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-diff="{ value }">
+              <span v-if="value != null" class="kdl-numeric" :class="diffClass(value)">{{ format(value) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-            <template v-slot:body-cell-in_balance="props">
-              <q-td :props="props">
-                <template v-if="props.value === true">
-                  <StatusPill tone="success" label="OK" size="sm" />
-                </template>
-                <template v-else-if="props.value === false">
-                  <!-- DIFF badge: click navigates to Line Items filtered to this account -->
-                  <button
-                    class="dv-diff-btn"
-                    :title="`Investigate ${props.row.account_name} in Line Items`"
-                    @click="drillToLineItems(props.row)"
-                  >
-                    <StatusPill tone="error" label="DIFF" size="sm" />
-                  </button>
-                </template>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-in_balance="{ value, row }">
+              <template v-if="value === true">
+                <StatusPill tone="success" label="OK" size="sm" />
+              </template>
+              <template v-else-if="value === false">
+                <button
+                  class="dv-diff-btn"
+                  :title="`Investigate ${row.account_name} in Line Items`"
+                  @click="drillToLineItems(row)"
+                >
+                  <StatusPill tone="error" label="DIFF" size="sm" />
+                </button>
+              </template>
+              <span v-else class="dv-null">-</span>
             </template>
-          </q-table>
+          </KTable>
         </SectionCard>
       </div>
 
@@ -287,7 +276,7 @@
           />
 
           <!-- Freshness -->
-          <div class="dv-freshness-row q-mb-sm">
+          <div class="dv-freshness-row mb-2">
             <FreshnessChip
               :value="acctSummaryLoadedAt"
               prefix="Loaded"
@@ -303,7 +292,7 @@
             v-if="acctSummaryError"
             variant="error"
             :title="acctSummaryError"
-            class="q-mb-sm"
+            class="mb-2"
             dismissible
           />
 
@@ -313,35 +302,32 @@
             body="Use the filters above to load balance sheet accounts."
           >
             <template #cta>
-              <q-btn label="Load Balance Sheet" color="primary" size="sm" outline @click="loadAccountSummary" />
+              <button class="btn btn-primary btn-sm btn-outline" @click="loadAccountSummary">Load Balance Sheet</button>
             </template>
           </EmptyState>
 
-          <q-table
+          <KTable
             v-if="dataStore.accountSummary"
-            :rows="dataStore.accountSummary.balance_sheet.accounts"
             :columns="bsAccountColumns"
-            row-key="account_code"
-            :filter="bsFilter"
-            :pagination="{ rowsPerPage: 25 }"
-            dense
-            flat
-            bordered
+            :data="filteredBsRows"
+            :loading="dataStore.loading"
+            :dense="true"
+            pagination="client"
+            :page-size="25"
           >
-            <template v-slot:top-right>
+            <template #toolbar>
               <KInput
                 v-model="bsFilter"
                 placeholder="Filter accounts…"
-                icon="filter"
                 class="filter-input-md"
               >
                 <template #icon><DvFilterIcon /></template>
               </KInput>
             </template>
-            <template v-slot:body-cell-db_total="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ format(props.value) }}</q-td>
+            <template #cell-db_total="{ value }">
+              <span class="kdl-numeric">{{ format(value) }}</span>
             </template>
-          </q-table>
+          </KTable>
         </SectionCard>
       </div>
 
@@ -363,14 +349,12 @@
             @clear="handleTrailBalanceClear"
             @restore="restoreTrailBalanceView"
           >
-            <!-- Extra fields beyond year/month -->
             <KInput
               v-model="trailBalanceFilters.contact_name"
               label="Search Contact"
               placeholder="Contact name"
               debounce="300"
               class="filter-input-lg"
-              icon="search"
             >
               <template #icon>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -390,7 +374,7 @@
           </PeriodFilter>
 
           <!-- Freshness -->
-          <div class="dv-freshness-row q-mb-sm">
+          <div class="dv-freshness-row mb-2">
             <FreshnessChip
               :value="trailBalanceLoadedAt"
               prefix="Loaded"
@@ -407,7 +391,7 @@
             v-if="trailBalanceError"
             variant="error"
             :title="trailBalanceError"
-            class="q-mb-sm"
+            class="mb-2"
             dismissible
           />
 
@@ -418,93 +402,79 @@
             body="Set filters above and click Load to view trial balance data."
           >
             <template #cta>
-              <q-btn label="Load Trial Balance" color="primary" size="sm" outline @click="loadTrailBalance" />
+              <button class="btn btn-primary btn-sm btn-outline" @click="loadTrailBalance">Load Trial Balance</button>
             </template>
           </EmptyState>
 
           <!-- RECON VIEW -->
-          <q-table
+          <KTable
             v-if="reconView && dataStore.trailBalance"
-            :rows="reconRows"
             :columns="reconColumns"
+            :data="filteredReconRows"
             :loading="dataStore.loading"
-            row-key="_key"
-            :filter="tableFilter"
-            :pagination="{ rowsPerPage: 50 }"
-            dense
-            flat
-            bordered
+            :dense="true"
+            pagination="client"
+            :page-size="50"
           >
-            <template v-slot:top-right>
+            <template #toolbar>
               <KInput
                 v-model="tableFilter"
                 placeholder="Filter results…"
-                icon="filter"
                 class="filter-input-md"
               >
                 <template #icon><DvFilterIcon /></template>
               </KInput>
             </template>
-            <template v-slot:body-cell-db_total="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ format(props.value) }}</q-td>
+            <template #cell-db_total="{ value }">
+              <span class="kdl-numeric">{{ format(value) }}</span>
             </template>
-            <template v-slot:body-cell-xero_pnl="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ props.value != null ? format(props.value) : '-' }}</q-td>
+            <template #cell-xero_pnl="{ value }">
+              <span class="kdl-numeric">{{ value != null ? format(value) : '-' }}</span>
             </template>
-            <template v-slot:body-cell-diff="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null" :class="diffClass(props.value)" class="text-weight-semibold">{{ format(props.value) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-diff="{ value }">
+              <span v-if="value != null" class="kdl-numeric font-semibold" :class="diffClass(value)">{{ format(value) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-            <template v-slot:body-cell-match="props">
-              <q-td :props="props">
-                <StatusPill v-if="props.value === true" tone="success" label="OK" size="sm" />
-                <StatusPill v-else-if="props.value === false" tone="error" label="DIFF" size="sm" />
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-match="{ value }">
+              <StatusPill v-if="value === true" tone="success" label="OK" size="sm" />
+              <StatusPill v-else-if="value === false" tone="error" label="DIFF" size="sm" />
+              <span v-else class="dv-null">-</span>
             </template>
-          </q-table>
+          </KTable>
 
           <!-- DETAIL VIEW -->
-          <q-table
+          <KTable
             v-if="!reconView && dataStore.trailBalance"
-            :rows="trailBalanceRows"
             :columns="trailBalanceColumns"
+            :data="filteredTrailBalanceRows"
             :loading="dataStore.loading"
-            row-key="id"
-            :filter="tableFilter"
-            :pagination="{ rowsPerPage: 50 }"
-            dense
-            flat
-            bordered
+            :dense="true"
+            pagination="client"
+            :page-size="50"
+            :virtual="trailBalanceRows.length > 500"
+            :virtual-height="600"
           >
-            <template v-slot:top-right>
+            <template #toolbar>
               <KInput
                 v-model="tableFilter"
                 placeholder="Filter results…"
-                icon="filter"
                 class="filter-input-md"
               >
                 <template #icon><DvFilterIcon /></template>
               </KInput>
             </template>
-            <template v-slot:body-cell-debit="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null && props.value != 0">{{ format(props.value) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-debit="{ value }">
+              <span v-if="value != null && value != 0" class="kdl-numeric">{{ format(value) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-            <template v-slot:body-cell-credit="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null && props.value != 0">{{ format(Math.abs(props.value)) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-credit="{ value }">
+              <span v-if="value != null && value != 0" class="kdl-numeric">{{ format(Math.abs(value)) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-            <template v-slot:body-cell-balance_to_date="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ props.value != null ? format(props.value) : '-' }}</q-td>
+            <template #cell-balance_to_date="{ value }">
+              <span class="kdl-numeric">{{ value != null ? format(value) : '-' }}</span>
             </template>
-          </q-table>
+          </KTable>
         </SectionCard>
       </div>
 
@@ -527,7 +497,7 @@
           />
 
           <!-- Freshness -->
-          <div class="dv-freshness-row q-mb-sm">
+          <div class="dv-freshness-row mb-2">
             <FreshnessChip
               :value="pnlSummaryLoadedAt"
               prefix="Loaded"
@@ -544,7 +514,7 @@
             v-if="pnlSummaryError"
             variant="error"
             :title="pnlSummaryError"
-            class="q-mb-sm"
+            class="mb-2"
             dismissible
           />
 
@@ -555,57 +525,51 @@
             body="Set a period above and click Load to view P&amp;L data by tracking category."
           >
             <template #cta>
-              <q-btn label="Load P&L Summary" color="primary" size="sm" outline @click="loadPnlSummary" />
+              <button class="btn btn-primary btn-sm btn-outline" @click="loadPnlSummary">Load P&amp;L Summary</button>
             </template>
           </EmptyState>
 
-          <q-table
+          <KTable
             v-if="dataStore.pnlSummary"
-            :rows="pnlSummaryRows"
             :columns="pnlSummaryColumns"
+            :data="filteredPnlRows"
             :loading="dataStore.loading"
-            row-key="_key"
-            :filter="pnlTableFilter"
-            :pagination="{ rowsPerPage: 50 }"
-            dense
-            flat
-            bordered
+            :dense="true"
+            pagination="client"
+            :page-size="50"
           >
-            <template v-slot:top-right>
+            <template #toolbar>
               <KInput
                 v-model="pnlTableFilter"
                 placeholder="Filter…"
-                icon="filter"
                 class="filter-input-md"
               >
                 <template #icon><DvFilterIcon /></template>
               </KInput>
             </template>
-            <template v-slot:body-cell-db_income="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ format(props.value) }}</q-td>
+            <template #cell-db_income="{ value }">
+              <span class="kdl-numeric">{{ format(value) }}</span>
             </template>
-            <template v-slot:body-cell-db_expense="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ format(props.value) }}</q-td>
+            <template #cell-db_expense="{ value }">
+              <span class="kdl-numeric">{{ format(value) }}</span>
             </template>
-            <template v-slot:body-cell-db_pnl="props">
-              <q-td :props="props" class="kdl-numeric text-right text-weight-semibold">{{ format(props.value) }}</q-td>
+            <template #cell-db_pnl="{ value }">
+              <span class="kdl-numeric font-semibold">{{ format(value) }}</span>
             </template>
-            <template v-slot:body-cell-xero_income="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ props.value != null ? format(props.value) : '-' }}</q-td>
+            <template #cell-xero_income="{ value }">
+              <span class="kdl-numeric">{{ value != null ? format(value) : '-' }}</span>
             </template>
-            <template v-slot:body-cell-xero_expense="props">
-              <q-td :props="props" class="kdl-numeric text-right">{{ props.value != null ? format(props.value) : '-' }}</q-td>
+            <template #cell-xero_expense="{ value }">
+              <span class="kdl-numeric">{{ value != null ? format(value) : '-' }}</span>
             </template>
-            <template v-slot:body-cell-xero_pnl="props">
-              <q-td :props="props" class="kdl-numeric text-right text-weight-semibold">{{ props.value != null ? format(props.value) : '-' }}</q-td>
+            <template #cell-xero_pnl="{ value }">
+              <span class="kdl-numeric font-semibold">{{ value != null ? format(value) : '-' }}</span>
             </template>
-            <template v-slot:body-cell-pnl_diff="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null" :class="diffClass(props.value)" class="text-weight-semibold">{{ format(props.value) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-pnl_diff="{ value }">
+              <span v-if="value != null" class="kdl-numeric font-semibold" :class="diffClass(value)">{{ format(value) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-          </q-table>
+          </KTable>
         </SectionCard>
       </div>
 
@@ -648,7 +612,7 @@
           </PeriodFilter>
 
           <!-- Result count — below FilterBar, above table -->
-          <div class="dv-freshness-row q-mb-sm">
+          <div class="dv-freshness-row mb-2">
             <FreshnessChip
               :value="lineItemsLoadedAt"
               prefix="Loaded"
@@ -668,7 +632,7 @@
             v-if="lineItemsError"
             variant="error"
             :title="lineItemsError"
-            class="q-mb-sm"
+            class="mb-2"
             dismissible
           />
 
@@ -679,38 +643,34 @@
             body="Set filters above and click Load to view journal line items."
           >
             <template #cta>
-              <q-btn label="Load Line Items" color="primary" size="sm" outline @click="loadLineItems" />
+              <button class="btn btn-primary btn-sm btn-outline" @click="loadLineItems">Load Line Items</button>
             </template>
           </EmptyState>
 
-          <q-table
+          <KTable
             v-if="dataStore.lineItems"
-            :rows="lineItemsRows"
             :columns="lineItemsColumns"
+            :data="lineItemsRows"
             :loading="dataStore.loading"
-            row-key="id"
-            :pagination="{ rowsPerPage: 25 }"
-            dense
-            flat
-            bordered
+            :dense="true"
+            pagination="client"
+            :page-size="25"
+            :virtual="lineItemsRows.length > 500"
+            :virtual-height="600"
           >
-            <template v-slot:body-cell-debit="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null && props.value != 0">{{ format(props.value) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-debit="{ value }">
+              <span v-if="value != null && value != 0" class="kdl-numeric">{{ format(value) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-            <template v-slot:body-cell-credit="props">
-              <q-td :props="props" class="kdl-numeric text-right">
-                <span v-if="props.value != null && props.value != 0">{{ format(Math.abs(props.value)) }}</span>
-                <span v-else class="dv-null">-</span>
-              </q-td>
+            <template #cell-credit="{ value }">
+              <span v-if="value != null && value != 0" class="kdl-numeric">{{ format(Math.abs(value)) }}</span>
+              <span v-else class="dv-null">-</span>
             </template>
-          </q-table>
+          </KTable>
         </SectionCard>
       </div>
     </template>
-  </q-page>
+  </div>
 </template>
 
 <script setup>
@@ -724,6 +684,7 @@ import EmptyState from '../components/klikk/EmptyState.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KAlert from '../components/klikk/KAlert.vue';
 import KTabs from '../components/klikk/KTabs.vue';
+import KTable from '../components/klikk/KTable.vue';
 import MetricTile from '../components/klikk/MetricTile.vue';
 import FreshnessChip from '../components/klikk/FreshnessChip.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
@@ -763,9 +724,6 @@ const pnlTableFilter = ref('');
 const acctFilter = ref('');
 const bsFilter = ref('');
 
-// Ref to the account-filter input (for keyboard / shortcut)
-const acctFilterInput = ref(null);
-
 // ── Per-table freshness timestamps ───────────────────────────────────────────
 
 const summaryLoadedAt = ref(null);
@@ -776,7 +734,7 @@ const lineItemsLoadedAt = ref(null);
 
 // ── Per-table error state ────────────────────────────────────────────────────
 
-const pageError = ref(null);           // page-level strip (used for refreshSummary)
+const pageError = ref(null);
 const acctSummaryError = ref(null);
 const trailBalanceError = ref(null);
 const pnlSummaryError = ref(null);
@@ -863,72 +821,72 @@ function handleLineItemsClear() {
   loadLineItems();
 }
 
-// ── Column definitions ────────────────────────────────────────────────────────
+// ── Column definitions (TanStack ColumnDef[]) ─────────────────────────────────
 
 const accountSummaryColumns = [
-  { name: 'account_code', label: 'Code',      field: 'account_code', align: 'left',   sortable: true },
-  { name: 'account_name', label: 'Account',   field: 'account_name', align: 'left',   sortable: true },
-  { name: 'account_type', label: 'Type',      field: 'account_type', align: 'left',   sortable: true },
-  { name: 'db_total',     label: 'DB Total (R)',       field: 'db_total',   align: 'right',  sortable: true },
-  { name: 'xero_total',   label: 'Xero P&L Total (R)', field: 'xero_total', align: 'right',  sortable: true },
-  { name: 'diff',         label: 'Diff (R)',   field: 'diff',         align: 'right',  sortable: true },
-  { name: 'in_balance',   label: 'Status',    field: 'in_balance',   align: 'center', sortable: true },
+  { accessorKey: 'account_code', header: 'Code',            enableSorting: true },
+  { accessorKey: 'account_name', header: 'Account',         enableSorting: true },
+  { accessorKey: 'account_type', header: 'Type',            enableSorting: true },
+  { accessorKey: 'db_total',     header: 'DB Total (R)',     enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'xero_total',   header: 'Xero P&L Total (R)', enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'diff',         header: 'Diff (R)',         enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'in_balance',   header: 'Status',          enableSorting: true, meta: { align: 'center', width: '90px' } },
 ];
 
 const bsAccountColumns = [
-  { name: 'account_code', label: 'Code',      field: 'account_code', align: 'left',   sortable: true },
-  { name: 'account_name', label: 'Account',   field: 'account_name', align: 'left',   sortable: true },
-  { name: 'account_type', label: 'Type',      field: 'account_type', align: 'left',   sortable: true },
-  { name: 'db_total',     label: 'DB Total (R)', field: 'db_total',  align: 'right',  sortable: true },
+  { accessorKey: 'account_code', header: 'Code',         enableSorting: true },
+  { accessorKey: 'account_name', header: 'Account',      enableSorting: true },
+  { accessorKey: 'account_type', header: 'Type',         enableSorting: true },
+  { accessorKey: 'db_total',     header: 'DB Total (R)', enableSorting: true, meta: { align: 'right' } },
 ];
 
 const trailBalanceColumns = [
-  { name: 'year',           label: 'Year',    field: 'year',           align: 'left',  sortable: true },
-  { name: 'month',          label: 'Month',   field: 'month',          align: 'left',  sortable: true },
-  { name: 'account_code',   label: 'Code',    field: 'account_code',   align: 'left',  sortable: true },
-  { name: 'account_name',   label: 'Account', field: 'account_name',   align: 'left',  sortable: true },
-  { name: 'contact_name',   label: 'Contact', field: 'contact_name',   align: 'left',  sortable: true },
-  { name: 'tracking1',      label: 'Tracking 1', field: 'tracking1',   align: 'left',  sortable: true },
-  { name: 'tracking2',      label: 'Tracking 2', field: 'tracking2',   align: 'left',  sortable: true },
-  { name: 'debit',          label: 'Debit (R)',  field: 'debit',        align: 'right', sortable: true },
-  { name: 'credit',         label: 'Credit (R)', field: 'credit',       align: 'right', sortable: true },
-  { name: 'balance_to_date',label: 'Balance to Date BS (R)', field: 'balance_to_date', align: 'right', sortable: true },
+  { accessorKey: 'year',            header: 'Year',                  enableSorting: true },
+  { accessorKey: 'month',           header: 'Month',                 enableSorting: true },
+  { accessorKey: 'account_code',    header: 'Code',                  enableSorting: true },
+  { accessorKey: 'account_name',    header: 'Account',               enableSorting: true },
+  { accessorKey: 'contact_name',    header: 'Contact',               enableSorting: true },
+  { accessorKey: 'tracking1',       header: 'Tracking 1',            enableSorting: true },
+  { accessorKey: 'tracking2',       header: 'Tracking 2',            enableSorting: true },
+  { accessorKey: 'debit',           header: 'Debit (R)',              enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'credit',          header: 'Credit (R)',             enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'balance_to_date', header: 'Balance to Date BS (R)', enableSorting: true, meta: { align: 'right' } },
 ];
 
 const reconColumns = [
-  { name: 'year',         label: 'Year',       field: 'year',         align: 'left',  sortable: true },
-  { name: 'month',        label: 'Month',      field: 'month',        align: 'left',  sortable: true },
-  { name: 'account_code', label: 'Code',       field: 'account_code', align: 'left',  sortable: true },
-  { name: 'account_name', label: 'Account',    field: 'account_name', align: 'left',  sortable: true },
-  { name: 'tracking1',    label: 'Tracking 1', field: 'tracking1',    align: 'left',  sortable: true },
-  { name: 'db_total',     label: 'DB Total (R)',  field: 'db_total',  align: 'right', sortable: true },
-  { name: 'xero_pnl',    label: 'Xero P&L (R)',  field: 'xero_pnl',  align: 'right', sortable: true },
-  { name: 'diff',         label: 'Diff (R)',   field: 'diff',         align: 'right', sortable: true },
-  { name: 'match',        label: 'Match',      field: 'match',        align: 'center', sortable: true },
+  { accessorKey: 'year',         header: 'Year',       enableSorting: true },
+  { accessorKey: 'month',        header: 'Month',      enableSorting: true },
+  { accessorKey: 'account_code', header: 'Code',       enableSorting: true },
+  { accessorKey: 'account_name', header: 'Account',    enableSorting: true },
+  { accessorKey: 'tracking1',    header: 'Tracking 1', enableSorting: true },
+  { accessorKey: 'db_total',     header: 'DB Total (R)',  enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'xero_pnl',    header: 'Xero P&L (R)',  enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'diff',         header: 'Diff (R)',   enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'match',        header: 'Match',      enableSorting: true, meta: { align: 'center', width: '80px' } },
 ];
 
 const pnlSummaryColumns = [
-  { name: 'tracking1',   label: 'Tracking',         field: 'tracking1',   align: 'left',  sortable: true },
-  { name: 'year',        label: 'Year',             field: 'year',        align: 'left',  sortable: true },
-  { name: 'month',       label: 'Month',            field: 'month',       align: 'left',  sortable: true },
-  { name: 'db_income',   label: 'DB Income (R)',    field: 'db_income',   align: 'right', sortable: true },
-  { name: 'db_expense',  label: 'DB Expense (R)',   field: 'db_expense',  align: 'right', sortable: true },
-  { name: 'db_pnl',     label: 'DB P&L (R)',       field: 'db_pnl',      align: 'right', sortable: true },
-  { name: 'xero_income', label: 'Xero Income (R)',  field: 'xero_income', align: 'right', sortable: true },
-  { name: 'xero_expense',label: 'Xero Expense (R)', field: 'xero_expense',align: 'right', sortable: true },
-  { name: 'xero_pnl',   label: 'Xero P&L (R)',     field: 'xero_pnl',    align: 'right', sortable: true },
-  { name: 'pnl_diff',   label: 'P&L Diff (R)',     field: 'pnl_diff',    align: 'right', sortable: true },
+  { accessorKey: 'tracking1',    header: 'Tracking',           enableSorting: true },
+  { accessorKey: 'year',         header: 'Year',               enableSorting: true },
+  { accessorKey: 'month',        header: 'Month',              enableSorting: true },
+  { accessorKey: 'db_income',    header: 'DB Income (R)',       enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'db_expense',   header: 'DB Expense (R)',      enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'db_pnl',      header: 'DB P&L (R)',          enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'xero_income',  header: 'Xero Income (R)',     enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'xero_expense', header: 'Xero Expense (R)',    enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'xero_pnl',    header: 'Xero P&L (R)',        enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'pnl_diff',    header: 'P&L Diff (R)',        enableSorting: true, meta: { align: 'right' } },
 ];
 
 const lineItemsColumns = [
-  { name: 'date',                    label: 'Date',        field: 'date',                    align: 'left',  sortable: true },
-  { name: 'account_code',            label: 'Code',        field: 'account_code',            align: 'left',  sortable: true },
-  { name: 'account_name',            label: 'Account',     field: 'account_name',            align: 'left',  sortable: true },
-  { name: 'contact_name',            label: 'Contact',     field: 'contact_name',            align: 'left',  sortable: true },
-  { name: 'description',             label: 'Description', field: 'description',             align: 'left' },
-  { name: 'debit',                   label: 'Debit (R)',   field: 'debit',                   align: 'right', sortable: true },
-  { name: 'credit',                  label: 'Credit (R)',  field: 'credit',                  align: 'right', sortable: true },
-  { name: 'transaction_source_type', label: 'Source',      field: 'transaction_source_type', align: 'left',  sortable: true },
+  { accessorKey: 'date',                    header: 'Date',        enableSorting: true },
+  { accessorKey: 'account_code',            header: 'Code',        enableSorting: true },
+  { accessorKey: 'account_name',            header: 'Account',     enableSorting: true },
+  { accessorKey: 'contact_name',            header: 'Contact',     enableSorting: true },
+  { accessorKey: 'description',             header: 'Description' },
+  { accessorKey: 'debit',                   header: 'Debit (R)',   enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'credit',                  header: 'Credit (R)',  enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'transaction_source_type', header: 'Source',      enableSorting: true },
 ];
 
 // ── Computed rows ─────────────────────────────────────────────────────────────
@@ -1007,6 +965,40 @@ const lineItemsRows = computed(() => {
 
 const lineItemsData = computed(() => dataStore.lineItems);
 
+// ── Client-side global filter helpers ────────────────────────────────────────
+// KTable uses TanStack column filters; for a free-text global search we filter
+// the data arrays in computed properties and pass the result to :data.
+
+function matchesFilter(row, filterStr) {
+  if (!filterStr) return true;
+  const lower = filterStr.toLowerCase();
+  return Object.values(row).some(v =>
+    v != null && String(v).toLowerCase().includes(lower)
+  );
+}
+
+const filteredAccountSummaryRows = computed(() => {
+  const rows = dataStore.accountSummary?.income_statement.accounts || [];
+  return rows.filter(r => matchesFilter(r, acctFilter.value));
+});
+
+const filteredBsRows = computed(() => {
+  const rows = dataStore.accountSummary?.balance_sheet.accounts || [];
+  return rows.filter(r => matchesFilter(r, bsFilter.value));
+});
+
+const filteredTrailBalanceRows = computed(() =>
+  trailBalanceRows.value.filter(r => matchesFilter(r, tableFilter.value))
+);
+
+const filteredReconRows = computed(() =>
+  reconRows.value.filter(r => matchesFilter(r, tableFilter.value))
+);
+
+const filteredPnlRows = computed(() =>
+  pnlSummaryRows.value.filter(r => matchesFilter(r, pnlTableFilter.value))
+);
+
 // ── Summary display helpers ───────────────────────────────────────────────────
 
 /**
@@ -1057,12 +1049,10 @@ function drillToLineItems(row) {
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────────
 
 function handleKeydown(e) {
-  // "/" → focus the active tab's filter input
+  // "/" → focus the active tab's filter input (KTable toolbar input)
   if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
     e.preventDefault();
-    // Focus the filter input of the visible table (all use the same ref approach;
-    // Quasar q-table top-right inputs aren't directly ref-able, so we query the DOM)
-    const input = document.querySelector('.q-table__top-right .kinput-field');
+    const input = document.querySelector('.ktable-toolbar .kinput-field');
     if (input) input.focus();
   }
 }
@@ -1359,5 +1349,12 @@ async function loadLineItems() {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* ── Numeric cells — right-align tabular figures ───────────────────────────── */
+.kdl-numeric {
+  display: block;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 </style>

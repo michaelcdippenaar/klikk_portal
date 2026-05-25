@@ -29,7 +29,7 @@
     Enter in Year or Month input triggers load.
 -->
 <template>
-  <FilterBar class="q-mb-sm">
+  <FilterBar class="mb-2">
     <KInput
       :modelValue="year"
       @update:modelValue="$emit('update:year', $event === '' ? null : Number($event))"
@@ -53,150 +53,140 @@
     <slot />
 
     <!-- Load / Clear buttons -->
-    <q-btn
-      label="Load"
-      color="primary"
-      size="sm"
-      :loading="loading"
+    <button
+      class="btn btn-primary btn-sm"
+      :disabled="loading"
       @click="$emit('load')"
-    />
-    <q-btn
-      label="Clear"
-      color="grey"
-      flat
-      size="sm"
+    >
+      Load
+    </button>
+    <button
+      class="btn btn-ghost btn-sm"
       @click="handleClear"
-    />
+    >
+      Clear
+    </button>
 
-    <!-- Saved views dropdown -->
-    <div class="period-filter__saved">
-      <q-btn-dropdown
-        flat
-        size="sm"
-        no-caps
-        color="primary"
-        class="period-filter__saved-btn"
-        :label="savedViews.length ? `Views (${savedViews.length})` : 'Views'"
-        dropdown-icon="none"
+    <!-- Saved views dropdown — native implementation, no Quasar -->
+    <div class="period-filter__saved" ref="dropdownRef">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm period-filter__saved-btn"
+        :aria-expanded="dropdownOpen"
+        aria-haspopup="true"
+        @click="dropdownOpen = !dropdownOpen"
       >
-        <template #label>
-          <span class="period-filter__saved-label">
-            <!-- bookmark icon -->
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
+        <!-- bookmark icon -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+        </svg>
+        <span>{{ savedViews.length ? `Views (${savedViews.length})` : 'Views' }}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          class="period-filter__chevron"
+          :class="{ 'period-filter__chevron--open': dropdownOpen }"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      <div
+        v-if="dropdownOpen"
+        class="period-filter__dropdown"
+        role="menu"
+      >
+        <!-- Save current view -->
+        <div class="period-filter__save-row">
+          <input
+            v-model="newViewName"
+            class="period-filter__name-input"
+            placeholder="Name this view…"
+            maxlength="40"
+            @keydown.enter.stop="saveCurrentView"
+          />
+          <button
+            class="period-filter__save-action"
+            :disabled="!newViewName.trim()"
+            @click.stop="saveCurrentView"
+            title="Save current filter set"
+          >
+            Save
+          </button>
+        </div>
+
+        <hr class="period-filter__sep" v-if="savedViews.length" />
+
+        <!-- Saved view list -->
+        <template v-if="savedViews.length">
+          <div
+            v-for="(view, idx) in savedViews"
+            :key="view.name"
+            class="period-filter__view-item"
+            role="menuitem"
+            tabindex="0"
+            @click="restoreView(view)"
+            @keydown.enter="restoreView(view)"
+          >
+            <div class="period-filter__view-body">
+              <span class="period-filter__view-name">{{ view.name }}</span>
+              <span class="period-filter__view-caption">{{ describeFilters(view.filters) }}</span>
+            </div>
+            <button
+              class="period-filter__delete-btn"
+              title="Delete saved view"
+              @click.stop="deleteView(idx)"
+              tabindex="-1"
             >
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-            <span>{{ savedViews.length ? `Views (${savedViews.length})` : 'Views' }}</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </span>
+              <!-- x icon -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
         </template>
 
-        <q-list dense style="min-width: 220px">
-          <!-- Save current view -->
-          <q-item>
-            <q-item-section>
-              <div class="period-filter__save-row">
-                <input
-                  v-model="newViewName"
-                  class="period-filter__name-input"
-                  placeholder="Name this view…"
-                  maxlength="40"
-                  @keydown.enter.stop="saveCurrentView"
-                />
-                <button
-                  class="period-filter__save-action"
-                  :disabled="!newViewName.trim()"
-                  @click.stop="saveCurrentView"
-                  title="Save current filter set"
-                >
-                  Save
-                </button>
-              </div>
-            </q-item-section>
-          </q-item>
-
-          <q-separator v-if="savedViews.length" />
-
-          <!-- Saved view list -->
-          <template v-if="savedViews.length">
-            <q-item
-              v-for="(view, idx) in savedViews"
-              :key="view.name"
-              clickable
-              @click="restoreView(view)"
-              class="period-filter__view-item"
-            >
-              <q-item-section>
-                <q-item-label class="period-filter__view-name">{{ view.name }}</q-item-label>
-                <q-item-label caption class="period-filter__view-caption">
-                  {{ describeFilters(view.filters) }}
-                </q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <button
-                  class="period-filter__delete-btn"
-                  title="Delete saved view"
-                  @click.stop="deleteView(idx)"
-                >
-                  <!-- x icon -->
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.75"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </q-item-section>
-            </q-item>
-          </template>
-
-          <q-item v-else>
-            <q-item-section>
-              <q-item-label caption class="period-filter__empty-views">
-                No saved views yet. Set filters and save.
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-        </q-list>
-      </q-btn-dropdown>
+        <p v-else class="period-filter__empty-views">
+          No saved views yet. Set filters and save.
+        </p>
+      </div>
     </div>
   </FilterBar>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import FilterBar from '../klikk/FilterBar.vue';
 import KInput from '../klikk/KInput.vue';
 
@@ -238,6 +228,20 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:year', 'update:month', 'load', 'clear', 'restore']);
+
+// ── Dropdown state ───────────────────────────────────────────────────────────
+
+const dropdownOpen = ref(false);
+const dropdownRef = ref(null);
+
+function handleOutsideClick(e) {
+  if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
+    dropdownOpen.value = false;
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', handleOutsideClick));
+onUnmounted(() => document.removeEventListener('mousedown', handleOutsideClick));
 
 // ── Saved views ─────────────────────────────────────────────────────────────
 
@@ -295,6 +299,7 @@ function saveCurrentView() {
 }
 
 function restoreView(view) {
+  dropdownOpen.value = false;
   emit('restore', view.filters);
 }
 
@@ -329,24 +334,50 @@ function describeFilters(filters) {
   max-width: 130px;
 }
 
-/* Saved views dropdown button */
-.period-filter__saved {
-  margin-left: 4px;
-}
-
-.period-filter__saved-label {
+/* Trigger button label */
+.period-filter__saved-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 13px;
 }
 
-/* Name input inside the dropdown */
+.period-filter__chevron {
+  transition: transform 200ms;
+}
+
+.period-filter__chevron--open {
+  transform: rotate(180deg);
+}
+
+/* Dropdown panel */
+.period-filter__saved {
+  position: relative;
+  margin-left: 4px;
+}
+
+.period-filter__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  background: var(--kdl-raised-bg);
+  border: 1px solid var(--kdl-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lifted);
+  padding: 8px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Save row */
 .period-filter__save-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0;
+  padding: 4px 0 6px;
 }
 
 .period-filter__name-input {
@@ -388,30 +419,65 @@ function describeFilters(filters) {
   opacity: 0.85;
 }
 
-/* Saved view list items */
+/* Separator */
+.period-filter__sep {
+  border: none;
+  border-top: 1px solid var(--kdl-border-subtle);
+  margin: 4px 0;
+}
+
+/* View items */
 .period-filter__view-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background 120ms;
+}
+
+.period-filter__view-item:hover,
+.period-filter__view-item:focus-visible {
+  background: var(--kdl-hover-bg);
+  outline: none;
+}
+
+.period-filter__view-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .period-filter__view-name {
   font-size: 13px;
   font-weight: 500;
   color: var(--kdl-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .period-filter__view-caption {
   font-size: 12px;
   color: var(--kdl-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .period-filter__empty-views {
   font-size: 12px;
   font-style: italic;
   color: var(--kdl-text-hint);
+  margin: 4px 8px;
 }
 
 /* Delete button (icon) */
 .period-filter__delete-btn {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: var(--kdl-text-hint);
