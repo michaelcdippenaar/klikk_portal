@@ -146,7 +146,7 @@ function stageLastSuccess(id) {
 .pss-strip__stage-label {
   /* 11px overline — documented exception to the 12px floor */
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--kdl-text-hint);
