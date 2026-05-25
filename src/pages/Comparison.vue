@@ -1,5 +1,5 @@
 <template>
-  <q-page class="q-pa-md">
+  <div class="comp-page">
     <PageHeader title="Report Comparison" subtitle="Compare Xero P&amp;L and Balance Sheet reports against the trail balance">
       <template #tenantContext>
         <TenantSelector />
@@ -20,13 +20,13 @@
         v-if="persistedResult"
         :result="persistedResultStrip"
         title="Last reconciliation"
-        class="q-mb-md"
+        class="comp-mb-md"
       >
         <!-- actions are passed via the result.actions array -->
       </PersistentResultStrip>
 
       <!-- ── 2. Error KAlert (run failed) ──────────────────────────────── -->
-      <div v-if="reconciliationResult && reconciliationResult.success === false" class="q-mb-md">
+      <div v-if="reconciliationResult && reconciliationResult.success === false" class="comp-mb-md">
         <KAlert
           variant="error"
           :title="'Reconciliation Failed' + (reconcileForm.financialYear ? ' — FY ' + reconcileForm.financialYear : '')"
@@ -55,7 +55,7 @@
       </div>
 
       <!-- ── 3. Stage progress (during run) ────────────────────────────── -->
-      <div v-if="loading" class="comp-stage-progress q-mb-md">
+      <div v-if="loading" class="comp-stage-progress comp-mb-md">
         <div class="comp-stage-progress__track">
           <div
             v-for="(stage, idx) in runStages"
@@ -107,7 +107,7 @@
 
       <!-- ── 4. Result Tabs + Content ───────────────────────────────────── -->
       <div v-if="reconciliationResult && reconciliationResult.success !== false">
-        <SectionCard class="q-mb-md">
+        <SectionCard class="comp-mb-md">
           <!-- Card header: tabs + actions -->
           <template #actions>
             <button class="btn-ghost btn-sm comp-export-btn" type="button" @click="exportCsv" title="Export reconciliation result as CSV">
@@ -121,31 +121,32 @@
               </svg>
               Export CSV
             </button>
-            <button
-              class="btn-ghost btn-sm comp-export-btn"
-              type="button"
-              disabled
-              title="PDF export — coming soon"
-              aria-disabled="true"
-            >
-              <!-- file-text icon -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" stroke-width="1.75"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-              </svg>
-              Export PDF
-            </button>
+            <KTooltip text="Coming soon" side="top">
+              <button
+                class="btn-ghost btn-sm comp-export-btn"
+                type="button"
+                disabled
+                aria-disabled="true"
+              >
+                <!-- file-text icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="1.75"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+                Export PDF
+              </button>
+            </KTooltip>
           </template>
 
           <KTabs
             :tabs="resultTabs"
             v-model="activeTab"
             :url-sync="true"
-            class="q-mb-md"
+            class="comp-mb-md"
           />
 
           <!-- ── P&L Tab ──────────────────────────────────────────────── -->
@@ -153,8 +154,8 @@
             <div v-if="reconciliationResult.profit_loss">
 
               <!-- P&L Import Summary — MetricTile row -->
-              <div v-if="reconciliationResult.profit_loss.import" class="q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">Import Summary</div>
+              <div v-if="reconciliationResult.profit_loss.import" class="comp-mb-md">
+                <div class="comp-subtitle comp-mb-sm">Import Summary</div>
                 <div class="comp-metric-row">
                   <MetricTile
                     label="Period"
@@ -169,8 +170,8 @@
               </div>
 
               <!-- P&L Overall Stats — MetricTile row -->
-              <div v-if="pnlOverall" class="q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">Overall Statistics</div>
+              <div v-if="pnlOverall" class="comp-mb-md">
+                <div class="comp-subtitle comp-mb-sm">Overall Statistics</div>
                 <div class="comp-metric-row">
                   <MetricTile
                     label="Match rate"
@@ -199,33 +200,25 @@
 
               <!-- P&L Period Stats Table -->
               <div v-if="pnlPeriodRows.length">
-                <div class="text-subtitle2 q-mb-xs">Period Breakdown</div>
-                <q-table
-                  :rows="pnlPeriodRows"
-                  :columns="pnlPeriodColumns"
-                  row-key="period"
+                <div class="comp-subtitle comp-mb-xs">Period Breakdown</div>
+                <KTable
+                  :columns="pnlPeriodKColumns"
+                  :data="pnlPeriodRows"
                   dense
-                  flat
-                  bordered
-                  :pagination="{ rowsPerPage: 0 }"
-                  hide-pagination
+                  pagination="none"
                 >
-                  <template v-slot:body-cell-match_percentage="props">
-                    <q-td :props="props" class="kdl-numeric">
-                      <StatusPill
-                        :tone="props.row.match_percentage >= 95 ? 'success' : props.row.match_percentage >= 80 ? 'warning' : 'error'"
-                        :label="props.row.match_percentage.toFixed(1) + '%'"
-                        size="sm"
-                      />
-                    </q-td>
+                  <template #cell-match_percentage="{ row }">
+                    <StatusPill
+                      :tone="row.match_percentage >= 95 ? 'success' : row.match_percentage >= 80 ? 'warning' : 'error'"
+                      :label="row.match_percentage.toFixed(1) + '%'"
+                      size="sm"
+                    />
                   </template>
-                  <template v-slot:body-cell-mismatches="props">
-                    <q-td :props="props" class="kdl-numeric">
-                      <!-- text-negative permitted: mismatch count is an explicit variance signal -->
-                      <span :class="props.row.mismatches > 0 ? 'text-negative text-weight-bold' : ''">{{ props.row.mismatches }}</span>
-                    </q-td>
+                  <template #cell-mismatches="{ row }">
+                    <!-- text-negative permitted: mismatch count is an explicit variance signal -->
+                    <span :class="row.mismatches > 0 ? 'comp-variance-text' : ''">{{ row.mismatches }}</span>
                   </template>
-                </q-table>
+                </KTable>
               </div>
 
             </div>
@@ -237,8 +230,8 @@
             <div v-if="reconciliationResult.balance_sheet">
 
               <!-- BS Import Summary — MetricTile row -->
-              <div v-if="reconciliationResult.balance_sheet.import" class="q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">Import Summary</div>
+              <div v-if="reconciliationResult.balance_sheet.import" class="comp-mb-md">
+                <div class="comp-subtitle comp-mb-sm">Import Summary</div>
                 <div class="comp-metric-row">
                   <MetricTile
                     label="Report date"
@@ -253,8 +246,8 @@
               </div>
 
               <!-- BS Validation Summary — MetricTile row (single lead metric: match %) -->
-              <div v-if="bsValidation" class="q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">Validation Summary</div>
+              <div v-if="bsValidation" class="comp-mb-md">
+                <div class="comp-subtitle comp-mb-sm">Validation Summary</div>
                 <div class="comp-metric-row">
                   <MetricTile
                     label="Status"
@@ -284,10 +277,10 @@
 
               <!-- BS Details Table -->
               <div v-if="bsDetailRows.length">
-                <div class="text-subtitle2 q-mb-xs">Account Details</div>
+                <div class="comp-subtitle comp-mb-xs">Account Details</div>
 
                 <!-- Segmented mismatch filter — promoted from hidden top-right slot -->
-                <div class="comp-segment-row q-mb-sm">
+                <div class="comp-segment-row comp-mb-sm">
                   <button
                     class="comp-segment-btn"
                     :class="{ 'comp-segment-btn--active': !bsShowMismatchOnly }"
@@ -307,44 +300,36 @@
                   <KInput
                     v-model="bsFilter"
                     placeholder="Filter accounts..."
-                    class="comp-filter-input q-ml-sm"
+                    class="comp-filter-input comp-ml-sm"
                   />
                 </div>
 
-                <q-table
-                  :rows="bsDetailRows"
-                  :columns="bsDetailColumns"
-                  row-key="account_code"
+                <KTable
+                  :columns="bsDetailKColumns"
+                  :data="bsDetailRows"
                   dense
-                  flat
-                  bordered
-                  :pagination="{ rowsPerPage: 25 }"
-                  :filter="bsFilter"
+                  :page-size="25"
                 >
-                  <template v-slot:body-cell-status="props">
-                    <q-td :props="props">
-                      <StatusPill
-                        :tone="props.row.status === 'match' ? 'success' : props.row.status === 'mismatch' ? 'error' : 'warning'"
-                        :label="props.row.status"
-                        size="sm"
-                      />
-                    </q-td>
+                  <template #cell-status="{ row }">
+                    <StatusPill
+                      :tone="row.status === 'match' ? 'success' : row.status === 'mismatch' ? 'error' : 'warning'"
+                      :label="row.status"
+                      size="sm"
+                    />
                   </template>
-                  <template v-slot:body-cell-xero_value="props">
-                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                  <template #cell-xero_value="{ row }">
+                    <span class="comp-numeric">{{ formatNum(row.xero_value) }}</span>
                   </template>
-                  <template v-slot:body-cell-db_value="props">
-                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                  <template #cell-db_value="{ row }">
+                    <span class="comp-numeric">{{ formatNum(row.db_value) }}</span>
                   </template>
-                  <template v-slot:body-cell-difference="props">
-                    <q-td :props="props" class="kdl-numeric">
-                      <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
-                      <span :class="parseFloat(props.row.difference) !== 0 ? 'text-negative text-weight-bold' : ''">
-                        {{ formatNum(props.row.difference) }}
-                      </span>
-                    </q-td>
+                  <template #cell-difference="{ row }">
+                    <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
+                    <span class="comp-numeric" :class="parseFloat(row.difference) !== 0 ? 'comp-variance-text' : ''">
+                      {{ formatNum(row.difference) }}
+                    </span>
                   </template>
-                </q-table>
+                </KTable>
               </div>
 
             </div>
@@ -363,11 +348,11 @@
               <KAlert
                 variant="warning"
                 :body="`${allExceptions.length} exception(s) require attention.`"
-                class="q-mb-md"
+                class="comp-mb-md"
               />
 
               <!-- In-tab section nav -->
-              <div class="comp-exception-nav q-mb-md">
+              <div class="comp-exception-nav comp-mb-md">
                 <a v-if="pnlExceptionPeriods.length" href="#exc-pnl-periods" class="comp-exception-nav__link">
                   P&amp;L periods ({{ pnlExceptionPeriods.length }})
                 </a>
@@ -380,135 +365,112 @@
               </div>
 
               <!-- P&L Period Exceptions -->
-              <div v-if="pnlExceptionPeriods.length" id="exc-pnl-periods" class="q-mb-md">
-                <div class="text-subtitle1 q-mb-xs">P&amp;L — Periods with Mismatches</div>
-                <q-table
-                  :rows="pnlExceptionPeriods"
-                  :columns="pnlPeriodColumns"
-                  row-key="period"
+              <div v-if="pnlExceptionPeriods.length" id="exc-pnl-periods" class="comp-mb-md">
+                <div class="comp-subtitle1 comp-mb-xs">P&amp;L — Periods with Mismatches</div>
+                <KTable
+                  :columns="pnlPeriodKColumns"
+                  :data="pnlExceptionPeriods"
                   dense
-                  flat
-                  bordered
-                  :pagination="{ rowsPerPage: 0 }"
-                  hide-pagination
+                  pagination="none"
                 >
-                  <template v-slot:body-cell-match_percentage="props">
-                    <q-td :props="props" class="kdl-numeric">
-                      <StatusPill
-                        :tone="props.row.match_percentage >= 95 ? 'success' : props.row.match_percentage >= 80 ? 'warning' : 'error'"
-                        :label="props.row.match_percentage.toFixed(1) + '%'"
-                        size="sm"
-                      />
-                    </q-td>
+                  <template #cell-match_percentage="{ row }">
+                    <StatusPill
+                      :tone="row.match_percentage >= 95 ? 'success' : row.match_percentage >= 80 ? 'warning' : 'error'"
+                      :label="row.match_percentage.toFixed(1) + '%'"
+                      size="sm"
+                    />
                   </template>
-                  <template v-slot:body-cell-mismatches="props">
-                    <q-td :props="props" class="kdl-numeric">
-                      <!-- text-negative permitted: mismatch count is an explicit variance signal -->
-                      <span class="text-negative text-weight-bold">{{ props.row.mismatches }}</span>
-                    </q-td>
+                  <template #cell-mismatches="{ row }">
+                    <!-- text-negative permitted: mismatch count is an explicit variance signal -->
+                    <span class="comp-variance-text">{{ row.mismatches }}</span>
                   </template>
-                </q-table>
+                </KTable>
               </div>
 
               <!-- P&L Accounts that mismatch per period -->
-              <div v-if="pnlPeriodExceptionAccounts.length" id="exc-pnl-accounts" class="q-mb-md">
-                <div class="text-subtitle1 q-mb-sm">P&amp;L — Accounts that mismatch per period</div>
-                <q-list bordered>
-                  <q-expansion-item
+              <div v-if="pnlPeriodExceptionAccounts.length" id="exc-pnl-accounts" class="comp-mb-md">
+                <div class="comp-subtitle1 comp-mb-sm">P&amp;L — Accounts that mismatch per period</div>
+                <div class="comp-period-accordions">
+                  <KAccordion
                     v-for="item in pnlPeriodExceptionAccounts"
                     :key="item.period"
-                    :label="`Period ${item.period} (${item.period_date}) — ${item.accounts.length} account(s) out`"
-                    header-class="text-weight-medium"
-                    default-opened
+                    :value="String(item.period)"
+                    :model-value="String(item.period)"
+                    class="comp-period-accordion"
                   >
-                    <q-card flat bordered>
-                      <q-table
-                        :rows="item.accounts"
-                        :columns="pnlAccountExceptionColumns"
-                        row-key="account_code"
-                        dense
-                        flat
-                        bordered
-                        :pagination="{ rowsPerPage: 0 }"
-                        hide-pagination
-                      >
-                        <template v-slot:body-cell-status="props">
-                          <q-td :props="props">
-                            <StatusPill
-                              :tone="props.row.status === 'mismatch' ? 'error' : 'warning'"
-                              :label="props.row.status"
-                              size="sm"
-                            />
-                          </q-td>
-                        </template>
-                        <template v-slot:body-cell-xero_value="props">
-                          <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
-                        </template>
-                        <template v-slot:body-cell-db_value="props">
-                          <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
-                        </template>
-                        <template v-slot:body-cell-difference="props">
-                          <q-td :props="props" class="kdl-numeric">
-                            <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
-                            <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
-                          </q-td>
-                        </template>
-                      </q-table>
-                    </q-card>
-                  </q-expansion-item>
-                </q-list>
+                    <template #trigger>
+                      <span class="comp-period-accordion__label">
+                        Period {{ item.period }} ({{ item.period_date }}) — {{ item.accounts.length }} account(s) out
+                      </span>
+                    </template>
+                    <KTable
+                      :columns="pnlAccountExceptionKColumns"
+                      :data="item.accounts"
+                      dense
+                      pagination="none"
+                    >
+                      <template #cell-status="{ row }">
+                        <StatusPill
+                          :tone="row.status === 'mismatch' ? 'error' : 'warning'"
+                          :label="row.status"
+                          size="sm"
+                        />
+                      </template>
+                      <template #cell-xero_value="{ row }">
+                        <span class="comp-numeric">{{ formatNum(row.xero_value) }}</span>
+                      </template>
+                      <template #cell-db_value="{ row }">
+                        <span class="comp-numeric">{{ formatNum(row.db_value) }}</span>
+                      </template>
+                      <template #cell-difference="{ row }">
+                        <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
+                        <span class="comp-numeric comp-variance-text">{{ formatNum(row.difference) }}</span>
+                      </template>
+                    </KTable>
+                  </KAccordion>
+                </div>
               </div>
 
               <!-- BS Account Exceptions — row-click drills into DataViewer Line Items -->
               <div v-if="bsExceptionRows.length" id="exc-bs-accounts">
-                <div class="text-subtitle1 q-mb-xs">
+                <div class="comp-subtitle1 comp-mb-xs">
                   Balance Sheet — Account Exceptions
                   <span class="comp-drill-hint">Click a row to view journal lines</span>
                 </div>
-                <q-table
-                  :rows="bsExceptionRows"
-                  :columns="bsDetailColumns"
-                  row-key="account_code"
+                <KTable
+                  :columns="bsExceptionKColumns"
+                  :data="bsExceptionRows"
                   dense
-                  flat
-                  bordered
-                  :pagination="{ rowsPerPage: 25 }"
-                  class="comp-clickable-rows"
+                  :page-size="25"
                   @row-click="drillIntoAccount"
                 >
-                  <template v-slot:body-cell-status="props">
-                    <q-td :props="props">
-                      <StatusPill
-                        :tone="props.row.status === 'mismatch' ? 'error' : 'warning'"
-                        :label="props.row.status"
-                        size="sm"
-                      />
-                    </q-td>
+                  <template #cell-status="{ row }">
+                    <StatusPill
+                      :tone="row.status === 'mismatch' ? 'error' : 'warning'"
+                      :label="row.status"
+                      size="sm"
+                    />
                   </template>
-                  <template v-slot:body-cell-xero_value="props">
-                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                  <template #cell-xero_value="{ row }">
+                    <span class="comp-numeric">{{ formatNum(row.xero_value) }}</span>
                   </template>
-                  <template v-slot:body-cell-db_value="props">
-                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                  <template #cell-db_value="{ row }">
+                    <span class="comp-numeric">{{ formatNum(row.db_value) }}</span>
                   </template>
-                  <template v-slot:body-cell-difference="props">
-                    <q-td :props="props" class="kdl-numeric">
-                      <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
-                      <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
-                    </q-td>
+                  <template #cell-difference="{ row }">
+                    <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
+                    <span class="comp-numeric comp-variance-text">{{ formatNum(row.difference) }}</span>
                   </template>
                   <!-- Drill affordance column -->
-                  <template v-slot:body-cell-drill="props">
-                    <q-td :props="props">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-                        class="comp-drill-icon" aria-hidden="true">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </q-td>
+                  <template #cell-drill>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                      class="comp-drill-icon" aria-hidden="true">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
                   </template>
-                </q-table>
+                </KTable>
               </div>
             </div>
           </div>
@@ -517,35 +479,22 @@
       </div>
 
       <!-- ── 5. Advanced Options (forms) — collapsed by default once a recon exists ── -->
-      <q-expansion-item
-        class="comp-advanced-options q-mt-md"
-        :default-opened="!persistedResult"
-        label="Advanced options"
-        header-class="comp-advanced-options__header"
-        expand-icon-class="comp-advanced-options__expand-icon"
+      <KAccordion
+        v-model="advancedOpen"
+        value="advanced"
+        class="comp-mt-md"
       >
-        <template #header>
-          <div class="comp-advanced-options__header-inner">
-            <!-- chevron-down icon -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              class="comp-advanced-options__chevron" aria-hidden="true">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-            <span class="comp-advanced-options__label">Advanced options</span>
-          </div>
-        </template>
+        <template #trigger>Advanced options</template>
 
-        <div class="q-pt-md">
+        <div class="comp-advanced-body">
 
           <!-- Import P&L by Tracking -->
           <SectionCard
-            class="q-mb-md"
+            class="comp-mb-md"
             title="Import P&amp;L by Tracking"
             description="Pull Xero P&amp;L totals per tracking category for comparison with trail balance"
           >
-            <div class="row q-gutter-md items-end">
+            <div class="comp-form-row">
               <KInput
                 v-model="pnlTrackingForm.fromDate"
                 label="From Date (YYYY-MM-DD)"
@@ -560,20 +509,23 @@
                 help-text="Default: today"
                 class="comp-input--md"
               />
-              <q-btn
-                label="Import P&amp;L by Tracking"
-                color="secondary"
-                :loading="pnlTrackingLoading"
+              <button
+                class="btn btn-secondary comp-form-btn"
+                type="button"
+                :disabled="pnlTrackingLoading"
                 @click="runPnlByTracking"
-              />
+              >
+                <KSpinner v-if="pnlTrackingLoading" size="sm" />
+                Import P&amp;L by Tracking
+              </button>
             </div>
 
-            <div v-if="pnlTrackingLoading" class="text-center q-mt-md">
-              <q-spinner color="secondary" size="2em" />
-              <span class="q-ml-sm comp-muted-text">Importing...</span>
+            <div v-if="pnlTrackingLoading" class="comp-loading-row comp-mt-md">
+              <KSpinner size="md" tone="accent" />
+              <span class="comp-muted-text">Importing...</span>
             </div>
 
-            <div v-if="pnlTrackingResult && !pnlTrackingLoading" class="q-mt-md">
+            <div v-if="pnlTrackingResult && !pnlTrackingLoading" class="comp-mt-md">
               <KAlert
                 :variant="pnlTrackingResult.success ? 'success' : 'error'"
                 :title="pnlTrackingResult.success ? 'Import complete' : 'Import failed'"
@@ -589,7 +541,7 @@
             title="Run Reconciliation"
             description="Compare Xero P&amp;L and Balance Sheet reports to constructed trail balance"
           >
-            <div class="row q-gutter-md items-end">
+            <div class="comp-form-row">
               <KInput
                 v-model.number="reconcileForm.financialYear"
                 label="Financial Year"
@@ -610,20 +562,23 @@
                 step="0.01"
                 class="comp-input--xs"
               />
-              <q-btn
-                label="Run Reconciliation"
-                color="primary"
-                :loading="loading"
+              <button
+                class="btn btn-primary comp-form-btn"
+                type="button"
+                :disabled="loading"
                 @click="runReconciliation"
-              />
+              >
+                <KSpinner v-if="loading" size="sm" />
+                Run Reconciliation
+              </button>
             </div>
           </SectionCard>
 
         </div>
-      </q-expansion-item>
+      </KAccordion>
 
     </div>
-  </q-page>
+  </div>
 </template>
 
 <script setup>
@@ -638,6 +593,10 @@ import EmptyState from '../components/klikk/EmptyState.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KAlert from '../components/klikk/KAlert.vue';
 import KTabs from '../components/klikk/KTabs.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KTooltip from '../components/klikk/KTooltip.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KAccordion from '../components/klikk/KAccordion.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import MetricTile from '../components/klikk/MetricTile.vue';
 import PersistentResultStrip from '../components/klikk/PersistentResultStrip.vue';
@@ -713,6 +672,10 @@ const activeTab = ref('exceptions');
 const bsFilter = ref('');
 const bsShowMismatchOnly = ref(false);
 const showErrorDetails = ref(false);
+
+// ── Advanced options open/close (accordion v-model) ───────────────────────────
+// Open by default when no previous run exists; closes after first success.
+const advancedOpen = ref(null); // null = closed; 'advanced' = open
 
 // ── localStorage persistence ────────────────────────────────────────────────
 // Key: `klikk_recon_${tenantId}_${financialYear}`
@@ -795,6 +758,8 @@ function rotateToPrevious() {
 onMounted(() => {
   loadPersistedResult();
   loadPreviousResult();
+  // Open advanced options by default when no persisted result exists.
+  advancedOpen.value = persistedResult.value ? null : 'advanced';
 });
 
 // ── PersistentResultStrip shape ───────────────────────────────────────────────
@@ -835,22 +800,46 @@ function formatNum(val) {
   return format(val, { mode: 'accounting' });
 }
 
+// ── KTable column definitions (TanStack format) ───────────────────────────────
+
+const pnlPeriodKColumns = [
+  { accessorKey: 'period',           header: 'Period',         enableSorting: true },
+  { accessorKey: 'period_date',      header: 'Date',           enableSorting: true },
+  { accessorKey: 'total_comparisons',header: 'Comparisons',    enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'matches',          header: 'Matches',        enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'mismatches',       header: 'Mismatches',     enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'missing_in_db',    header: 'Missing in DB',  enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'missing_in_xero',  header: 'Missing in Xero',enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'match_percentage', header: 'Match %',        enableSorting: true, meta: { align: 'center' } },
+];
+
+const bsDetailKColumns = [
+  { accessorKey: 'account_code', header: 'Code',            enableSorting: true },
+  { accessorKey: 'account_name', header: 'Account',         enableSorting: true },
+  { accessorKey: 'account_type', header: 'Type',            enableSorting: true },
+  { accessorKey: 'xero_value',   header: 'Xero Value (R)',  enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'db_value',     header: 'DB Value (R)',    enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'difference',   header: 'Difference (R)',  enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'status',       header: 'Status',          enableSorting: true, meta: { align: 'center' } },
+  { id: 'drill',                 header: '',                enableSorting: false, accessorFn: () => '' },
+];
+
+const bsExceptionKColumns = bsDetailKColumns;
+
+const pnlAccountExceptionKColumns = [
+  { accessorKey: 'account_code', header: 'Code',           enableSorting: true },
+  { accessorKey: 'account_name', header: 'Account',        enableSorting: true },
+  { accessorKey: 'xero_value',   header: 'Xero (R)',       enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'db_value',     header: 'DB (R)',         enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'difference',   header: 'Difference (R)', enableSorting: true, meta: { align: 'right' } },
+  { accessorKey: 'status',       header: 'Status',         enableSorting: true, meta: { align: 'center' } },
+];
+
 // ── P&L computed ─────────────────────────────────────────────────────────────
 
 const pnlOverall = computed(() => {
   return reconciliationResult.value?.profit_loss?.comparison?.overall_statistics || null;
 });
-
-const pnlPeriodColumns = [
-  { name: 'period', label: 'Period', field: 'period', align: 'left', sortable: true },
-  { name: 'period_date', label: 'Date', field: 'period_date', align: 'left', sortable: true },
-  { name: 'total_comparisons', label: 'Comparisons', field: 'total_comparisons', align: 'right', sortable: true },
-  { name: 'matches', label: 'Matches', field: 'matches', align: 'right', sortable: true },
-  { name: 'mismatches', label: 'Mismatches', field: 'mismatches', align: 'right', sortable: true },
-  { name: 'missing_in_db', label: 'Missing in DB', field: 'missing_in_db', align: 'right', sortable: true },
-  { name: 'missing_in_xero', label: 'Missing in Xero', field: 'missing_in_xero', align: 'right', sortable: true },
-  { name: 'match_percentage', label: 'Match %', field: 'match_percentage', align: 'center', sortable: true },
-];
 
 const pnlPeriodRows = computed(() => {
   const stats = reconciliationResult.value?.profit_loss?.comparison?.period_stats;
@@ -893,33 +882,22 @@ const bsValidation = computed(() => {
   return reconciliationResult.value?.balance_sheet?.validation || null;
 });
 
-const bsDetailColumns = [
-  { name: 'account_code', label: 'Code', field: 'account_code', align: 'left', sortable: true },
-  { name: 'account_name', label: 'Account', field: 'account_name', align: 'left', sortable: true },
-  { name: 'account_type', label: 'Type', field: 'account_type', align: 'left', sortable: true },
-  { name: 'xero_value', label: 'Xero Value (R)', field: 'xero_value', align: 'right', sortable: true },
-  { name: 'db_value', label: 'DB Value (R)', field: 'db_value', align: 'right', sortable: true },
-  { name: 'difference', label: 'Difference (R)', field: 'difference', align: 'right', sortable: true },
-  { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
-  { name: 'drill', label: '', field: 'drill', align: 'right', sortable: false },
-];
-
-const pnlAccountExceptionColumns = [
-  { name: 'account_code', label: 'Code', field: 'account_code', align: 'left', sortable: true },
-  { name: 'account_name', label: 'Account', field: 'account_name', align: 'left', sortable: true },
-  { name: 'xero_value', label: 'Xero (R)', field: 'xero_value', align: 'right', sortable: true },
-  { name: 'db_value', label: 'DB (R)', field: 'db_value', align: 'right', sortable: true },
-  { name: 'difference', label: 'Difference (R)', field: 'difference', align: 'right', sortable: true },
-  { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
-];
-
 const bsAllDetailRows = computed(() => bsValidation.value?.details || []);
 
 const bsDetailRows = computed(() => {
-  if (bsShowMismatchOnly.value) {
-    return bsAllDetailRows.value.filter(d => d.status !== 'match');
+  let rows = bsShowMismatchOnly.value
+    ? bsAllDetailRows.value.filter(d => d.status !== 'match')
+    : bsAllDetailRows.value;
+
+  // Client-side text filter — matches account_code, account_name, account_type, status
+  const q = bsFilter.value.trim().toLowerCase();
+  if (q) {
+    rows = rows.filter(d =>
+      [d.account_code, d.account_name, d.account_type, d.status]
+        .some(v => String(v ?? '').toLowerCase().includes(q))
+    );
   }
-  return bsAllDetailRows.value;
+  return rows;
 });
 
 const bsExceptionRows = computed(() => {
@@ -952,7 +930,7 @@ const currentPeriod = computed(() => {
 // URL contract (agreed with DataViewer dev):
 //   /app/pipeline/data?tab=line-items&account=<account_code>&period=<YYYY-MM>
 
-function drillIntoAccount(_evt, row) {
+function drillIntoAccount(row) {
   router.push({
     path: '/app/pipeline/data',
     query: {
@@ -1022,6 +1000,8 @@ async function runReconciliation() {
     if (result.success) {
       reconciliationResult.value = result.result;
       savePersistedResult(result.result);
+      // Collapse advanced options after a successful run.
+      advancedOpen.value = null;
       if (exceptionCount.value > 0) {
         activeTab.value = 'exceptions';
       } else {
@@ -1119,6 +1099,23 @@ function exportCsv() {
 </script>
 
 <style scoped>
+/* ── Page wrapper ────────────────────────────────────────────────────────── */
+.comp-page {
+  padding: 16px;
+}
+
+/* ── Spacing utilities (scoped — no Quasar dependency) ───────────────────── */
+.comp-mb-xs  { margin-bottom: 4px; }
+.comp-mb-sm  { margin-bottom: 8px; }
+.comp-mb-md  { margin-bottom: 16px; }
+.comp-mt-md  { margin-top: 16px; }
+.comp-mt-sm  { margin-top: 8px; }
+.comp-ml-sm  { margin-left: 8px; }
+
+/* ── Typography helpers ──────────────────────────────────────────────────── */
+.comp-subtitle  { font-size: 14px; font-weight: 600; color: var(--kdl-text-secondary); }
+.comp-subtitle1 { font-size: 15px; font-weight: 600; color: var(--kdl-text-primary); }
+
 /* ── Input width constraints ─────────────────────────────────────────────── */
 .comp-input--xs { min-width: 120px; }
 .comp-input--sm { min-width: 150px; }
@@ -1129,6 +1126,42 @@ function exportCsv() {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
+}
+
+/* ── Form row (inputs + submit button side-by-side) ──────────────────────── */
+.comp-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.comp-form-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* ── Inline loading row ──────────────────────────────────────────────────── */
+.comp-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* ── Numeric cell alignment ──────────────────────────────────────────────── */
+.comp-numeric {
+  display: block;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Variance / mismatch highlight ──────────────────────────────────────── */
+.comp-variance-text {
+  color: var(--kdl-error, #DC2626);
+  font-weight: 600;
 }
 
 /* ── Segmented mismatch filter ────────────────────────────────────────────── */
@@ -1267,15 +1300,25 @@ function exportCsv() {
   color: var(--kdl-text-primary);
 }
 
-/* ── BS exceptions: clickable rows ───────────────────────────────────────── */
-.comp-clickable-rows :deep(tbody tr) {
-  cursor: pointer;
+/* ── P&L per-period accordions ────────────────────────────────────────────── */
+.comp-period-accordions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.comp-clickable-rows :deep(tbody tr:hover) {
-  background: var(--kdl-border-subtle);
+.comp-period-accordion {
+  /* inherits KAccordion border/radius */
 }
 
+.comp-period-accordion__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--kdl-text-primary);
+}
+
+/* ── BS exceptions: clickable rows (via KTable row-click) ────────────────── */
+/* KTable already applies .ktable-row--clickable cursor:pointer when @row-click present */
 .comp-drill-icon {
   color: var(--kdl-text-hint);
 }
@@ -1333,33 +1376,14 @@ function exportCsv() {
   color: #F87171;
 }
 
-/* ── Advanced options disclosure ─────────────────────────────────────────── */
-.comp-advanced-options {
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.comp-advanced-options__header-inner {
+/* ── Advanced options body ─────────────────────────────────────────────────── */
+.comp-advanced-body {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 16px;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.comp-advanced-options__chevron {
-  color: var(--kdl-text-muted);
-  transition: transform 180ms;
-}
-
-.comp-advanced-options__label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--kdl-text-secondary);
-}
-
-/* ── Muted text (replaces inline style="color: var(--kdl-text-muted)") ─────── */
+/* ── Muted text ────────────────────────────────────────────────────────────── */
 .comp-muted-text {
   color: var(--kdl-text-muted);
 }
