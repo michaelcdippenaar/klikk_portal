@@ -206,6 +206,145 @@
       </div>
     </div>
 
+    <!-- ⑩ FreshnessChip — when-did-this-last-happen primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑩ FreshnessChip — relative timestamp primitive</span>
+      <div class="preview-chip-grid">
+        <div class="preview-chip-row">
+          <span class="preview-chip-label">Just now</span>
+          <FreshnessChip :value="freshnessNow" prefix="Updated" />
+        </div>
+        <div class="preview-chip-row">
+          <span class="preview-chip-label">4m ago</span>
+          <FreshnessChip :value="freshness4m" prefix="Last sync" />
+        </div>
+        <div class="preview-chip-row">
+          <span class="preview-chip-label">Yesterday 14:03</span>
+          <FreshnessChip :value="freshnessYesterday" format="both" />
+        </div>
+        <div class="preview-chip-row">
+          <span class="preview-chip-label">Never (null)</span>
+          <FreshnessChip :value="null" prefix="Last run" />
+        </div>
+        <div class="preview-chip-row">
+          <span class="preview-chip-label">Stale (older than 2m)</span>
+          <FreshnessChip :value="freshness4m" :stale-after="2" prefix="Loaded" />
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑪ StatusPill — six semantic tones -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑪ StatusPill — six tones × two sizes</span>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <p class="preview-variant-label">Size: md (default)</p>
+          <div class="preview-pill-row">
+            <StatusPill tone="success" label="Success" :icon="true" />
+            <StatusPill tone="warning" label="Warning" :icon="true" />
+            <StatusPill tone="error"   label="Failed"  :icon="true" />
+            <StatusPill tone="info"    label="Info"    :icon="true" />
+            <StatusPill tone="neutral" label="Idle"    :icon="true" />
+            <StatusPill tone="running" label="Running" :icon="true" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">Size: sm (tight — table cells, drawers)</p>
+          <div class="preview-pill-row">
+            <StatusPill tone="success" label="Success" :icon="true" size="sm" />
+            <StatusPill tone="warning" label="Warning" :icon="true" size="sm" />
+            <StatusPill tone="error"   label="Failed"  :icon="true" size="sm" />
+            <StatusPill tone="info"    label="Info"    :icon="true" size="sm" />
+            <StatusPill tone="neutral" label="Idle"    :icon="true" size="sm" />
+            <StatusPill tone="running" label="Running" :icon="true" size="sm" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">No icon variant</p>
+          <div class="preview-pill-row">
+            <StatusPill tone="success" label="Completed" />
+            <StatusPill tone="error"   label="Error" />
+            <StatusPill tone="neutral" label="Pending" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑫ PersistentResultStrip — last-run state inline -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑫ PersistentResultStrip — last-run state persistence</span>
+      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 720px;">
+        <PersistentResultStrip
+          title="Last reconciliation"
+          :result="{
+            status: 'success',
+            completedAt: freshness4m,
+            summary: '**142 rows** reconciled. 3 skipped (duplicate reference).',
+            actions: [{ label: 'View details', handler: () => {} }],
+          }"
+        />
+        <PersistentResultStrip
+          title="Last sync run"
+          :result="{
+            status: 'running',
+            completedAt: null,
+            summary: 'Fetching transactions from Investec API…',
+          }"
+        />
+        <PersistentResultStrip
+          title="Last posting run"
+          :result="{
+            status: 'error',
+            completedAt: freshnessYesterday,
+            summary: 'Journal posting failed.',
+            error: 'Xero API returned 503 — connection timeout after 30s. Check credentials in Setup.',
+            actions: [{ label: 'Retry', handler: () => {} }],
+          }"
+        />
+        <div>
+          <p class="preview-variant-label">compact=true (above-table variant)</p>
+          <PersistentResultStrip
+            title="Last sync"
+            :compact="true"
+            :result="{
+              status: 'success',
+              completedAt: freshness4m,
+              summary: '412 rows loaded',
+              actions: [{ label: 'Run again', handler: () => {} }],
+            }"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑬ MetricTile — formalised klikk-stat pattern -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑬ MetricTile — formalised klikk-stat pattern</span>
+      <div class="preview-metric-grid">
+        <MetricTile label="Total Rows" :value="142" />
+        <MetricTile label="Processing Time" :value="28" unit="s" />
+        <MetricTile
+          label="Coverage"
+          value="97.2"
+          unit="%"
+          :trend="{ direction: 'up', delta: '+1.4%' }"
+        />
+        <MetricTile
+          label="Errors"
+          :value="3"
+          tone="error"
+          :trend="{ direction: 'down', delta: '−2 today' }"
+        />
+        <MetricTile label="Not Wired" :value="null" unit="rows" />
+        <MetricTile
+          label="Match Rate"
+          value="98.5"
+          unit="%"
+          tone="success"
+        />
+      </div>
+    </div>
+
     <!-- ⑨ KOperationCard — operator-card primitive -->
     <div class="klikk-preview-section">
       <span class="label-upper" style="display: block; margin-bottom: 12px;">⑨ KOperationCard — operator-card primitive</span>
@@ -293,8 +432,22 @@ import KInput from '../components/klikk/KInput.vue';
 import KAlert from '../components/klikk/KAlert.vue';
 import KTabs from '../components/klikk/KTabs.vue';
 import KOperationCard from '../components/klikk/KOperationCard.vue';
+import FreshnessChip from '../components/klikk/FreshnessChip.vue';
+import StatusPill from '../components/klikk/StatusPill.vue';
+import PersistentResultStrip from '../components/klikk/PersistentResultStrip.vue';
+import MetricTile from '../components/klikk/MetricTile.vue';
 
 const { isDark, toggleTheme } = useTheme();
+
+// ─── FreshnessChip demo state ─────────────────────────────────────────────
+const freshnessNow = new Date(Date.now() - 5 * 1000);        // 5 seconds ago → "just now"
+const freshness4m  = new Date(Date.now() - 4 * 60 * 1000);   // 4 minutes ago
+const freshnessYesterday = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  d.setHours(14, 3, 0, 0);
+  return d;
+})();
 
 // ─── KOperationCard demo state ────────────────────────────────────────────
 // running demo: 4 minutes ago
@@ -369,5 +522,40 @@ const activeUnderlineTab = ref('overview');
   background: var(--kdl-border-subtle);
   font-size: 13px;
   color: var(--kdl-text-muted);
+}
+
+/* FreshnessChip demo */
+.preview-chip-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 480px;
+}
+.preview-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.preview-chip-label {
+  font-size: 12px;
+  color: var(--kdl-text-hint);
+  width: 160px;
+  flex-shrink: 0;
+}
+
+/* StatusPill demo */
+.preview-pill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* MetricTile demo */
+.preview-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  max-width: 720px;
 }
 </style>

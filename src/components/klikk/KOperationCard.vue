@@ -63,95 +63,13 @@
         <p v-if="description" class="kop-card__description">{{ description }}</p>
       </div>
 
-      <!-- State pill — top-right -->
-      <div class="kop-card__pill" :class="`kop-card__pill--${state}`" :aria-label="`Status: ${state}`">
-        <!-- idle: outlined circle (no fill) -->
-        <svg
-          v-if="state === 'idle'"
-          xmlns="http://www.w3.org/2000/svg"
-          width="12" height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-
-        <!-- running: Loader2 with spin -->
-        <svg
-          v-else-if="state === 'running'"
-          xmlns="http://www.w3.org/2000/svg"
-          width="12" height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          class="kop-card__pill-spin"
-          aria-hidden="true"
-        >
-          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-        </svg>
-
-        <!-- queued: Clock -->
-        <svg
-          v-else-if="state === 'queued'"
-          xmlns="http://www.w3.org/2000/svg"
-          width="12" height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
-
-        <!-- failed: XCircle -->
-        <svg
-          v-else-if="state === 'failed'"
-          xmlns="http://www.w3.org/2000/svg"
-          width="12" height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="15" y1="9" x2="9" y2="15" />
-          <line x1="9" y1="9" x2="15" y2="15" />
-        </svg>
-
-        <!-- succeeded: CheckCircle -->
-        <svg
-          v-else-if="state === 'succeeded'"
-          xmlns="http://www.w3.org/2000/svg"
-          width="12" height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <polyline points="22 4 12 14.01 9 11.01" />
-        </svg>
-
-        <span class="kop-card__pill-label">{{ STATE_LABELS[state] || state }}</span>
-      </div>
+      <!-- State pill — top-right (StatusPill primitive: single source of truth) -->
+      <StatusPill
+        :tone="pillTone"
+        :label="pillLabel"
+        :icon="true"
+        size="sm"
+      />
     </header>
 
     <!-- ── Meta row: lastRunAt · metric · primaryAction ── -->
@@ -240,6 +158,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useRelativeTime } from '../../composables/useRelativeTime.js';
+import StatusPill from './StatusPill.vue';
 
 const props = defineProps({
   /** Card heading — the name of the operation. */
@@ -309,6 +228,18 @@ const STATE_LABELS = {
   succeeded: 'Done',
 };
 
+// Map KOperationCard states → StatusPill tones
+const STATE_TONES = {
+  idle:      'neutral',
+  running:   'running',
+  queued:    'warning',
+  failed:    'error',
+  succeeded: 'success',
+};
+
+const pillTone = computed(() => STATE_TONES[props.state] || 'neutral');
+const pillLabel = computed(() => STATE_LABELS[props.state] || props.state);
+
 // Relative time — reactive, updates every 30s via composable
 const lastRunAtRef = computed(() => {
   if (!props.lastRunAt) return null;
@@ -367,74 +298,8 @@ const resolvedMetric = computed(() => props.metric || '—');
   text-overflow: ellipsis;
 }
 
-/* ── State pill ─────────────────────────────────────────────────────────── */
-.kop-card__pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.35;
-  white-space: nowrap;
-  flex-shrink: 0;
-  /* Default: idle — no fill, muted */
-  background: transparent;
-  color: var(--kdl-text-muted);
-  border: 1px solid var(--kdl-border);
-}
-
-/* idle — no fill, outlined */
-.kop-card__pill--idle {
-  background: transparent;
-  color: var(--kdl-text-muted);
-  border-color: var(--kdl-border);
-}
-
-/* running — accent tone */
-.kop-card__pill--running {
-  background: color-mix(in srgb, var(--kdl-accent) 10%, transparent);
-  color: var(--kdl-accent);
-  border-color: color-mix(in srgb, var(--kdl-accent) 30%, transparent);
-}
-
-/* queued — warning tone */
-.kop-card__pill--queued {
-  background: rgba(217, 119, 6, 0.10);
-  color: #d97706;
-  border-color: rgba(217, 119, 6, 0.25);
-}
-
-/* failed — error tone, 12% background */
-.kop-card__pill--failed {
-  background: rgba(220, 38, 38, 0.10);
-  color: #dc2626;
-  border-color: rgba(220, 38, 38, 0.25);
-}
-
-/* succeeded — success tone, 12% background */
-.kop-card__pill--succeeded {
-  background: rgba(13, 148, 136, 0.10);
-  color: #0d9488;
-  border-color: rgba(13, 148, 136, 0.25);
-}
-
-/* Running spinner animation */
-.kop-card__pill-spin {
-  animation: kop-spin 1s linear infinite;
-}
-
-@keyframes kop-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kop-card__pill-spin {
-    animation: none;
-  }
-}
+/* ── State pill — now rendered by <StatusPill> primitive. ────────────────── */
+/* No local pill styles needed. StatusPill is the single source of truth. */
 
 /* ── Meta row ───────────────────────────────────────────────────────────── */
 .kop-card__meta {
@@ -535,23 +400,7 @@ const resolvedMetric = computed(() => props.metric || '—');
 }
 
 /* ── Dark mode ──────────────────────────────────────────────────────────── */
-:root[data-theme="dark"] .kop-card__pill--queued {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
-  border-color: rgba(251, 191, 36, 0.30);
-}
-
-:root[data-theme="dark"] .kop-card__pill--failed {
-  background: rgba(248, 113, 113, 0.12);
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.30);
-}
-
-:root[data-theme="dark"] .kop-card__pill--succeeded {
-  background: rgba(45, 212, 191, 0.12);
-  color: #2dd4bf;
-  border-color: rgba(45, 212, 191, 0.30);
-}
+/* State pill dark-mode handled by StatusPill component. */
 
 :root[data-theme="dark"] .kop-card__error-row {
   background: rgba(248, 113, 113, 0.08);
