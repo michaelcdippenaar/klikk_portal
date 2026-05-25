@@ -3,41 +3,9 @@
     <!-- Single-row KDL header -->
     <q-header class="kdl-header">
       <q-toolbar class="kdl-toolbar">
-        <!-- Logo / lockup — inlined so currentColor inherits the parent token -->
+        <!-- Logo / lockup — KLockup component (currentColor inherits parent token) -->
         <span class="kdl-brand-wrapper" role="img" aria-label="Klikk Financials">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 196 24"
-            class="kdl-brand-lockup"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <!-- Tally mark: three bars proportional to 24px tall lockup -->
-            <rect x="0" y="4" width="14" height="4" rx="1.5" fill="currentColor" />
-            <rect x="0" y="10" width="10" height="4" rx="1.5" fill="currentColor" />
-            <rect x="0" y="16" width="6" height="4" rx="1.5" fill="currentColor" />
-            <!-- "klikk" — 18px / 600 -->
-            <text
-              x="22"
-              y="18"
-              font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
-              font-size="18"
-              font-weight="600"
-              letter-spacing="-0.45"
-              fill="currentColor"
-            >klikk</text>
-            <!-- "financials" — 13px / 500 / 60% opacity -->
-            <text
-              x="87"
-              y="18"
-              font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
-              font-size="13"
-              font-weight="500"
-              letter-spacing="0.5"
-              fill="currentColor"
-              opacity="0.6"
-            >financials</text>
-          </svg>
+          <KLockup size="md" />
         </span>
 
         <!-- Primary nav — left-adjacent to logo -->
@@ -196,6 +164,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useDataStore } from '../stores/data';
 import { useTheme } from '../composables/useTheme';
+import KLockup from '../components/klikk/KLockup.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -257,12 +226,6 @@ function handleLogout() {
   margin-right: 16px;
   flex-shrink: 0;
   color: var(--kdl-text-primary);
-}
-
-.kdl-brand-lockup {
-  height: 24px;
-  width: auto;
-  display: block;
 }
 
 /* ── Primary nav ──────────────────────────────────────── */

@@ -37,6 +37,31 @@
       </button>
     </div>
 
+    <!-- ⓪ Brand Lockup — KLockup component, all three sizes -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⓪ Brand Lockup — KLockup (sm / md / lg)</span>
+      <div style="display: flex; align-items: flex-end; gap: 32px; flex-wrap: wrap;">
+        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+          <span class="label-upper" style="font-size: 10px;">sm (20px)</span>
+          <div style="color: var(--kdl-text-primary);">
+            <KLockup size="sm" />
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+          <span class="label-upper" style="font-size: 10px;">md (24px) — header default</span>
+          <div style="color: var(--kdl-text-primary);">
+            <KLockup size="md" />
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+          <span class="label-upper" style="font-size: 10px;">lg (36px) — login</span>
+          <div style="color: var(--kdl-text-primary);">
+            <KLockup size="lg" />
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ① PageHeader -->
     <div class="klikk-preview-section">
       <span class="label-upper" style="display: block; margin-bottom: 12px;">① PageHeader</span>
@@ -258,6 +283,7 @@
 <script setup>
 import { ref } from 'vue';
 import { useTheme } from '../composables/useTheme';
+import KLockup from '../components/klikk/KLockup.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import EmptyState from '../components/klikk/EmptyState.vue';
