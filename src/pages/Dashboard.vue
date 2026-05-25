@@ -2,34 +2,24 @@
   <q-page class="q-pa-lg">
     <PageHeader title="Home" subtitle="Group financial operations — Xero, Investec, and Planning Analytics" />
 
-    <div class="row q-gutter-lg">
-      <q-card
-        class="app-card cursor-pointer col-12 col-sm-5 col-md-3"
-        bordered
-        @click="openDjango()"
-      >
-        <q-card-section class="text-center">
-          <q-icon name="dashboard" size="48px" color="primary" />
-          <div class="text-h6 q-mt-md">Console</div>
-          <div class="text-caption text-grey-7 q-mt-sm">Xero, Investec, and reporting workflows</div>
-        </q-card-section>
-      </q-card>
+    <div class="kdl-app-grid">
+      <button class="kdl-app-tile" @click="openDjango()">
+        <q-icon name="dashboard" size="40px" class="kdl-app-tile__icon" />
+        <div class="kdl-app-tile__label">Console</div>
+        <div class="kdl-app-tile__desc">Xero, Investec, and reporting workflows</div>
+      </button>
 
-      <q-card class="app-card cursor-pointer col-12 col-sm-5 col-md-3" bordered @click="openPaw()">
-        <q-card-section class="text-center">
-          <q-icon name="analytics" size="48px" color="primary" />
-          <div class="text-h6 q-mt-md">Planning Analytics</div>
-          <div class="text-caption text-grey-7 q-mt-sm">TM1 and PAW on the RedHat VM</div>
-        </q-card-section>
-      </q-card>
+      <button class="kdl-app-tile" @click="openPaw()">
+        <q-icon name="analytics" size="40px" class="kdl-app-tile__icon" />
+        <div class="kdl-app-tile__label">Planning Analytics</div>
+        <div class="kdl-app-tile__desc">TM1 and PAW on the RedHat VM</div>
+      </button>
 
-      <q-card class="app-card cursor-pointer col-12 col-sm-5 col-md-3" bordered @click="openAgent()">
-        <q-card-section class="text-center">
-          <q-icon name="smart_toy" size="48px" color="primary" />
-          <div class="text-h6 q-mt-md">AI Agent</div>
-          <div class="text-caption text-grey-7 q-mt-sm">Financial assistant and model tools</div>
-        </q-card-section>
-      </q-card>
+      <button class="kdl-app-tile" @click="openAgent()">
+        <q-icon name="smart_toy" size="40px" class="kdl-app-tile__icon" />
+        <div class="kdl-app-tile__label">AI Agent</div>
+        <div class="kdl-app-tile__desc">Financial assistant and model tools</div>
+      </button>
     </div>
   </q-page>
 </template>
@@ -54,11 +44,57 @@ function openAgent() {
 </script>
 
 <style scoped>
-.app-card {
-  transition: transform 0.2s, box-shadow 0.2s;
+.kdl-app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 280px));
+  gap: 16px;
+  margin-top: 4px;
 }
-.app-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+
+.kdl-app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 28px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--kdl-border);
+  background: var(--kdl-card-bg);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1),
+              box-shadow 150ms cubic-bezier(0.2, 0, 0, 1),
+              border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+  font-family: inherit;
+}
+
+.kdl-app-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lifted);
+  border-color: var(--kdl-text-hint);
+}
+
+.kdl-app-tile:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+.kdl-app-tile__icon {
+  color: var(--kdl-accent);
+  flex-shrink: 0;
+}
+
+.kdl-app-tile__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+  line-height: 1.2;
+}
+
+.kdl-app-tile__desc {
+  font-size: 12px;
+  color: var(--kdl-text-muted);
+  line-height: 1.4;
 }
 </style>
