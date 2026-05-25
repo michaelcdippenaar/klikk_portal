@@ -1,0 +1,76 @@
+// KDL finance-admin typography — plain class declarations.
+// Renamed from kdl-quasar-typography.sass (Phase 0 migration).
+// All q-* selectors removed; the .text-h* / .text-body* / .text-subtitle* /
+// .text-overline classes are kept because pages still reference them.
+// Phase 2 will migrate these to Tailwind utilities via codemod.
+//
+// Type ramp (Geist 14px finance-admin variant — CDO Fix #1):
+//   h1 28px/1.15/600 · h2 24px/1.2/600 · h3 22px/1.2/600
+//   h4 18px/1.25/600 · h5 16px/1.3/600 · h6 14px/1.35/600
+//   subtitle1 14px/1.4/500 · subtitle2 13px/1.4/500
+//   body1 14px/1.45/400 · body2 13px/1.45/400
+//   caption 12px/1.35/400 · overline 11px/1.3/600 uppercase +0.06em
+
+// ── Typography ────────────────────────────────────────────────────────────────
+
+.text-h1
+  font-size: 28px
+  line-height: 1.15
+  font-weight: 600
+
+.text-h2
+  font-size: 24px
+  line-height: 1.2
+  font-weight: 600
+
+.text-h3
+  font-size: 22px
+  line-height: 1.2
+  font-weight: 600
+
+.text-h4
+  font-size: 18px
+  line-height: 1.25
+  font-weight: 600
+
+.text-h5
+  font-size: 16px
+  line-height: 1.3
+  font-weight: 600
+
+.text-h6
+  font-size: 14px
+  line-height: 1.35
+  font-weight: 600
+
+.text-subtitle1
+  font-size: 14px
+  line-height: 1.4
+  font-weight: 500
+
+.text-subtitle2
+  font-size: 13px
+  line-height: 1.4
+  font-weight: 500
+
+.text-body1
+  font-size: 14px
+  line-height: 1.45
+  font-weight: 400
+
+.text-body2
+  font-size: 13px
+  line-height: 1.45
+  font-weight: 400
+
+.text-caption
+  font-size: 12px
+  line-height: 1.35
+  font-weight: 400
+
+.text-overline
+  font-size: 11px
+  line-height: 1.3
+  font-weight: 600
+  text-transform: uppercase
+  letter-spacing: 0.06em

@@ -27,9 +27,13 @@ function resolveTheme(pref) {
 function applyTheme(pref) {
   const resolved = resolveTheme(pref);
   if (resolved === 'dark') {
+    // data-theme keeps existing klikk.css :root[data-theme="dark"] selectors working.
+    // class="dark" enables Tailwind's darkMode: 'class' strategy (Phase 0+).
     document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.classList.add('dark');
   } else {
     document.documentElement.removeAttribute('data-theme');
+    document.documentElement.classList.remove('dark');
   }
 }
 

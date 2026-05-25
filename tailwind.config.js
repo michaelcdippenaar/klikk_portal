@@ -1,9 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./index.html', './src/**/*.{vue,js,ts}'],
-  // Klikk design language uses data-theme="dark" on <html>.
-  // Tailwind's selector strategy fires dark: variants on [data-theme="dark"] descendants.
-  darkMode: ['selector', '[data-theme="dark"]'],
+  // Phase 0: switch to class-based dark mode ('dark' class on <html>).
+  // The useTheme composable now sets BOTH data-theme="dark" AND class="dark" so
+  // existing klikk.css :root[data-theme="dark"] selectors keep working.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

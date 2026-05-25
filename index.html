@@ -15,13 +15,17 @@
         var saved = localStorage.getItem('klikk:theme');
         var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         var dark = saved === 'dark' || (!saved && systemDark) || (saved === 'system' && systemDark);
-        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+        if (dark) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          document.documentElement.classList.add('dark');
+        }
       } catch (e) { /* ignore — storage may be blocked */ }
     })();
   </script>
   <noscript>
     <strong>We're sorry but this app doesn't work properly without JavaScript enabled. Please enable it to continue.</strong>
   </noscript>
-  <!-- quasar:entry-point -->
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>
