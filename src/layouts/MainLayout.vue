@@ -3,9 +3,38 @@
     <!-- Single-row KDL header -->
     <q-header class="kdl-header">
       <q-toolbar class="kdl-toolbar">
-        <!-- Logo / lockup -->
-        <span class="kdl-brand-wrapper">
-          <img src="/logo/lockup.svg" alt="Klikk Financials" class="kdl-brand-lockup" />
+        <!-- Logo / lockup — inlined so currentColor inherits the parent token -->
+        <span class="kdl-brand-wrapper" role="img" aria-label="Klikk Financials">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 164 20"
+            class="kdl-brand-lockup"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect x="0" y="4" width="12" height="3" rx="1" fill="currentColor" />
+            <rect x="0" y="8.5" width="8" height="3" rx="1" fill="currentColor" />
+            <rect x="0" y="13" width="4" height="3" rx="1" fill="currentColor" />
+            <text
+              x="20"
+              y="14"
+              font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
+              font-size="13"
+              font-weight="500"
+              letter-spacing="-0.325"
+              fill="currentColor"
+            >klikk</text>
+            <text
+              x="62"
+              y="14"
+              font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
+              font-size="10"
+              font-weight="400"
+              letter-spacing="0.7"
+              fill="currentColor"
+              opacity="0.4"
+            >financials</text>
+          </svg>
         </span>
 
         <!-- Primary nav — left-adjacent to logo -->
