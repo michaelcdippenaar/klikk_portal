@@ -1,249 +1,245 @@
 <template>
-  <q-page class="q-pa-md">
+  <div class="page-content">
     <PageHeader title="Watchlist" subtitle="Stock data from yfinance — select a symbol for details and chart" />
-    <div class="row items-center justify-end q-mb-md">
-      <div class="row items-center q-gutter-sm">
-        <span v-if="lastRefreshedAt" class="text-muted">Last updated {{ lastRefreshedAt.toLocaleTimeString() }}</span>
-        <q-input
+
+    <div class="fi-toolbar">
+      <span v-if="lastRefreshedAt" class="text-muted">Last updated {{ lastRefreshedAt.toLocaleTimeString() }}</span>
+      <div class="fi-toolbar__right">
+        <KInput
           v-model="newSymbol"
-          label="Add symbol"
-          dense
-          outlined
-          class="fi-symbol-input"
+          label=""
+          placeholder="Add symbol"
+          style="max-width: 140px;"
           @keyup.enter="addSymbol"
         />
-        <q-btn label="Add" color="primary" :loading="addingSymbol" :disable="!newSymbol.trim()" @click="addSymbol" />
+        <button class="btn btn-primary btn-sm" :disabled="addingSymbol || !newSymbol.trim()" @click="addSymbol">
+          {{ addingSymbol ? 'Adding…' : 'Add' }}
+        </button>
       </div>
     </div>
 
-    <div class="row q-col-gutter-lg">
-      <div class="col-12 col-lg-4 col-xl-3">
-        <SectionCard class="q-mb-lg">
+    <div class="fi-layout">
+      <!-- Left: Watchlist -->
+      <div class="fi-layout__left">
+        <SectionCard>
           <template #actions>
-            <q-btn flat dense icon="view_column" size="sm" class="kdl-icon-action">
-              <q-menu anchor="top right" self="top left">
-                <q-list dense class="fi-col-menu">
-                  <q-item v-for="col in allSymbolColumnOptions" :key="col.name" dense>
-                    <q-item-section side>
-                      <q-checkbox v-model="visibleColumns" :val="col.name" dense @update:model-value="saveWatchlistColumns" />
-                    </q-item-section>
-                    <q-item-section>{{ col.label }}</q-item-section>
-                  </q-item>
-                </q-list>
-              </q-menu>
-            </q-btn>
+            <!-- Column visibility toggle via KTable's showVisibilityMenu -->
           </template>
           <span class="text-muted">Toggle columns to show</span>
-          <q-table
-            :rows="symbols"
-            :columns="visibleTableColumns"
-            row-key="symbol"
-            flat
-            bordered
+          <KTable
+            :columns="watchlistColumns"
+            :data="symbols"
             :loading="loadingSymbols"
-            selection="single"
-            v-model:selected="selectedSymbolRow"
-            @update:selected="onSymbolSelected"
-            :pagination="symbolsPagination"
-            :rows-per-page-options="[25, 50, 100, 0]"
             dense
-            class="watchlist-table"
+            pagination="client"
+            :pageSize="25"
+            :pageSizeOptions="[25, 50, 100]"
+            :showVisibilityMenu="true"
+            v-model:visibleColumns="watchlistVisibility"
+            @row-click="onSymbolRowClick"
           >
-            <template #body-cell-last_close="props">
-              <q-td :props="props" class="text-right">
-                {{ props.row.last_close != null ? Number(props.row.last_close).toFixed(2) : '—' }}
-              </q-td>
+            <template #cell-last_close="{ row }">
+              <span class="text-right fi-num">{{ row.last_close != null ? Number(row.last_close).toFixed(2) : '—' }}</span>
             </template>
-            <template #body-cell-change="props">
-              <q-td :props="props" class="text-right" :class="props.row.change != null && props.row.change >= 0 ? 'text-positive' : props.row.change != null ? 'text-negative' : ''">
-                {{ props.row.change != null ? Number(props.row.change).toFixed(2) : '—' }}
-              </q-td>
+            <template #cell-change="{ row }">
+              <span class="fi-num" :class="row.change != null && row.change >= 0 ? 'fi-pos' : row.change != null ? 'fi-neg' : ''">
+                {{ row.change != null ? Number(row.change).toFixed(2) : '—' }}
+              </span>
             </template>
-            <template #body-cell-change_pct="props">
-              <q-td :props="props" class="text-right" :class="props.row.change_pct != null && props.row.change_pct >= 0 ? 'text-positive' : props.row.change_pct != null ? 'text-negative' : ''">
-                {{ props.row.change_pct != null ? Number(props.row.change_pct).toFixed(2) + '%' : '—' }}
-              </q-td>
+            <template #cell-change_pct="{ row }">
+              <span class="fi-num" :class="row.change_pct != null && row.change_pct >= 0 ? 'fi-pos' : row.change_pct != null ? 'fi-neg' : ''">
+                {{ row.change_pct != null ? Number(row.change_pct).toFixed(2) + '%' : '—' }}
+              </span>
             </template>
-            <template #body-cell-pe_ratio="props">
-              <q-td :props="props" class="text-right">
-                {{ props.row.pe_ratio != null ? Number(props.row.pe_ratio).toFixed(1) : '—' }}
-              </q-td>
+            <template #cell-pe_ratio="{ row }">
+              <span class="fi-num">{{ row.pe_ratio != null ? Number(row.pe_ratio).toFixed(1) : '—' }}</span>
             </template>
-            <template #body-cell-forward_pe="props">
-              <q-td :props="props" class="text-right">
-                {{ props.row.forward_pe != null ? Number(props.row.forward_pe).toFixed(1) : '—' }}
-              </q-td>
+            <template #cell-forward_pe="{ row }">
+              <span class="fi-num">{{ row.forward_pe != null ? Number(row.forward_pe).toFixed(1) : '—' }}</span>
             </template>
-            <template #body-cell-dividend_yield="props">
-              <q-td :props="props" class="text-right">
-                {{ props.row.dividend_yield != null ? Number(props.row.dividend_yield).toFixed(2) + '%' : '—' }}
-              </q-td>
+            <template #cell-dividend_yield="{ row }">
+              <span class="fi-num">{{ row.dividend_yield != null ? Number(row.dividend_yield).toFixed(2) + '%' : '—' }}</span>
             </template>
-            <template #body-cell-recommendation="props">
-              <q-td :props="props" class="text-left">
-                <span
-                  :class="{
-                    'text-positive': props.row.recommendation === 'Buy',
-                    'text-negative': props.row.recommendation === 'Sell',
-                  }"
-                >
-                  {{ props.row.recommendation || '—' }}
-                </span>
-              </q-td>
+            <template #cell-recommendation="{ row }">
+              <span :class="{ 'fi-pos': row.recommendation === 'Buy', 'fi-neg': row.recommendation === 'Sell' }">
+                {{ row.recommendation || '—' }}
+              </span>
             </template>
-          </q-table>
+          </KTable>
         </SectionCard>
       </div>
 
-      <div class="col-12 col-lg-8 col-xl-9">
-        <SectionCard v-if="selectedSymbol" class="q-mb-lg">
+      <!-- Right: Symbol detail -->
+      <div class="fi-layout__right">
+        <SectionCard v-if="selectedSymbol">
           <template #actions>
-            <q-btn label="Refresh prices" color="primary" icon="refresh" :loading="refreshing" dense @click="refreshSelected" />
-            <q-btn label="Refresh extra" color="secondary" icon="sync" :loading="refreshingExtra" dense @click="refreshExtraSelected" />
+            <button class="btn btn-primary btn-sm" :disabled="refreshing" @click="refreshSelected">
+              <!-- Lucide refresh-cw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              {{ refreshing ? 'Refreshing…' : 'Refresh prices' }}
+            </button>
+            <button class="btn btn-ghost btn-sm" :disabled="refreshingExtra" @click="refreshExtraSelected">
+              <!-- Lucide sync / rotate-cw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+              {{ refreshingExtra ? 'Refreshing…' : 'Refresh extra' }}
+            </button>
           </template>
 
-          <div class="row items-center q-gutter-md q-mb-md">
-            <span class="section-header">{{ selectedSymbol }}</span>
+          <div class="fi-symbol-header">
+            <span class="fi-symbol-header__symbol">{{ selectedSymbol }}</span>
             <span class="text-muted">{{ selectedSymbolCompany }}</span>
-            <span v-if="selectedSymbolLastClose != null" class="section-header">{{ Number(selectedSymbolLastClose).toFixed(2) }}</span>
-            <span v-if="selectedSymbolChange != null" :class="selectedSymbolChange >= 0 ? 'text-positive' : 'text-negative'">
+            <span v-if="selectedSymbolLastClose != null" class="fi-symbol-header__price">{{ Number(selectedSymbolLastClose).toFixed(2) }}</span>
+            <span v-if="selectedSymbolChange != null" :class="selectedSymbolChange >= 0 ? 'fi-pos' : 'fi-neg'">
               {{ selectedSymbolChange >= 0 ? '+' : '' }}{{ Number(selectedSymbolChange).toFixed(2) }}
               ({{ selectedSymbolChangePct != null ? (selectedSymbolChangePct >= 0 ? '+' : '') + Number(selectedSymbolChangePct).toFixed(2) + '%' : '—' }})
             </span>
           </div>
 
-          <div class="row q-gutter-xs q-mb-md">
-            <q-btn v-for="p in periodOptions" :key="p.key" :label="p.label" :color="selectedPeriod === p.key ? 'primary' : 'grey-7'" flat dense no-caps :outline="selectedPeriod !== p.key" @click="setPeriod(p.key)" />
+          <!-- Period buttons -->
+          <div class="fi-periods">
+            <button
+              v-for="p in periodOptions"
+              :key="p.key"
+              class="btn btn-sm"
+              :class="selectedPeriod === p.key ? 'btn-primary' : 'btn-ghost'"
+              @click="setPeriod(p.key)"
+            >{{ p.label }}</button>
           </div>
 
-          <FinancialLineChart v-if="chartLabels.length" :labels="chartLabels" :data="chartData" class="q-mb-lg" />
+          <FinancialLineChart v-if="chartLabels.length" :labels="chartLabels" :data="chartData" class="fi-chart" />
 
-          <q-tabs v-model="detailTab" dense align="left" class="q-mb-md">
-            <q-tab name="prices" label="Overview" />
-            <q-tab name="dividends" label="Dividends" />
-            <q-tab name="splits" label="Splits" />
-            <q-tab name="info" label="Company info" />
-            <q-tab name="financials" label="Financials" />
-            <q-tab name="earnings" label="Earnings" />
-            <q-tab name="analyst" label="Analyst" />
-            <q-tab name="ownership" label="Ownership" />
-            <q-tab name="news" label="News" />
-          </q-tabs>
-          <q-separator />
+          <!-- Tabs -->
+          <KTabs
+            :tabs="[
+              { name: 'prices', label: 'Overview' },
+              { name: 'dividends', label: 'Dividends' },
+              { name: 'splits', label: 'Splits' },
+              { name: 'info', label: 'Company info' },
+              { name: 'financials', label: 'Financials' },
+              { name: 'earnings', label: 'Earnings' },
+              { name: 'analyst', label: 'Analyst' },
+              { name: 'ownership', label: 'Ownership' },
+              { name: 'news', label: 'News' },
+            ]"
+            v-model="detailTab"
+            :url-sync="false"
+          />
 
-          <q-tab-panels v-model="detailTab" animated class="q-pt-md">
-            <q-tab-panel name="prices">
-              <div class="row q-col-gutter-sm q-mb-sm">
-                <q-input v-model="startDate" label="From" type="date" dense outlined class="fi-date-input" />
-                <q-input v-model="endDate" label="To" type="date" dense outlined class="fi-date-input" />
-                <q-btn label="Load" color="primary" flat dense :loading="loadingHistory" @click="loadHistory" />
+          <!-- Tab panels -->
+          <div class="fi-tab-panel">
+
+            <!-- Prices / Overview -->
+            <template v-if="detailTab === 'prices'">
+              <div class="fi-date-row">
+                <KInput v-model="startDate" label="From" type="date" style="max-width: 160px;" />
+                <KInput v-model="endDate" label="To" type="date" style="max-width: 160px;" />
+                <button class="btn btn-ghost btn-sm" :disabled="loadingHistory" @click="loadHistory" style="align-self: flex-end;">
+                  {{ loadingHistory ? 'Loading…' : 'Load' }}
+                </button>
               </div>
-              <q-table
-                :rows="history"
+              <KTable
                 :columns="historyColumns"
-                row-key="date"
-                flat
-                bordered
+                :data="history"
                 :loading="loadingHistory"
-                :rows-per-page-options="[10, 25, 50]"
                 dense
+                pagination="client"
+                :pageSize="10"
+                :pageSizeOptions="[10, 25, 50]"
               />
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="dividends">
-              <p v-if="trailingDividendYieldPct != null" class="text-muted q-mb-sm">
+            <!-- Dividends -->
+            <template v-else-if="detailTab === 'dividends'">
+              <p v-if="trailingDividendYieldPct != null" class="text-muted fi-note">
                 <strong>Trailing dividend yield (12m):</strong> {{ Number(trailingDividendYieldPct).toFixed(2) }}%
               </p>
-              <q-table
-                :rows="dividends"
+              <KTable
                 :columns="dividendColumns"
-                row-key="date"
-                flat
-                bordered
+                :data="dividends"
                 :loading="loadingExtra.dividends"
                 dense
-                hide-bottom
+                pagination="none"
               />
               <p v-if="!loadingExtra.dividends && dividends.length === 0" class="text-muted">No dividends stored. Click "Refresh extra data" to fetch.</p>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="splits">
-              <q-table
-                :rows="splits"
+            <!-- Splits -->
+            <template v-else-if="detailTab === 'splits'">
+              <KTable
                 :columns="splitColumns"
-                row-key="date"
-                flat
-                bordered
+                :data="splits"
                 :loading="loadingExtra.splits"
                 dense
-                hide-bottom
+                pagination="none"
               />
               <p v-if="!loadingExtra.splits && splits.length === 0" class="text-muted">No splits stored. Click "Refresh extra data" to fetch.</p>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="info">
+            <!-- Info -->
+            <template v-else-if="detailTab === 'info'">
               <div v-if="loadingExtra.info" class="text-muted">Loading…</div>
               <pre v-else-if="companyInfo" class="fi-json-pre fi-json-pre--tall">{{ JSON.stringify(companyInfo, null, 2) }}</pre>
               <p v-else class="text-muted">No company info. Click "Refresh extra data" to fetch.</p>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="financials">
-              <q-select v-model="financialsFreq" :options="['yearly', 'quarterly', 'trailing']" dense outlined class="fi-freq-select q-mb-sm" @update:model-value="loadFinancials" />
+            <!-- Financials -->
+            <template v-else-if="detailTab === 'financials'">
+              <KSelect v-model="financialsFreq" label="" :options="['yearly', 'quarterly', 'trailing']" style="max-width: 140px; margin-bottom: 8px;" @update:model-value="loadFinancials" />
               <div v-if="loadingExtra.financials" class="text-muted">Loading…</div>
               <div v-else-if="financialStatements.length">
-                <div v-for="stmt in financialStatements" :key="stmt.statement_type" class="q-mb-lg">
-                  <div class="section-header q-mb-sm">{{ stmt.statement_type }}</div>
+                <div v-for="stmt in financialStatements" :key="stmt.statement_type" class="fi-stmt">
+                  <div class="section-header fi-stmt__title">{{ stmt.statement_type }}</div>
                   <pre class="fi-json-pre fi-json-pre--medium">{{ JSON.stringify(stmt.data, null, 2) }}</pre>
                 </div>
               </div>
               <p v-else class="text-muted">No financial statements. Click "Refresh extra data" to fetch.</p>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="earnings">
-              <q-select v-model="earningsFreq" :options="['yearly', 'quarterly', 'trailing']" dense outlined class="fi-freq-select q-mb-sm" @update:model-value="loadEarnings" />
+            <!-- Earnings -->
+            <template v-else-if="detailTab === 'earnings'">
+              <KSelect v-model="earningsFreq" label="" :options="['yearly', 'quarterly', 'trailing']" style="max-width: 140px; margin-bottom: 8px;" @update:model-value="loadEarnings" />
               <div v-if="loadingExtra.earnings" class="text-muted">Loading…</div>
               <pre v-else-if="earningsData.length" class="fi-json-pre fi-json-pre--tall">{{ JSON.stringify(earningsData, null, 2) }}</pre>
               <p v-else class="text-muted">No earnings data. Click "Refresh extra data" to fetch.</p>
-              <div v-if="earningsEstimate && Object.keys(earningsEstimate.data || {}).length" class="q-mt-md">
-                <div class="section-header q-mb-sm">Earnings estimate</div>
+              <div v-if="earningsEstimate && Object.keys(earningsEstimate.data || {}).length" class="fi-stmt">
+                <div class="section-header fi-stmt__title">Earnings estimate</div>
                 <pre class="fi-json-pre fi-json-pre--short">{{ JSON.stringify(earningsEstimate.data, null, 2) }}</pre>
               </div>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="analyst">
+            <!-- Analyst -->
+            <template v-else-if="detailTab === 'analyst'">
               <div v-if="loadingExtra.analyst" class="text-muted">Loading…</div>
               <template v-else>
-                <div v-if="analystPriceTarget && Object.keys(analystPriceTarget.data || {}).length" class="q-mb-md">
-                  <div class="section-header q-mb-sm">Price target</div>
+                <div v-if="analystPriceTarget && Object.keys(analystPriceTarget.data || {}).length" class="fi-stmt">
+                  <div class="section-header fi-stmt__title">Price target</div>
                   <pre class="fi-json-pre">{{ JSON.stringify(analystPriceTarget.data, null, 2) }}</pre>
                 </div>
-                <div v-if="analystRecommendations && (analystRecommendations.data || []).length">
-                  <div class="section-header q-mb-sm">Recommendations</div>
+                <div v-if="analystRecommendations && (analystRecommendations.data || []).length" class="fi-stmt">
+                  <div class="section-header fi-stmt__title">Recommendations</div>
                   <pre class="fi-json-pre fi-json-pre--medium">{{ JSON.stringify(analystRecommendations.data, null, 2) }}</pre>
                 </div>
                 <p v-if="(!analystPriceTarget || !Object.keys(analystPriceTarget.data || {}).length) && (!analystRecommendations || !(analystRecommendations.data || []).length)" class="text-muted">No analyst data. Click "Refresh extra data" to fetch.</p>
               </template>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="ownership">
+            <!-- Ownership -->
+            <template v-else-if="detailTab === 'ownership'">
               <div v-if="loadingExtra.ownership" class="text-muted">Loading…</div>
               <div v-else-if="ownershipData.length">
-                <div v-for="o in ownershipData" :key="o.holder_type" class="q-mb-md">
-                  <div class="section-header q-mb-sm">{{ o.holder_type }}</div>
+                <div v-for="o in ownershipData" :key="o.holder_type" class="fi-stmt">
+                  <div class="section-header fi-stmt__title">{{ o.holder_type }}</div>
                   <pre class="fi-json-pre fi-json-pre--medium">{{ JSON.stringify(o.data, null, 2) }}</pre>
                 </div>
               </div>
               <p v-else class="text-muted">No ownership data. Click "Refresh extra data" to fetch.</p>
-            </q-tab-panel>
+            </template>
 
-            <q-tab-panel name="news">
+            <!-- News -->
+            <template v-else-if="detailTab === 'news'">
               <div v-if="loadingExtra.news" class="text-muted">Loading…</div>
-              <div v-else-if="newsItems.length" class="column q-gutter-md">
-                <article
-                  v-for="n in newsItems"
-                  :key="n.title + (n.published_at || '')"
-                  class="fi-news-article"
-                >
+              <div v-else-if="newsItems.length" class="fi-news">
+                <article v-for="n in newsItems" :key="n.title + (n.published_at || '')" class="fi-news-article">
                   <h3 class="fi-news-article__title">
                     <a v-if="n.link" :href="n.link" target="_blank" rel="noopener" class="fi-news-article__link">{{ n.title }}</a>
                     <span v-else>{{ n.title }}</span>
@@ -257,23 +253,25 @@
                 </article>
               </div>
               <p v-else class="text-muted">No news. Click "Refresh extra data" to fetch.</p>
-            </q-tab-panel>
-          </q-tab-panels>
+            </template>
 
-          <q-banner v-if="refreshResult" rounded dense :class="refreshResult.error ? 'bg-negative' : 'bg-positive'" class="text-white q-mt-md">
+          </div>
+
+          <!-- Refresh result banners -->
+          <div v-if="refreshResult" class="klikk-alert-strip fi-result-strip" :class="refreshResult.error ? 'tone-error' : 'tone-success'">
             {{ refreshResult.error || `Refreshed ${refreshResult.created ?? 0} points.` }}
-          </q-banner>
-          <q-banner v-if="refreshExtraResult" rounded dense :class="refreshExtraResult.error ? 'bg-negative' : 'bg-positive'" class="text-white q-mt-sm">
-            {{ refreshExtraResult.error || (refreshExtraResult.results ? `Extra data refreshed.` : '') }}
-          </q-banner>
+          </div>
+          <div v-if="refreshExtraResult" class="klikk-alert-strip fi-result-strip" :class="refreshExtraResult.error ? 'tone-error' : 'tone-success'">
+            {{ refreshExtraResult.error || (refreshExtraResult.results ? 'Extra data refreshed.' : '') }}
+          </div>
         </SectionCard>
 
-        <div v-else class="klikk-alert-strip tone-info q-mt-md">
+        <div v-else class="klikk-alert-strip tone-info fi-select-hint">
           Select a symbol from the watchlist to view chart, price history and extra data (dividends, company info, financials, earnings, analyst, ownership, news).
         </div>
       </div>
     </div>
-  </q-page>
+  </div>
 </template>
 
 <script setup>
@@ -281,6 +279,10 @@ import { ref, computed, watch, onMounted } from 'vue';
 import FinancialLineChart from '../components/FinancialLineChart.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSelect from '../components/klikk/KSelect.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 import {
   getFinancialInvestmentsSymbols,
   getFinancialInvestmentsHistory,
@@ -304,30 +306,31 @@ const symbols = ref([]);
 const loadingSymbols = ref(false);
 const addingSymbol = ref(false);
 
-const ALL_SYMBOL_COLUMNS = [
-  { name: 'symbol', label: 'Symbol', field: 'symbol', align: 'left' },
-  { name: 'name', label: 'Name', field: 'name', align: 'left' },
-  { name: 'last_close', label: 'Last', field: 'last_close', align: 'right' },
-  { name: 'change', label: 'Change', field: 'change', align: 'right' },
-  { name: 'change_pct', label: 'Chg %', field: 'change_pct', align: 'right' },
-  { name: 'pe_ratio', label: 'P/E', field: 'pe_ratio', align: 'right' },
-  { name: 'forward_pe', label: 'Fwd P/E', field: 'forward_pe', align: 'right' },
-  { name: 'dividend_yield', label: 'Div yield %', field: 'dividend_yield', align: 'right' },
-  { name: 'recommendation', label: 'Recommendation', field: 'recommendation', align: 'left' },
-  { name: 'exchange', label: 'Exchange', field: 'exchange', align: 'left' },
+// ── KTable columns for the watchlist ──────────────────────────────────────────
+// TanStack column definitions — accessorKey maps to row field names
+const ALL_WATCHLIST_COLUMN_DEFS = [
+  { accessorKey: 'symbol',           header: 'Symbol',          enableSorting: true },
+  { accessorKey: 'name',             header: 'Name',            enableSorting: true },
+  { accessorKey: 'last_close',       header: 'Last',            meta: { align: 'right' }, enableSorting: true },
+  { accessorKey: 'change',           header: 'Change',          meta: { align: 'right' }, enableSorting: true },
+  { accessorKey: 'change_pct',       header: 'Chg %',           meta: { align: 'right' }, enableSorting: true },
+  { accessorKey: 'pe_ratio',         header: 'P/E',             meta: { align: 'right' }, enableSorting: true },
+  { accessorKey: 'forward_pe',       header: 'Fwd P/E',         meta: { align: 'right' }, enableSorting: true },
+  { accessorKey: 'dividend_yield',   header: 'Div yield %',     meta: { align: 'right' }, enableSorting: true },
+  { accessorKey: 'recommendation',   header: 'Recommendation',  enableSorting: true },
+  { accessorKey: 'exchange',         header: 'Exchange',        enableSorting: true },
 ];
-const defaultVisibleColumns = ['symbol', 'name', 'last_close', 'change', 'change_pct', 'pe_ratio', 'forward_pe', 'dividend_yield', 'recommendation', 'exchange'];
-const visibleColumns = ref([...defaultVisibleColumns]);
-const allSymbolColumnOptions = ALL_SYMBOL_COLUMNS.map((c) => ({ name: c.name, label: c.label }));
-const visibleTableColumns = computed(() => {
-  const set = new Set(visibleColumns.value);
-  return ALL_SYMBOL_COLUMNS.filter((c) => set.has(c.name));
-});
-const symbolColumns = ALL_SYMBOL_COLUMNS;
-const selectedSymbolRow = ref([]);
+
+const watchlistColumns = ALL_WATCHLIST_COLUMN_DEFS;
+
+// v-model:visibleColumns for KTable's built-in visibility menu
+// { [columnId]: boolean }
+const watchlistVisibility = ref(
+  Object.fromEntries(ALL_WATCHLIST_COLUMN_DEFS.map((c) => [c.accessorKey, true]))
+);
+
 const selectedSymbol = ref(null);
 const newSymbol = ref('');
-const symbolsPagination = ref({ rowsPerPage: 25 });
 
 const selectedSymbolCompany = computed(() => {
   if (!selectedSymbol.value) return '';
@@ -340,7 +343,7 @@ const selectedSymbolRowData = computed(() => {
   return symbols.value.find((r) => r.symbol === selectedSymbol.value);
 });
 const selectedSymbolLastClose = computed(() => selectedSymbolRowData.value?.last_close ?? null);
-const selectedSymbolChange = computed(() => selectedSymbolRowData.value?.change ?? null);
+const selectedSymbolChange    = computed(() => selectedSymbolRowData.value?.change ?? null);
 const selectedSymbolChangePct = computed(() => selectedSymbolRowData.value?.change_pct ?? null);
 
 const periodOptions = [
@@ -354,7 +357,7 @@ const periodOptions = [
 const selectedPeriod = ref('3M');
 
 const chartLabels = computed(() => history.value.map((h) => h.date));
-const chartData = computed(() => history.value.map((h) => h.close));
+const chartData   = computed(() => history.value.map((h) => h.close));
 
 const history = ref([]);
 const loadingHistory = ref(false);
@@ -367,13 +370,14 @@ const startDate = ref('');
 const endDate = ref('');
 const detailTab = ref('prices');
 
+// History table columns
 const historyColumns = [
-  { name: 'date', label: 'Date', field: 'date', align: 'left' },
-  { name: 'open', label: 'Open', field: 'open', align: 'right', format: (v) => (v != null ? Number(v).toFixed(2) : '') },
-  { name: 'high', label: 'High', field: 'high', align: 'right', format: (v) => (v != null ? Number(v).toFixed(2) : '') },
-  { name: 'low', label: 'Low', field: 'low', align: 'right', format: (v) => (v != null ? Number(v).toFixed(2) : '') },
-  { name: 'close', label: 'Close', field: 'close', align: 'right', format: (v) => (v != null ? Number(v).toFixed(2) : '') },
-  { name: 'volume', label: 'Volume', field: 'volume', align: 'right', format: (v) => (v != null ? Number(v).toLocaleString() : '') },
+  { accessorKey: 'date',   header: 'Date',   enableSorting: true },
+  { accessorKey: 'open',   header: 'Open',   meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toFixed(2) : '' },
+  { accessorKey: 'high',   header: 'High',   meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toFixed(2) : '' },
+  { accessorKey: 'low',    header: 'Low',    meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toFixed(2) : '' },
+  { accessorKey: 'close',  header: 'Close',  meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toFixed(2) : '' },
+  { accessorKey: 'volume', header: 'Volume', meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toLocaleString() : '' },
 ];
 
 const dividends = ref([]);
@@ -390,26 +394,22 @@ const analystPriceTarget = ref(null);
 const ownershipData = ref([]);
 const newsItems = ref([]);
 
+// Dividend / split table columns
 const dividendColumns = [
-  { name: 'paid_on', label: 'Paid on', field: 'paid_on', align: 'left' },
-  { name: 'amount', label: 'Amount', field: 'amount', align: 'right', format: (v) => (v != null ? Number(v).toFixed(4) : '') },
-  { name: 'yield_pct', label: 'Yield %', field: 'yield_pct', align: 'right', format: (v) => (v != null ? Number(v).toFixed(2) + '%' : '—') },
-  { name: 'currency', label: 'Currency', field: 'currency', align: 'left' },
+  { accessorKey: 'paid_on',    header: 'Paid on' },
+  { accessorKey: 'amount',     header: 'Amount',   meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toFixed(4) : '' },
+  { accessorKey: 'yield_pct',  header: 'Yield %',  meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()).toFixed(2) + '%' : '—' },
+  { accessorKey: 'currency',   header: 'Currency' },
 ];
+
 const splitColumns = [
-  { name: 'date', label: 'Date', field: 'date', align: 'left' },
-  { name: 'ratio', label: 'Ratio', field: 'ratio', align: 'right', format: (v) => (v != null ? Number(v) : '') },
+  { accessorKey: 'date',  header: 'Date' },
+  { accessorKey: 'ratio', header: 'Ratio', meta: { align: 'right' }, cell: (i) => i.getValue() != null ? Number(i.getValue()) : '' },
 ];
 
 const loadingExtra = ref({
-  dividends: false,
-  splits: false,
-  info: false,
-  financials: false,
-  earnings: false,
-  analyst: false,
-  ownership: false,
-  news: false,
+  dividends: false, splits: false, info: false,
+  financials: false, earnings: false, analyst: false, ownership: false, news: false,
 });
 
 function setDefaultDates() {
@@ -448,36 +448,27 @@ async function loadSymbols() {
 
 async function saveWatchlistColumns() {
   try {
-    await saveFinancialInvestmentsWatchlistPreference({ visible_columns: visibleColumns.value });
+    // Convert KTable visibility state { colId: bool } back to array of visible keys
+    const visibleKeys = Object.entries(watchlistVisibility.value)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    await saveFinancialInvestmentsWatchlistPreference({ visible_columns: visibleKeys });
   } catch (e) {
     console.error('Failed to save column preference', e);
   }
 }
 
-function onSymbolSelected(rows) {
-  const row = rows[0];
-  selectedSymbol.value = row ? row.symbol : null;
+// Persist column visibility changes
+watch(watchlistVisibility, saveWatchlistColumns, { deep: true });
+
+function onSymbolRowClick(row) {
+  selectedSymbol.value = row.symbol;
   refreshResult.value = null;
   refreshExtraResult.value = null;
-  if (selectedSymbol.value) {
-    setDefaultDates();
-    loadHistory();
-    detailTab.value = 'prices';
-    loadExtraForTab('prices');
-  } else {
-    history.value = [];
-    dividends.value = [];
-    trailingDividendYieldPct.value = null;
-    splits.value = [];
-    companyInfo.value = null;
-    financialStatements.value = [];
-    earningsData.value = [];
-    earningsEstimate.value = null;
-    analystRecommendations.value = null;
-    analystPriceTarget.value = null;
-    ownershipData.value = [];
-    newsItems.value = [];
-  }
+  setDefaultDates();
+  loadHistory();
+  detailTab.value = 'prices';
+  loadExtraForTab('prices');
 }
 
 watch(detailTab, (tab) => {
@@ -501,72 +492,43 @@ async function loadExtraForTab(tab) {
     }
   } else if (tab === 'splits') {
     loadingExtra.value.splits = true;
-    try {
-      splits.value = await getFinancialInvestmentsSplits(sym);
-    } catch (e) {
-      splits.value = [];
-    } finally {
-      loadingExtra.value.splits = false;
-    }
+    try { splits.value = await getFinancialInvestmentsSplits(sym); }
+    catch (e) { splits.value = []; }
+    finally { loadingExtra.value.splits = false; }
   } else if (tab === 'info') {
     loadingExtra.value.info = true;
-    try {
-      const res = await getFinancialInvestmentsInfo(sym);
-      companyInfo.value = res?.data ?? null;
-    } catch (e) {
-      companyInfo.value = null;
-    } finally {
-      loadingExtra.value.info = false;
-    }
+    try { const res = await getFinancialInvestmentsInfo(sym); companyInfo.value = res?.data ?? null; }
+    catch (e) { companyInfo.value = null; }
+    finally { loadingExtra.value.info = false; }
   } else if (tab === 'financials') {
     loadingExtra.value.financials = true;
-    try {
-      financialStatements.value = await getFinancialInvestmentsFinancialStatements(sym, financialsFreq.value);
-    } catch (e) {
-      financialStatements.value = [];
-    } finally {
-      loadingExtra.value.financials = false;
-    }
+    try { financialStatements.value = await getFinancialInvestmentsFinancialStatements(sym, financialsFreq.value); }
+    catch (e) { financialStatements.value = []; }
+    finally { loadingExtra.value.financials = false; }
   } else if (tab === 'earnings') {
     loadingExtra.value.earnings = true;
     try {
       earningsData.value = await getFinancialInvestmentsEarnings(sym, earningsFreq.value);
       earningsEstimate.value = await getFinancialInvestmentsEarningsEstimate(sym);
-    } catch (e) {
-      earningsData.value = [];
-      earningsEstimate.value = null;
-    } finally {
-      loadingExtra.value.earnings = false;
-    }
+    } catch (e) { earningsData.value = []; earningsEstimate.value = null; }
+    finally { loadingExtra.value.earnings = false; }
   } else if (tab === 'analyst') {
     loadingExtra.value.analyst = true;
     try {
       analystPriceTarget.value = await getFinancialInvestmentsAnalystPriceTarget(sym);
       analystRecommendations.value = await getFinancialInvestmentsAnalystRecommendations(sym);
-    } catch (e) {
-      analystPriceTarget.value = null;
-      analystRecommendations.value = null;
-    } finally {
-      loadingExtra.value.analyst = false;
-    }
+    } catch (e) { analystPriceTarget.value = null; analystRecommendations.value = null; }
+    finally { loadingExtra.value.analyst = false; }
   } else if (tab === 'ownership') {
     loadingExtra.value.ownership = true;
-    try {
-      ownershipData.value = await getFinancialInvestmentsOwnership(sym);
-    } catch (e) {
-      ownershipData.value = [];
-    } finally {
-      loadingExtra.value.ownership = false;
-    }
+    try { ownershipData.value = await getFinancialInvestmentsOwnership(sym); }
+    catch (e) { ownershipData.value = []; }
+    finally { loadingExtra.value.ownership = false; }
   } else if (tab === 'news') {
     loadingExtra.value.news = true;
-    try {
-      newsItems.value = await getFinancialInvestmentsNews(sym, 20);
-    } catch (e) {
-      newsItems.value = [];
-    } finally {
-      loadingExtra.value.news = false;
-    }
+    try { newsItems.value = await getFinancialInvestmentsNews(sym, 20); }
+    catch (e) { newsItems.value = []; }
+    finally { loadingExtra.value.news = false; }
   }
 }
 
@@ -606,7 +568,6 @@ async function refreshSelected() {
     });
     refreshResult.value = result;
     await loadSymbols();
-    selectedSymbolRow.value = symbols.value.filter((r) => r.symbol === sym);
     selectedSymbol.value = sym;
     await loadHistory();
     lastRefreshedAt.value = new Date();
@@ -652,7 +613,6 @@ async function addSymbol() {
       refreshResult.value = { created: result.created };
       newSymbol.value = '';
       await loadSymbols();
-      selectedSymbolRow.value = symbols.value.filter((r) => r.symbol === sym);
       selectedSymbol.value = sym;
       setDefaultDates();
       await loadHistory();
@@ -670,22 +630,132 @@ onMounted(async () => {
   try {
     const res = await getFinancialInvestmentsWatchlistPreference();
     const cols = res?.value?.visible_columns;
-    const validNames = new Set(ALL_SYMBOL_COLUMNS.map((c) => c.name));
+    const validKeys = new Set(ALL_WATCHLIST_COLUMN_DEFS.map((c) => c.accessorKey));
     if (Array.isArray(cols) && cols.length) {
-      visibleColumns.value = cols.filter((c) => validNames.has(c));
-    }
-    if (!visibleColumns.value.length) {
-      visibleColumns.value = [...defaultVisibleColumns];
+      // Build visibility state from saved columns
+      const newVis = Object.fromEntries(ALL_WATCHLIST_COLUMN_DEFS.map((c) => [c.accessorKey, false]));
+      for (const col of cols) {
+        if (validKeys.has(col)) newVis[col] = true;
+      }
+      watchlistVisibility.value = newVis;
     }
   } catch (_) {
-    visibleColumns.value = [...defaultVisibleColumns];
+    // default visibility is all-visible; keep as-is
   }
   loadSymbols();
 });
 </script>
 
 <style scoped>
-/* JSON viewer pre blocks — tokenised, no inline styles */
+.page-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fi-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fi-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fi-layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .fi-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fi-layout__left {}
+.fi-layout__right {}
+
+/* Symbol header */
+.fi-symbol-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.fi-symbol-header__symbol {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--kdl-text-primary);
+}
+
+.fi-symbol-header__price {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--kdl-text-primary);
+}
+
+/* Period buttons */
+.fi-periods {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+/* Chart */
+.fi-chart {
+  margin-bottom: 16px;
+}
+
+/* Tab panel */
+.fi-tab-panel {
+  margin-top: 12px;
+}
+
+/* Date row in prices tab */
+.fi-date-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.fi-note {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+/* Statement blocks */
+.fi-stmt {
+  margin-bottom: 16px;
+}
+
+.fi-stmt__title {
+  margin-bottom: 6px;
+}
+
+/* Select hint */
+.fi-select-hint {
+  margin-top: 8px;
+}
+
+/* Result strip */
+.fi-result-strip {
+  margin-top: 10px;
+}
+
+/* JSON pre blocks */
 .fi-json-pre {
   padding: 10px 12px;
   border-radius: 6px;
@@ -697,12 +767,19 @@ onMounted(async () => {
   overflow-x: auto;
   overflow-y: auto;
   white-space: pre;
+  margin: 0;
 }
 .fi-json-pre--short  { max-height: 200px; }
 .fi-json-pre--medium { max-height: 300px; }
 .fi-json-pre--tall   { max-height: 400px; }
 
-/* News article card */
+/* News */
+.fi-news {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .fi-news-article {
   padding: 14px 16px;
   border-radius: 8px;
@@ -723,14 +800,9 @@ onMounted(async () => {
   color: var(--kdl-accent);
   text-decoration: none;
 }
+.fi-news-article__link:hover { text-decoration: underline; }
 
-.fi-news-article__link:hover {
-  text-decoration: underline;
-}
-
-.fi-news-article__meta {
-  margin-bottom: 6px;
-}
+.fi-news-article__meta { margin-bottom: 6px; }
 
 .fi-news-article__summary {
   font-size: 12px;
@@ -741,25 +813,8 @@ onMounted(async () => {
   word-break: break-word;
 }
 
-/* Column toggle icon button */
-.kdl-icon-action {
-  color: var(--kdl-text-muted);
-}
-
-/* Constrained inputs — no inline style */
-.fi-symbol-input {
-  max-width: 140px;
-}
-
-.fi-date-input {
-  max-width: 160px;
-}
-
-.fi-freq-select {
-  max-width: 140px;
-}
-
-.fi-col-menu {
-  min-width: 200px;
-}
+/* Number cells */
+.fi-num { display: block; text-align: right; }
+.fi-pos { color: var(--kdl-status-success); }
+.fi-neg { color: var(--kdl-status-error); }
 </style>

@@ -1,293 +1,283 @@
 <template>
-  <q-page class="q-pa-md">
+  <div class="page-content">
     <PageHeader title="Dividend Forecast Budget" subtitle="Manage dividend calendar and TM1 forecast adjustments" />
 
-    <q-tabs v-model="tab" dense class="text-grey" active-color="primary" indicator-color="primary" align="left">
-      <q-tab name="calendar" label="Dividend Calendar" icon="event" />
-      <q-tab name="forecast" label="TM1 Forecast" icon="analytics" />
-      <q-tab name="workflow" label="Workflow" icon="play_circle" />
-    </q-tabs>
-    <q-separator />
+    <KTabs
+      :tabs="[
+        { name: 'calendar', label: 'Dividend Calendar' },
+        { name: 'forecast', label: 'TM1 Forecast' },
+        { name: 'workflow', label: 'Workflow' },
+      ]"
+      v-model="tab"
+      :url-sync="false"
+    />
 
-    <q-tab-panels v-model="tab" animated>
+    <!-- ===================== CALENDAR TAB ===================== -->
+    <div v-if="tab === 'calendar'" class="df-tab">
+      <div class="df-toolbar">
+        <button class="btn btn-primary btn-sm" :disabled="checking" @click="handleCheckDividends">
+          <!-- Lucide refresh-cw -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          {{ checking ? 'Checking…' : 'Check all shares' }}
+        </button>
+        <KSelect
+          v-model="calendarFilter"
+          label=""
+          :options="calendarFilterOpts"
+          style="width: 160px;"
+        />
+        <div class="df-toolbar__spacer" />
+        <button class="btn btn-ghost btn-sm" @click="loadCalendar">
+          <!-- Lucide download -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Reload
+        </button>
+      </div>
 
-      <!-- ===================== CALENDAR TAB ===================== -->
-      <q-tab-panel name="calendar">
-        <div class="row q-col-gutter-sm q-mb-md items-center">
-          <div class="col-auto">
-            <q-btn label="Check all shares" icon="refresh" color="primary" :loading="checking" @click="handleCheckDividends" no-caps />
+      <div v-if="checkResult" class="klikk-alert-strip df-alert" :class="checkResult.error ? 'tone-error' : 'tone-success'" role="alert">
+        <template v-if="checkResult.error">{{ checkResult.error }}</template>
+        <template v-else>Checked {{ checkResult.checked }} symbols. {{ (checkResult.results || []).filter(r => r.new_record_saved).length }} new dividend(s) saved.</template>
+        <button class="btn btn-ghost btn-sm" @click="checkResult = null">Dismiss</button>
+      </div>
+
+      <KTable
+        :columns="calendarCols"
+        :data="calendarRows"
+        :loading="loadingCalendar"
+        dense
+        pagination="client"
+        :pageSize="50"
+      >
+        <template #cell-tm1_status="{ row }">
+          <StatusPill v-if="row.tm1_verified" tone="success" label="Verified" size="sm" />
+          <StatusPill v-else-if="row.tm1_adjustment_written" tone="info" label="Written" size="sm" />
+          <StatusPill v-else tone="warning" label="Pending" size="sm" />
+        </template>
+        <template #cell-tm1_adjustment_value="{ value }">
+          {{ value != null ? value.toFixed(6) : '—' }}
+        </template>
+        <template #cell-amount="{ row }">
+          {{ row.amount != null ? row.amount.toFixed(4) : '—' }}
+          <span v-if="row.currency" class="df-currency">{{ row.currency }}</span>
+        </template>
+        <template #cell-prior_year_dps="{ value, row }">
+          <span v-if="value != null" class="df-tooltip-host" :title="row.prior_year_date ? `Prior year: ${row.prior_year_date}` : ''">
+            {{ value.toFixed(4) }}
+          </span>
+          <span v-else class="df-muted">—</span>
+        </template>
+        <template #cell-pct_change="{ value }">
+          <span v-if="value != null" :class="value > 0 ? 'df-pos df-bold' : value < 0 ? 'df-neg df-bold' : 'df-muted'">
+            {{ value > 0 ? '+' : '' }}{{ value.toFixed(1) }}%
+          </span>
+          <span v-else class="df-muted">—</span>
+        </template>
+        <template #cell-payment_date="{ row }">
+          <input
+            type="text"
+            class="df-inline-input"
+            :value="row.payment_date || ''"
+            placeholder="YYYY-MM-DD"
+            @change="handlePaymentDateChange(row, $event.target.value)"
+          />
+        </template>
+        <template #cell-dividend_category="{ row }">
+          <KSelect
+            v-model="row.dividend_category"
+            label=""
+            :options="categoryOpts"
+            style="min-width: 90px;"
+            @update:model-value="v => handleCategoryChange(row, v)"
+          />
+        </template>
+        <template #cell-actions="{ row }">
+          <button
+            v-if="!row.tm1_adjustment_written && row.share_code && row.amount"
+            class="btn btn-ghost btn-sm"
+            @click="openAdjustDialog(row)"
+          >
+            <!-- Lucide edit -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Adjust
+          </button>
+        </template>
+      </KTable>
+    </div>
+
+    <!-- ===================== FORECAST TAB ===================== -->
+    <div v-else-if="tab === 'forecast'" class="df-tab">
+      <!-- Read forecast -->
+      <div class="df-form-row">
+        <KInput v-model="forecastShare" label="Share code" placeholder="e.g. ABG" style="flex: 1; max-width: 180px;" />
+        <KInput v-model="forecastYear" label="Year" placeholder="2026" style="max-width: 100px;" />
+        <KSelect v-model="forecastMonth" label="Month" :options="monthOpts" style="max-width: 120px;" />
+        <button class="btn btn-primary btn-sm" :disabled="readingForecast" @click="handleReadForecast" style="align-self: flex-end;">
+          <!-- Lucide search -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          {{ readingForecast ? 'Reading…' : 'Read forecast' }}
+        </button>
+      </div>
+
+      <div v-if="forecastResult" class="df-card">
+        <div v-if="forecastResult.error" class="df-neg">{{ forecastResult.error }}</div>
+        <div v-else>
+          <div class="df-forecast-grid">
+            <div class="df-forecast-stat">
+              <div class="df-forecast-stat__label">Total DPS (All Input Types)</div>
+              <div class="df-forecast-stat__value">{{ forecastResult.all_input_types_dps?.toFixed(6) }}</div>
+            </div>
+            <div class="df-forecast-stat">
+              <div class="df-forecast-stat__label">Declared Dividend Adjustment</div>
+              <div class="df-forecast-stat__value">{{ forecastResult.declared_dividend_dps?.toFixed(6) }}</div>
+            </div>
+            <div class="df-forecast-stat">
+              <div class="df-forecast-stat__label">Base DPS (rules)</div>
+              <div class="df-forecast-stat__value">{{ forecastResult.base_dps?.toFixed(6) }}</div>
+            </div>
           </div>
-          <div class="col-auto">
-            <q-select v-model="calendarFilter" :options="calendarFilterOpts" dense outlined emit-value map-options style="width: 160px;" label="Filter" />
-          </div>
-          <div class="col" />
-          <div class="col-auto">
-            <q-btn flat icon="download" label="Reload" @click="loadCalendar" no-caps />
+          <div class="df-caption">
+            Cube: {{ forecastResult.cube }} | Version: {{ forecastResult.version }} | Entity: {{ forecastResult.entity }}
           </div>
         </div>
+      </div>
 
-        <q-banner v-if="checkResult" :class="checkResult.error ? 'bg-negative text-white' : 'bg-positive text-white'" dense rounded class="q-mb-md">
-          <template v-if="checkResult.error">{{ checkResult.error }}</template>
-          <template v-else>Checked {{ checkResult.checked }} symbols. {{ (checkResult.results || []).filter(r => r.new_record_saved).length }} new dividend(s) saved.</template>
-          <template #action><q-btn flat label="Dismiss" @click="checkResult = null" /></template>
-        </q-banner>
+      <!-- Quick adjust -->
+      <div class="df-card">
+        <div class="df-card__title">Write adjustment</div>
+        <div class="df-form-row">
+          <KInput v-model="adjustShare" label="Share code" style="flex: 1; max-width: 180px;" />
+          <KInput v-model="adjustDps" label="Declared DPS" type="number" style="max-width: 140px;" />
+          <KInput v-model="adjustYear" label="Year" style="max-width: 100px;" />
+          <KSelect v-model="adjustMonth" label="Month" :options="monthOpts" style="max-width: 120px;" />
+          <div class="df-btn-group" style="align-self: flex-end;">
+            <button class="btn btn-ghost btn-sm" :disabled="adjusting" @click="handleAdjust(false)">Dry run</button>
+            <button class="btn btn-primary btn-sm" :disabled="adjusting" @click="handleAdjust(true)">Write</button>
+          </div>
+        </div>
+        <div v-if="adjustResult" class="klikk-alert-strip df-alert"
+             :class="adjustResult.error ? 'tone-error' : adjustResult.status === 'written' ? 'tone-success' : 'tone-info'">
+          <div v-if="adjustResult.error">{{ adjustResult.error }}</div>
+          <div v-else>
+            <strong>{{ adjustResult.status === 'written' ? 'Written' : 'Dry run' }}</strong> |
+            Base DPS: {{ adjustResult.base_dps?.toFixed(6) }} |
+            New adjustment: {{ adjustResult.new_adjustment?.toFixed(6) }} |
+            Resulting total: {{ adjustResult.resulting_total_dps?.toFixed(6) }}
+          </div>
+        </div>
+      </div>
+    </div>
 
-        <q-table
-          :rows="calendarRows"
-          :columns="calendarCols"
-          row-key="id"
+    <!-- ===================== WORKFLOW TAB ===================== -->
+    <div v-else-if="tab === 'workflow'" class="df-tab">
+      <div class="df-card">
+        <div class="df-card__title">Dividend Forecast Pipeline</div>
+        <p class="df-caption">Runs for all held shares automatically. No manual selection needed.</p>
+        <div v-for="(s, idx) in workflowSteps" :key="idx" class="df-wf-step">
+          <KCheckbox v-model="s.selected" :label="s.label" />
+          <button
+            class="btn btn-ghost btn-sm"
+            :disabled="workflowRunning || s.status === 'running'"
+            @click="runSingleWorkflowStep(idx)"
+          >
+            <!-- Lucide play -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run
+          </button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" :disabled="workflowRunning" @click="runSelectedWorkflowSteps" style="margin-bottom: 16px;">
+        <!-- Lucide play-circle -->
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        {{ workflowRunning ? 'Running…' : 'Run selected steps' }}
+      </button>
+
+      <!-- Progress list -->
+      <div v-if="workflowSteps.some(s => s.status !== 'idle')" class="df-card">
+        <div class="df-card__title">Progress</div>
+        <div class="df-progress-list">
+          <div v-for="(s, idx) in workflowSteps" :key="'p' + idx" class="df-progress-row" :class="stepRowClass(s)">
+            <div class="df-progress-row__icon">
+              <!-- Running spinner -->
+              <svg v-if="s.status === 'running'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="df-spin df-icon--accent" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+              <!-- Done -->
+              <svg v-else-if="s.status === 'done'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="df-icon--success" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <!-- Error -->
+              <svg v-else-if="s.status === 'error'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="df-icon--error" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <!-- Skipped -->
+              <svg v-else-if="s.status === 'skipped'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="df-icon--muted" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <!-- Idle -->
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="df-icon--muted" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+            </div>
+            <div class="df-progress-row__body">
+              <div class="df-progress-row__label">{{ s.label }}</div>
+              <div v-if="s.message" class="df-progress-row__message">{{ s.message }}</div>
+            </div>
+            <div v-if="s.elapsed != null" class="df-progress-row__elapsed">{{ s.elapsed }}s</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verify results table -->
+      <div v-if="verifyResults.length" class="df-card">
+        <div class="df-card__title">Verification Results</div>
+        <KTable
+          :columns="verifyCols"
+          :data="verifyResults"
           dense
-          :loading="loadingCalendar"
-          :pagination="{ rowsPerPage: 50 }"
-          flat bordered
+          pagination="client"
+          :pageSize="50"
         >
-          <template #body-cell-tm1_status="props">
-            <q-td :props="props">
-              <q-badge v-if="props.row.tm1_verified" color="positive" label="Verified" />
-              <q-badge v-else-if="props.row.tm1_adjustment_written" color="info" label="Written" />
-              <q-badge v-else color="warning" text-color="dark" label="Pending" />
-            </q-td>
+          <template #cell-status="{ value }">
+            <StatusPill
+              :tone="value === 'verified' ? 'success' : value === 'mismatch' ? 'error' : 'warning'"
+              :label="value"
+              size="sm"
+            />
           </template>
-          <template #body-cell-tm1_adjustment_value="props">
-            <q-td :props="props">
-              {{ props.value != null ? props.value.toFixed(6) : '-' }}
-            </q-td>
-          </template>
-          <template #body-cell-amount="props">
-            <q-td :props="props">
-              {{ props.value != null ? props.value.toFixed(4) : '-' }}
-              <span v-if="props.row.currency" class="text-caption text-grey-6">{{ props.row.currency }}</span>
-            </q-td>
-          </template>
-          <template #body-cell-prior_year_dps="props">
-            <q-td :props="props">
-              <span v-if="props.value != null">
-                {{ props.value.toFixed(4) }}
-                <q-tooltip v-if="props.row.prior_year_date">Prior year: {{ props.row.prior_year_date }}</q-tooltip>
-              </span>
-              <span v-else class="text-grey-5">-</span>
-            </q-td>
-          </template>
-          <template #body-cell-pct_change="props">
-            <q-td :props="props">
-              <span v-if="props.value != null"
-                    :class="props.value > 0 ? 'text-positive text-weight-medium' : props.value < 0 ? 'text-negative text-weight-medium' : 'text-grey-7'">
-                {{ props.value > 0 ? '+' : '' }}{{ props.value.toFixed(1) }}%
-              </span>
-              <span v-else class="text-grey-5">-</span>
-            </q-td>
-          </template>
-          <template #body-cell-payment_date="props">
-            <q-td :props="props">
-              <q-input
-                :model-value="props.row.payment_date || ''"
-                dense borderless
-                placeholder="YYYY-MM-DD"
-                style="min-width: 110px;"
-                @change="v => handlePaymentDateChange(props.row, v)"
-              >
-                <template #append>
-                  <q-icon v-if="props.row.payment_date" name="clear" class="cursor-pointer" size="xs"
-                          @click.stop="handlePaymentDateChange(props.row, '')" />
-                </template>
-              </q-input>
-            </q-td>
-          </template>
-          <template #body-cell-dividend_category="props">
-            <q-td :props="props">
-              <q-select
-                v-model="props.row.dividend_category"
-                :options="categoryOpts"
-                dense borderless emit-value map-options
-                style="min-width: 90px;"
-                @update:model-value="v => handleCategoryChange(props.row, v)"
-              />
-            </q-td>
-          </template>
-          <template #body-cell-actions="props">
-            <q-td :props="props">
-              <q-btn v-if="!props.row.tm1_adjustment_written && props.row.share_code && props.row.amount"
-                     flat dense size="sm" icon="edit" color="primary" label="Adjust"
-                     @click="openAdjustDialog(props.row)" no-caps />
-            </q-td>
-          </template>
-        </q-table>
-      </q-tab-panel>
+        </KTable>
+      </div>
+    </div>
 
-      <!-- ===================== FORECAST TAB ===================== -->
-      <q-tab-panel name="forecast">
-        <div class="row q-col-gutter-sm q-mb-md items-center">
-          <div class="col-12 col-sm-3">
-            <q-input v-model="forecastShare" label="Share code" dense outlined placeholder="e.g. ABG" />
-          </div>
-          <div class="col-12 col-sm-2">
-            <q-input v-model="forecastYear" label="Year" dense outlined placeholder="2026" />
-          </div>
-          <div class="col-12 col-sm-2">
-            <q-select v-model="forecastMonth" :options="monthOpts" dense outlined emit-value map-options label="Month" />
-          </div>
-          <div class="col-auto">
-            <q-btn label="Read forecast" icon="search" color="primary" :loading="readingForecast" @click="handleReadForecast" no-caps />
+    <!-- ===================== ADJUST DIALOG ===================== -->
+    <KDialog v-model="adjustDialogOpen" title="Adjust TM1 Forecast" size="md">
+      <template v-if="adjustDialogRow">
+        <div class="df-dialog-row">
+          <strong>{{ adjustDialogRow?.share_code }}</strong>
+          <span class="df-muted">({{ adjustDialogRow?.company }})</span>
+          <StatusPill
+            :tone="adjustDialogRow?.dividend_category === 'foreign' ? 'info' : adjustDialogRow?.dividend_category === 'special' ? 'warning' : 'success'"
+            :label="adjustDialogRow?.dividend_category || 'regular'"
+            size="sm"
+          />
+        </div>
+        <div class="df-muted df-dialog-meta">
+          Ex-date: {{ adjustDialogRow?.ex_dividend_date }} | Amount: {{ adjustDialogRow?.amount }}
+        </div>
+        <div class="df-dialog-fields">
+          <KInput v-model="adjustDialogDps" label="Declared DPS" type="number" />
+          <KInput v-model="adjustDialogYear" label="Year" />
+          <KSelect v-model="adjustDialogMonth" label="Month" :options="monthOpts" />
+        </div>
+        <div v-if="adjustDialogResult" class="klikk-alert-strip df-alert"
+             :class="adjustDialogResult.error ? 'tone-error' : adjustDialogResult.status === 'written' ? 'tone-success' : 'tone-info'">
+          <div v-if="adjustDialogResult.error">{{ adjustDialogResult.error }}</div>
+          <div v-else>
+            {{ adjustDialogResult.status === 'written' ? 'Written!' : 'Dry run' }} |
+            Adjustment: {{ adjustDialogResult.new_adjustment?.toFixed(6) }} |
+            Total: {{ adjustDialogResult.resulting_total_dps?.toFixed(6) }}
+            <span v-if="adjustDialogResult.txn_type"> | TM1: {{ adjustDialogResult.txn_type }}</span>
+            <span v-if="adjustDialogResult.zero_base" class="df-warn"> | Zero base (new share?)</span>
           </div>
         </div>
-
-        <q-card v-if="forecastResult" class="q-mb-md">
-          <q-card-section>
-            <div v-if="forecastResult.error" class="text-negative">{{ forecastResult.error }}</div>
-            <div v-else>
-              <div class="row q-col-gutter-md">
-                <div class="col-12 col-sm-4">
-                  <div class="text-caption text-grey-7">Total DPS (All Input Types)</div>
-                  <div class="text-h6">{{ forecastResult.all_input_types_dps?.toFixed(6) }}</div>
-                </div>
-                <div class="col-12 col-sm-4">
-                  <div class="text-caption text-grey-7">Declared Dividend Adjustment</div>
-                  <div class="text-h6">{{ forecastResult.declared_dividend_dps?.toFixed(6) }}</div>
-                </div>
-                <div class="col-12 col-sm-4">
-                  <div class="text-caption text-grey-7">Base DPS (rules)</div>
-                  <div class="text-h6">{{ forecastResult.base_dps?.toFixed(6) }}</div>
-                </div>
-              </div>
-              <div class="text-caption text-grey-5 q-mt-sm">
-                Cube: {{ forecastResult.cube }} | Version: {{ forecastResult.version }} | Entity: {{ forecastResult.entity }}
-              </div>
-            </div>
-          </q-card-section>
-        </q-card>
-
-        <!-- Quick adjust -->
-        <q-card>
-          <q-card-section>
-            <div class="text-subtitle1 q-mb-sm">Write adjustment</div>
-            <div class="row q-col-gutter-sm items-end">
-              <div class="col-12 col-sm-3">
-                <q-input v-model="adjustShare" label="Share code" dense outlined />
-              </div>
-              <div class="col-12 col-sm-2">
-                <q-input v-model="adjustDps" label="Declared DPS" dense outlined type="number" step="0.0001" />
-              </div>
-              <div class="col-12 col-sm-2">
-                <q-input v-model="adjustYear" label="Year" dense outlined />
-              </div>
-              <div class="col-12 col-sm-2">
-                <q-select v-model="adjustMonth" :options="monthOpts" dense outlined emit-value map-options label="Month" />
-              </div>
-              <div class="col-auto q-gutter-sm">
-                <q-btn label="Dry run" color="secondary" :loading="adjusting" @click="handleAdjust(false)" no-caps />
-                <q-btn label="Write" color="primary" :loading="adjusting" @click="handleAdjust(true)" no-caps />
-              </div>
-            </div>
-            <q-banner v-if="adjustResult" :class="adjustResult.error ? 'bg-negative text-white' : adjustResult.status === 'written' ? 'bg-positive text-white' : 'bg-info text-white'" dense rounded class="q-mt-sm">
-              <div v-if="adjustResult.error">{{ adjustResult.error }}</div>
-              <div v-else>
-                <strong>{{ adjustResult.status === 'written' ? 'Written' : 'Dry run' }}</strong> |
-                Base DPS: {{ adjustResult.base_dps?.toFixed(6) }} |
-                New adjustment: {{ adjustResult.new_adjustment?.toFixed(6) }} |
-                Resulting total: {{ adjustResult.resulting_total_dps?.toFixed(6) }}
-              </div>
-            </q-banner>
-          </q-card-section>
-        </q-card>
-      </q-tab-panel>
-
-      <!-- ===================== WORKFLOW TAB ===================== -->
-      <q-tab-panel name="workflow">
-        <q-card class="q-mb-md">
-          <q-card-section>
-            <div class="text-subtitle1 q-mb-xs">Dividend Forecast Pipeline</div>
-            <div class="text-caption text-grey-7 q-mb-sm">Runs for all held shares automatically. No manual selection needed.</div>
-            <div v-for="(s, idx) in workflowSteps" :key="idx" class="row items-center q-mb-xs">
-              <q-checkbox v-model="s.selected" :label="s.label" dense class="col" />
-              <q-btn flat dense size="sm" label="Run" icon="play_arrow" color="primary"
-                     :loading="s.status === 'running'" :disable="workflowRunning"
-                     @click="runSingleWorkflowStep(idx)" no-caps />
-            </div>
-          </q-card-section>
-        </q-card>
-
-        <q-btn label="Run selected steps" icon="play_circle" color="primary" :loading="workflowRunning" @click="runSelectedWorkflowSteps" no-caps class="q-mb-md" />
-
-        <q-card v-if="workflowSteps.some(s => s.status !== 'idle')">
-          <q-card-section>
-            <div class="text-subtitle1 q-mb-sm">Progress</div>
-            <q-list separator>
-              <q-item v-for="(s, idx) in workflowSteps" :key="'p' + idx" :class="stepRowClass(s)">
-                <q-item-section avatar>
-                  <q-spinner v-if="s.status === 'running'" color="primary" size="1.5em" />
-                  <q-icon v-else-if="s.status === 'done'" name="check_circle" color="positive" />
-                  <q-icon v-else-if="s.status === 'error'" name="error" color="negative" />
-                  <q-icon v-else-if="s.status === 'skipped'" name="remove_circle_outline" color="grey" />
-                  <q-icon v-else name="radio_button_unchecked" color="grey-4" />
-                </q-item-section>
-                <q-item-section>
-                  <q-item-label>{{ s.label }}</q-item-label>
-                  <q-item-label caption v-if="s.message">{{ s.message }}</q-item-label>
-                </q-item-section>
-                <q-item-section side v-if="s.elapsed != null">{{ s.elapsed }}s</q-item-section>
-              </q-item>
-            </q-list>
-          </q-card-section>
-        </q-card>
-
-        <!-- Verify results table -->
-        <q-card v-if="verifyResults.length" class="q-mt-md">
-          <q-card-section>
-            <div class="text-subtitle1 q-mb-sm">Verification Results</div>
-            <q-table
-              :rows="verifyResults"
-              :columns="verifyCols"
-              row-key="id"
-              dense flat bordered
-              :pagination="{ rowsPerPage: 50 }"
-            >
-              <template #body-cell-status="props">
-                <q-td :props="props">
-                  <q-badge :color="props.value === 'verified' ? 'positive' : props.value === 'mismatch' ? 'negative' : 'warning'" :label="props.value" />
-                </q-td>
-              </template>
-            </q-table>
-          </q-card-section>
-        </q-card>
-      </q-tab-panel>
-    </q-tab-panels>
-
-    <!-- Adjust dialog -->
-    <q-dialog v-model="adjustDialogOpen">
-      <q-card style="min-width: 400px;">
-        <q-card-section>
-          <div class="text-h6">Adjust TM1 Forecast</div>
-        </q-card-section>
-        <q-card-section>
-          <div class="q-mb-sm"><strong>{{ adjustDialogRow?.share_code }}</strong> ({{ adjustDialogRow?.company }})</div>
-          <div class="q-mb-sm">
-            Ex-date: {{ adjustDialogRow?.ex_dividend_date }} | Amount: {{ adjustDialogRow?.amount }}
-            <q-badge :color="adjustDialogRow?.dividend_category === 'foreign' ? 'blue' : adjustDialogRow?.dividend_category === 'special' ? 'orange' : 'green'" :label="adjustDialogRow?.dividend_category || 'regular'" class="q-ml-sm" />
-          </div>
-          <q-input v-model="adjustDialogDps" label="Declared DPS" dense outlined type="number" step="0.0001" class="q-mb-sm" />
-          <q-input v-model="adjustDialogYear" label="Year" dense outlined class="q-mb-sm" />
-          <q-select v-model="adjustDialogMonth" :options="monthOpts" dense outlined emit-value map-options label="Month" />
-        </q-card-section>
-        <q-card-section v-if="adjustDialogResult">
-          <q-banner :class="adjustDialogResult.error ? 'bg-negative text-white' : adjustDialogResult.status === 'written' ? 'bg-positive text-white' : 'bg-info text-white'" dense rounded>
-            <div v-if="adjustDialogResult.error">{{ adjustDialogResult.error }}</div>
-            <div v-else>
-              {{ adjustDialogResult.status === 'written' ? 'Written!' : 'Dry run' }} |
-              Adjustment: {{ adjustDialogResult.new_adjustment?.toFixed(6) }} |
-              Total: {{ adjustDialogResult.resulting_total_dps?.toFixed(6) }}
-              <span v-if="adjustDialogResult.txn_type"> | TM1: {{ adjustDialogResult.txn_type }}</span>
-              <span v-if="adjustDialogResult.zero_base" class="text-warning"> | Zero base (new share?)</span>
-            </div>
-          </q-banner>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat label="Dry run" color="secondary" :loading="adjustDialogLoading" @click="handleDialogAdjust(false)" no-caps />
-          <q-btn flat label="Write to TM1" color="primary" :loading="adjustDialogLoading" @click="handleDialogAdjust(true)" no-caps />
-          <q-btn flat label="Close" v-close-popup no-caps />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-  </q-page>
+      </template>
+      <template #footer>
+        <button class="btn btn-ghost btn-sm" :disabled="adjustDialogLoading" @click="handleDialogAdjust(false)">Dry run</button>
+        <button class="btn btn-primary btn-sm" :disabled="adjustDialogLoading" @click="handleDialogAdjust(true)">Write to TM1</button>
+        <button class="btn btn-ghost btn-sm" @click="adjustDialogOpen = false">Close</button>
+      </template>
+    </KDialog>
+  </div>
 </template>
 
 <script>
@@ -303,12 +293,19 @@ import {
   updateDividendCalendarPaymentDate,
 } from '../api/endpoints';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import KTabs from '../components/klikk/KTabs.vue';
+import KTable from '../components/klikk/KTable.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSelect from '../components/klikk/KSelect.vue';
+import KCheckbox from '../components/klikk/KCheckbox.vue';
+import KDialog from '../components/klikk/KDialog.vue';
+import StatusPill from '../components/klikk/StatusPill.vue';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default defineComponent({
   name: 'DividendForecast',
-  components: { PageHeader },
+  components: { PageHeader, KTabs, KTable, KInput, KSelect, KCheckbox, KDialog, StatusPill },
   setup() {
     const tab = ref('calendar');
 
@@ -323,29 +320,35 @@ export default defineComponent({
       { label: 'Paid', value: 'paid' },
       { label: 'Estimated', value: 'estimated' },
     ];
+
+    // KTable column definitions for calendar
     const calendarCols = [
-      { name: 'share_code', label: 'Share', field: 'share_code', sortable: true, align: 'left' },
-      { name: 'company', label: 'Company', field: 'company', sortable: true, align: 'left' },
-      { name: 'symbol', label: 'Ticker', field: 'symbol', sortable: true, align: 'left' },
-      { name: 'ex_dividend_date', label: 'Ex-Date', field: 'ex_dividend_date', sortable: true, align: 'left' },
-      { name: 'payment_date', label: 'Pay Date', field: 'payment_date', sortable: true, align: 'left' },
-      { name: 'amount', label: 'DPS', field: 'amount', sortable: true, align: 'right' },
-      { name: 'prior_year_dps', label: 'Prior Yr DPS', field: 'prior_year_dps', sortable: true, align: 'right' },
-      { name: 'pct_change', label: '% Chg', field: 'pct_change', sortable: true, align: 'right' },
-      { name: 'tm1_status', label: 'TM1 Status', field: 'tm1_adjustment_written', sortable: true, align: 'center' },
-      { name: 'tm1_target_month', label: 'TM1 Month', field: 'tm1_target_month', sortable: true, align: 'center' },
-      { name: 'tm1_adjustment_value', label: 'TM1 Adj', field: 'tm1_adjustment_value', sortable: true, align: 'right' },
-      { name: 'tm1_written_at', label: 'Written', field: 'tm1_written_at', sortable: true, align: 'left',
-        format: v => v ? new Date(v).toLocaleDateString() : '-' },
-      { name: 'dividend_category', label: 'Type', field: 'dividend_category', sortable: true, align: 'center' },
-      { name: 'status', label: 'Status', field: 'status', sortable: true, align: 'left' },
-      { name: 'actions', label: '', field: 'id', align: 'center' },
+      { accessorKey: 'share_code',           header: 'Share',        enableSorting: true },
+      { accessorKey: 'company',              header: 'Company',      enableSorting: true },
+      { accessorKey: 'symbol',               header: 'Ticker',       enableSorting: true },
+      { accessorKey: 'ex_dividend_date',     header: 'Ex-Date',      enableSorting: true },
+      { accessorKey: 'payment_date',         header: 'Pay Date',     enableSorting: true },
+      { accessorKey: 'amount',               header: 'DPS',          meta: { align: 'right' }, enableSorting: true },
+      { accessorKey: 'prior_year_dps',       header: 'Prior Yr DPS', meta: { align: 'right' }, enableSorting: true },
+      { accessorKey: 'pct_change',           header: '% Chg',        meta: { align: 'right' }, enableSorting: true },
+      { accessorKey: 'tm1_adjustment_written', header: 'TM1 Status', id: 'tm1_status', meta: { align: 'center' } },
+      { accessorKey: 'tm1_target_month',     header: 'TM1 Month',   meta: { align: 'center' }, enableSorting: true },
+      { accessorKey: 'tm1_adjustment_value', header: 'TM1 Adj',     meta: { align: 'right' }, enableSorting: true },
+      {
+        accessorKey: 'tm1_written_at',
+        header: 'Written',
+        enableSorting: true,
+        cell: (info) => info.getValue() ? new Date(info.getValue()).toLocaleDateString() : '—',
+      },
+      { accessorKey: 'dividend_category',    header: 'Type',         meta: { align: 'center' }, enableSorting: true },
+      { accessorKey: 'status',               header: 'Status',       enableSorting: true },
+      { accessorKey: 'id',                   header: '',             id: 'actions',              meta: { align: 'center' } },
     ];
 
     const categoryOpts = [
       { label: 'Regular', value: 'regular' },
-      { label: 'Special', value: 'special' },
-      { label: 'Foreign', value: 'foreign' },
+      { label: 'Special',  value: 'special' },
+      { label: 'Foreign',  value: 'foreign' },
     ];
 
     const checking = ref(false);
@@ -370,7 +373,6 @@ export default defineComponent({
         await updateDividendCalendarCategory(row.id, category);
       } catch (e) {
         console.error('Failed to update category', e);
-        // Revert on failure
         await loadCalendar();
       }
     }
@@ -400,10 +402,10 @@ export default defineComponent({
     // -- Forecast --
     const monthOpts = MONTHS.map(m => ({ label: m, value: m }));
     const forecastShare = ref('');
-    const forecastYear = ref(String(new Date().getFullYear()));
+    const forecastYear  = ref(String(new Date().getFullYear()));
     const forecastMonth = ref(MONTHS[new Date().getMonth()]);
     const readingForecast = ref(false);
-    const forecastResult = ref(null);
+    const forecastResult  = ref(null);
 
     async function handleReadForecast() {
       if (!forecastShare.value) return;
@@ -417,11 +419,11 @@ export default defineComponent({
       readingForecast.value = false;
     }
 
-    const adjustShare = ref('');
-    const adjustDps = ref('');
-    const adjustYear = ref(String(new Date().getFullYear()));
-    const adjustMonth = ref(MONTHS[new Date().getMonth()]);
-    const adjusting = ref(false);
+    const adjustShare  = ref('');
+    const adjustDps    = ref('');
+    const adjustYear   = ref(String(new Date().getFullYear()));
+    const adjustMonth  = ref(MONTHS[new Date().getMonth()]);
+    const adjusting    = ref(false);
     const adjustResult = ref(null);
 
     async function handleAdjust(confirm) {
@@ -443,25 +445,24 @@ export default defineComponent({
     }
 
     // -- Adjust dialog (from calendar row) --
-    const adjustDialogOpen = ref(false);
-    const adjustDialogRow = ref(null);
-    const adjustDialogDps = ref('');
-    const adjustDialogYear = ref('');
-    const adjustDialogMonth = ref('');
+    const adjustDialogOpen    = ref(false);
+    const adjustDialogRow     = ref(null);
+    const adjustDialogDps     = ref('');
+    const adjustDialogYear    = ref('');
+    const adjustDialogMonth   = ref('');
     const adjustDialogLoading = ref(false);
-    const adjustDialogResult = ref(null);
+    const adjustDialogResult  = ref(null);
 
     function openAdjustDialog(row) {
       adjustDialogRow.value = row;
       adjustDialogDps.value = row.amount;
-      // Use payment_date for TM1 month (when cash is received), fallback to ex_dividend_date
       const targetDate = row.payment_date ? new Date(row.payment_date)
         : row.ex_dividend_date ? new Date(row.ex_dividend_date)
         : new Date();
-      adjustDialogYear.value = String(targetDate.getFullYear());
+      adjustDialogYear.value  = String(targetDate.getFullYear());
       adjustDialogMonth.value = MONTHS[targetDate.getMonth()];
       adjustDialogResult.value = null;
-      adjustDialogOpen.value = true;
+      adjustDialogOpen.value  = true;
     }
 
     async function handleDialogAdjust(confirm) {
@@ -487,25 +488,21 @@ export default defineComponent({
 
     // -- Workflow --
     const workflowRunning = ref(false);
-    const verifyResults = ref([]);
+    const verifyResults   = ref([]);
     const verifyCols = [
-      { name: 'share_code', label: 'Share', field: 'share_code', sortable: true, align: 'left' },
-      { name: 'ex_dividend_date', label: 'Ex-Date', field: 'ex_dividend_date', sortable: true, align: 'left' },
-      { name: 'amount', label: 'Declared DPS', field: 'amount', sortable: true, align: 'right',
-        format: v => v != null ? v.toFixed(6) : '-' },
-      { name: 'db_adjustment', label: 'DB Adj', field: 'db_adjustment', sortable: true, align: 'right',
-        format: v => v != null ? v.toFixed(6) : '-' },
-      { name: 'tm1_adjustment', label: 'TM1 Adj', field: 'tm1_adjustment', sortable: true, align: 'right',
-        format: v => v != null ? v.toFixed(6) : '-' },
-      { name: 'tm1_total_dps', label: 'TM1 Total DPS', field: 'tm1_total_dps', sortable: true, align: 'right',
-        format: v => v != null ? v.toFixed(6) : '-' },
-      { name: 'status', label: 'Status', field: 'status', sortable: true, align: 'center' },
+      { accessorKey: 'share_code',       header: 'Share',         enableSorting: true },
+      { accessorKey: 'ex_dividend_date', header: 'Ex-Date',       enableSorting: true },
+      { accessorKey: 'amount',           header: 'Declared DPS',  meta: { align: 'right' }, enableSorting: true, cell: (i) => i.getValue() != null ? i.getValue().toFixed(6) : '—' },
+      { accessorKey: 'db_adjustment',    header: 'DB Adj',        meta: { align: 'right' }, enableSorting: true, cell: (i) => i.getValue() != null ? i.getValue().toFixed(6) : '—' },
+      { accessorKey: 'tm1_adjustment',   header: 'TM1 Adj',       meta: { align: 'right' }, enableSorting: true, cell: (i) => i.getValue() != null ? i.getValue().toFixed(6) : '—' },
+      { accessorKey: 'tm1_total_dps',    header: 'TM1 Total DPS', meta: { align: 'right' }, enableSorting: true, cell: (i) => i.getValue() != null ? i.getValue().toFixed(6) : '—' },
+      { accessorKey: 'status',           header: 'Status',        meta: { align: 'center' }, enableSorting: true },
     ];
 
     const workflowSteps = ref([
-      { key: 'check', label: '1. Check yfinance for declared dividends (all shares)', selected: true, status: 'idle', message: '', elapsed: null },
-      { key: 'adjust_pending', label: '2. Write TM1 adjustments for all pending entries', selected: true, status: 'idle', message: '', elapsed: null },
-      { key: 'verify', label: '3. Verify TM1 values match DB adjustments', selected: true, status: 'idle', message: '', elapsed: null },
+      { key: 'check',          label: '1. Check yfinance for declared dividends (all shares)',  selected: true, status: 'idle', message: '', elapsed: null },
+      { key: 'adjust_pending', label: '2. Write TM1 adjustments for all pending entries',       selected: true, status: 'idle', message: '', elapsed: null },
+      { key: 'verify',         label: '3. Verify TM1 values match DB adjustments',              selected: true, status: 'idle', message: '', elapsed: null },
     ]);
 
     let paApi = null;
@@ -541,12 +538,7 @@ export default defineComponent({
         if (s.key === 'check') {
           res = await checkDeclaredDividends('');
           const saved = (res.results || []).filter(r => r.new_record_saved).length;
-          workflowSteps.value[idx] = {
-            ...workflowSteps.value[idx],
-            status: 'done',
-            message: `Checked ${res.checked || 0} symbols, ${saved} new dividend(s) saved`,
-            elapsed: ((Date.now() - t0) / 1000).toFixed(1),
-          };
+          workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: 'done', message: `Checked ${res.checked || 0} symbols, ${saved} new dividend(s) saved`, elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
           await loadCalendar();
           return;
         }
@@ -554,12 +546,7 @@ export default defineComponent({
           res = await adjustAllPendingDividends();
           if (res.error) throw new Error(res.error);
           const specialMsg = res.skipped_special ? `, ${res.skipped_special} special skipped` : '';
-          workflowSteps.value[idx] = {
-            ...workflowSteps.value[idx],
-            status: 'done',
-            message: `${res.adjustments_written || 0} adjustment(s) written (${res.pending_found || 0} pending found${specialMsg})`,
-            elapsed: ((Date.now() - t0) / 1000).toFixed(1),
-          };
+          workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: 'done', message: `${res.adjustments_written || 0} adjustment(s) written (${res.pending_found || 0} pending found${specialMsg})`, elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
           await loadCalendar();
           return;
         }
@@ -568,34 +555,19 @@ export default defineComponent({
           if (res.error) throw new Error(res.error);
           verifyResults.value = res.results || [];
           const statusMsg = `${res.verified || 0} verified, ${res.mismatches || 0} mismatch(es), ${res.errors || 0} error(s)`;
-          workflowSteps.value[idx] = {
-            ...workflowSteps.value[idx],
-            status: (res.mismatches || 0) > 0 ? 'error' : 'done',
-            message: statusMsg,
-            elapsed: ((Date.now() - t0) / 1000).toFixed(1),
-          };
+          workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: (res.mismatches || 0) > 0 ? 'error' : 'done', message: statusMsg, elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
           await loadCalendar();
           return;
         }
         if (s.key.startsWith('tm1:') && paApi) {
           res = await paApi.executeTm1Process(s.processName, s.parameters);
           const success = res?.success !== false;
-          workflowSteps.value[idx] = {
-            ...workflowSteps.value[idx],
-            status: success ? 'done' : 'error',
-            message: res?.message || (success ? 'OK' : 'Failed'),
-            elapsed: ((Date.now() - t0) / 1000).toFixed(1),
-          };
+          workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: success ? 'done' : 'error', message: res?.message || (success ? 'OK' : 'Failed'), elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
           return;
         }
         workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: 'done', message: 'OK', elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
       } catch (e) {
-        workflowSteps.value[idx] = {
-          ...workflowSteps.value[idx],
-          status: 'error',
-          message: e.response?.data?.error || e.message,
-          elapsed: ((Date.now() - t0) / 1000).toFixed(1),
-        };
+        workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: 'error', message: e.response?.data?.error || e.message, elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
       }
     }
 
@@ -628,8 +600,8 @@ export default defineComponent({
     }
 
     function stepRowClass(s) {
-      if (s.status === 'done') return 'bg-green-1';
-      if (s.status === 'error') return 'bg-red-1';
+      if (s.status === 'done')  return 'df-progress-row--done';
+      if (s.status === 'error') return 'df-progress-row--error';
       return '';
     }
 
@@ -658,3 +630,191 @@ export default defineComponent({
   },
 });
 </script>
+
+<style scoped>
+.page-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.df-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Toolbar */
+.df-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.df-toolbar__spacer {
+  flex: 1;
+}
+
+/* Alert strip */
+.df-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Cards */
+.df-card {
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.df-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+  margin-bottom: 10px;
+}
+
+/* Form rows */
+.df-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.df-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+/* Forecast grid */
+.df-forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 640px) {
+  .df-forecast-grid { grid-template-columns: 1fr; }
+}
+
+.df-forecast-stat__label {
+  font-size: 11px;
+  color: var(--kdl-text-hint);
+  margin-bottom: 4px;
+}
+
+.df-forecast-stat__value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--kdl-text-primary);
+}
+
+/* Caption */
+.df-caption {
+  font-size: 11px;
+  color: var(--kdl-text-hint);
+}
+
+/* Workflow steps */
+.df-wf-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* Progress list */
+.df-progress-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.df-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--kdl-border-subtle);
+  background: var(--kdl-card-bg);
+}
+
+.df-progress-row:last-child { border-bottom: none; }
+
+.df-progress-row--done  { background: color-mix(in srgb, var(--kdl-status-success) 8%, transparent); }
+.df-progress-row--error { background: color-mix(in srgb, var(--kdl-status-error) 8%, transparent); }
+
+.df-progress-row__icon { flex-shrink: 0; display: flex; align-items: center; }
+.df-progress-row__body { flex: 1 1 0; min-width: 0; }
+.df-progress-row__label { font-size: 13px; color: var(--kdl-text-primary); }
+.df-progress-row__message { font-size: 11px; color: var(--kdl-text-muted); margin-top: 2px; }
+.df-progress-row__elapsed { font-size: 11px; color: var(--kdl-text-hint); flex-shrink: 0; }
+
+/* Spinner animation */
+.df-spin { animation: df-spin 0.8s linear infinite; }
+@keyframes df-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .df-spin { animation: none; } }
+
+/* Icon colours */
+.df-icon--success { color: var(--kdl-status-success); }
+.df-icon--error   { color: var(--kdl-status-error); }
+.df-icon--accent  { color: var(--kdl-accent); }
+.df-icon--muted   { color: var(--kdl-text-hint); }
+
+/* Dialog internals */
+.df-dialog-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.df-dialog-meta {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.df-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* Inline table input */
+.df-inline-input {
+  background: transparent;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--kdl-text-primary);
+  min-width: 110px;
+  font-family: inherit;
+}
+
+.df-inline-input:focus {
+  outline: 2px solid var(--kdl-accent);
+  outline-offset: 1px;
+  border-color: var(--kdl-accent);
+}
+
+/* Utilities */
+.df-muted   { color: var(--kdl-text-hint); font-size: 13px; }
+.df-pos     { color: var(--kdl-status-success); }
+.df-neg     { color: var(--kdl-status-error); }
+.df-warn    { color: var(--kdl-status-warning); }
+.df-bold    { font-weight: 600; }
+.df-currency { font-size: 11px; color: var(--kdl-text-hint); margin-left: 3px; }
+</style>
