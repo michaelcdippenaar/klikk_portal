@@ -7,6 +7,17 @@
   <title>Klikk Financials Console</title>
 </head>
 <body>
+  <!-- KDL FOUC-prevention: apply theme before app renders to avoid a flash-of-wrong-theme. -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('klikk:theme');
+        var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var dark = saved === 'dark' || (!saved && systemDark) || (saved === 'system' && systemDark);
+        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (e) { /* ignore — storage may be blocked */ }
+    })();
+  </script>
   <noscript>
     <strong>We're sorry but this app doesn't work properly without JavaScript enabled. Please enable it to continue.</strong>
   </noscript>

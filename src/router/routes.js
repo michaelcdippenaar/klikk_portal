@@ -117,6 +117,13 @@ const routes = [
       },
     ],
   },
+  // DEV ONLY — Klikk design language primitive preview. Not linked in app nav.
+  // Accessible at http://localhost:9000/_klikk-preview during development.
+  {
+    path: '/_klikk-preview',
+    name: 'klikk-preview',
+    component: () => import('pages/KlikkPreview.vue'),
+  },
   {
     path: '/:catchAll(.*)*',
     component: () => import('pages/Error404.vue'),

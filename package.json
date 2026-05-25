@@ -23,9 +23,13 @@
   },
   "devDependencies": {
     "@quasar/app-vite": "^1.4.0",
+    "autoprefixer": "^10.5.0",
     "eslint": "^8.57.0",
     "eslint-plugin-vue": "^9.20.1",
-    "prettier": "^3.2.4"
+    "lucide-vue-next": "^1.0.0",
+    "postcss": "^8.5.15",
+    "prettier": "^3.2.4",
+    "tailwindcss": "^3.4.19"
   },
   "browserslist": [
     "last 10 Chrome versions",

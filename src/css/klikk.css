@@ -1,0 +1,325 @@
+/* Klikk Design Language — global token map + component classes.
+ * Imported alongside app.sass in quasar.conf.js → build.vitePlugins cssAddon.
+ * This file owns Tailwind's base/components/utilities layers.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  .lucide { stroke-width: 1.75; }
+
+  :root {
+    /* Motion */
+    --duration-short:  150ms;
+    --duration-medium: 200ms;
+    --ease-standard:   cubic-bezier(0.2, 0, 0, 1);
+    --ease-enter:      cubic-bezier(0, 0, 0, 1);
+
+    /* Light theme tokens */
+    --kdl-page-bg:        #F5F5F8;
+    --kdl-card-bg:        #FFFFFF;
+    --kdl-raised-bg:      #FFFFFF;
+    --kdl-hover-bg:       #F9FAFB;
+    --kdl-border-subtle:  #EFEFF5;
+    --kdl-border:         #E5E7EB;
+    --kdl-text-primary:   #111111;
+    --kdl-text-secondary: #4B5563;
+    --kdl-text-muted:     #6B7280;
+    --kdl-text-hint:      #9CA3AF;
+    --kdl-brand-navy:     #2B2D6E;
+    --kdl-accent:         #FF3D7F;
+    --kdl-accent-pressed: #E02D6B;
+    --kdl-dot-grid:       #2B2D6E0D;
+
+    /* Shadows (light) */
+    --shadow-soft:     0 1px 2px rgba(15,17,57,0.04), 0 2px 6px rgba(15,17,57,0.04);
+    --shadow-lifted:   0 4px 12px rgba(15,17,57,0.06), 0 12px 24px rgba(15,17,57,0.04);
+    --shadow-floating: 0 12px 32px rgba(15,17,57,0.08), 0 24px 48px rgba(43,45,110,0.08);
+    --glow-accent:     0 0 0 2px rgba(255, 61, 127, 0.35);
+  }
+
+  :root[data-theme="dark"] {
+    --kdl-page-bg:        #0E0F1A;
+    --kdl-card-bg:        #161827;
+    --kdl-raised-bg:      #1D1F30;
+    --kdl-hover-bg:       #23253A;
+    --kdl-border-subtle:  #262842;
+    --kdl-border:         #34365A;
+    --kdl-text-primary:   #E8E9F2;
+    --kdl-text-secondary: #A4A6BB;
+    --kdl-text-muted:     #8A8C9F;
+    --kdl-text-hint:      #6E7088;
+    --kdl-brand-navy:     #1A1C36;
+    --kdl-accent:         #FF4F8A;
+    --kdl-accent-pressed: #FF3D7F;
+    --kdl-dot-grid:       rgba(255, 255, 255, 0.04);
+
+    --shadow-soft:     inset 0 1px 0 rgba(255,255,255,0.04);
+    --shadow-lifted:   inset 0 1px 0 rgba(255,255,255,0.06), 0 12px 32px rgba(0,0,0,0.4);
+    --shadow-floating: inset 0 1px 0 rgba(255,255,255,0.08), 0 24px 48px rgba(0,0,0,0.6);
+    --glow-accent:     0 0 0 1px rgba(255, 79, 138, 0.45), 0 0 24px rgba(255, 79, 138, 0.18);
+  }
+
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background-color: var(--kdl-page-bg);
+    background-image: radial-gradient(var(--kdl-dot-grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    color: var(--kdl-text-primary);
+    font-size: 16px;
+    transition: background-color var(--duration-medium) var(--ease-standard),
+                color var(--duration-medium) var(--ease-standard);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--kdl-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  :root:not([data-theme="dark"]) :focus-visible {
+    outline-color: #2B2D6E;
+  }
+}
+
+@layer components {
+  /* Typography */
+  .page-title       { @apply text-xl font-bold tracking-tight; color: var(--kdl-text-primary); }
+  .page-description { @apply text-sm mt-1; color: var(--kdl-text-muted); }
+  .section-header   { @apply text-sm font-semibold; color: var(--kdl-text-primary); }
+  .stat-value       { @apply text-2xl font-bold tabular-nums; color: var(--kdl-text-primary); }
+  .label-upper      { @apply text-xs font-semibold uppercase tracking-wider; color: var(--kdl-text-hint); }
+  .text-muted       { @apply text-sm; color: var(--kdl-text-muted); }
+  .text-micro       { @apply text-[12px]; color: var(--kdl-text-muted); }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+      disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.97] active:-translate-y-px;
+    transition: background-color var(--duration-short) var(--ease-standard),
+                color var(--duration-short) var(--ease-standard),
+                border-color var(--duration-short) var(--ease-standard),
+                box-shadow var(--duration-short) var(--ease-standard),
+                transform var(--duration-short) var(--ease-standard);
+  }
+  .btn-primary { @apply btn bg-navy text-white hover:bg-navy-dark; }
+  .btn-ghost {
+    @apply btn border text-gray-700;
+    background: var(--kdl-card-bg);
+    border-color: var(--kdl-border);
+  }
+  .btn-ghost:hover:not(:disabled) { background: var(--kdl-hover-bg); }
+  .btn-danger  { @apply btn bg-danger-50 text-danger-600 border border-danger-100 hover:bg-danger-100; }
+  .btn-success { @apply btn bg-success-600 text-white hover:bg-success-700; }
+  .btn-accent  { @apply btn bg-accent text-white hover:bg-accent-dark; }
+
+  .btn-primary:hover:not(:disabled),
+  .btn-ghost:hover:not(:disabled),
+  .btn-success:hover:not(:disabled),
+  .btn-accent:hover:not(:disabled) {
+    box-shadow: var(--glow-accent);
+  }
+
+  .btn-sm { @apply px-3 py-1.5 text-xs gap-1.5; }
+  .btn-xs { @apply px-2 py-1 text-xs gap-1 rounded-md; }
+
+  @media (max-width: 639px) {
+    .btn    { min-height: 44px; }
+    .btn-sm { min-height: 38px; }
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full rounded-lg px-3 py-2.5 outline-none border
+      placeholder:text-gray-400;
+    background: var(--kdl-card-bg);
+    border-color: var(--kdl-border);
+    color: var(--kdl-text-primary);
+    transition: border-color var(--duration-short) var(--ease-standard),
+                box-shadow var(--duration-short) var(--ease-standard);
+  }
+  .input:focus,
+  .input:focus-visible {
+    border-color: var(--kdl-accent);
+    box-shadow: var(--glow-accent);
+  }
+  .input-error     { @apply border-danger-400; }
+  .input-success   { @apply border-success-400; }
+  .input-help      { @apply text-xs mt-1; color: var(--kdl-text-hint); }
+  .input-error-msg { @apply text-xs text-danger-600 mt-1; }
+  .label           { @apply block text-sm font-medium mb-1; color: var(--kdl-text-secondary); }
+
+  /* Cards */
+  .card {
+    @apply rounded-xl border;
+    background: var(--kdl-card-bg);
+    border-color: var(--kdl-border);
+    box-shadow: var(--shadow-soft);
+    transition: box-shadow var(--duration-medium) var(--ease-standard),
+                border-color var(--duration-medium) var(--ease-standard);
+  }
+  .card-interactive:hover {
+    border-color: var(--kdl-text-hint);
+    box-shadow: var(--shadow-lifted);
+  }
+
+  /* Badges */
+  .badge        { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
+  .badge-green  { @apply badge bg-success-50 text-success-700; }
+  .badge-red    { @apply badge bg-danger-50 text-danger-700; }
+  .badge-amber  { @apply badge bg-warning-50 text-warning-700; }
+  .badge-blue   { @apply badge bg-info-50 text-info-700; }
+  .badge-gray   { @apply badge bg-gray-100 text-gray-600; }
+
+  /* Klikk badge (tone system) */
+  .klikk-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 13px; font-weight: 500; letter-spacing: .02em; white-space: nowrap;
+    background: var(--kdl-border-subtle);
+    color: var(--kdl-text-secondary);
+  }
+  .klikk-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .klikk-badge.tone-active    { background: #DCFCE7; color: #166534; }
+  .klikk-badge.tone-signing   { background: #FEF3C7; color: #92400E; }
+  .klikk-badge.tone-vacant    { background: #EFEFF5; color: #6B6B7A; }
+  .klikk-badge.tone-renewal   { background: #DBEAFE; color: #1E40AF; }
+  .klikk-badge.tone-refund    { background: #FEE2E2; color: #991B1B; }
+  .klikk-badge.tone-marketing { background: #E9EAF4; color: #2B2D6E; }
+  .klikk-badge.tone-moveout   { background: #F3E8FF; color: #6B21A8; }
+  .klikk-badge.tone-applied   { background: #CCFBF1; color: #115E59; }
+  .klikk-badge.tone-ok        { background: #DCFCE7; color: #166534; }
+  .klikk-badge.tone-warn      { background: #FEF3C7; color: #92400E; }
+  .klikk-badge.tone-danger    { background: #FEE2E2; color: #991B1B; }
+  .klikk-badge.tone-info      { background: #DBEAFE; color: #1E40AF; }
+  .klikk-badge.tone-gate      { background: #F3E8FF; color: #7C3AED; }
+  .klikk-badge.tone-neutral   { background: var(--kdl-border-subtle); color: var(--kdl-text-secondary); }
+  .klikk-badge.size-sm        { font-size: 12px; padding: 2px 8px; }
+
+  /* Pills */
+  .pill {
+    @apply px-3 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer border;
+    background: var(--kdl-card-bg);
+    border-color: var(--kdl-border);
+    color: var(--kdl-text-secondary);
+  }
+  .pill:hover   { background: var(--kdl-hover-bg); }
+  .pill-active  { @apply bg-navy text-white border-navy hover:bg-navy-dark; }
+
+  /* Tables */
+  .table-scroll { @apply overflow-x-auto; -webkit-overflow-scrolling: touch; }
+  .table-wrap   { @apply w-full; }
+  .table-wrap thead tr { background: var(--kdl-hover-bg); border-bottom: 1px solid var(--kdl-border); }
+  .table-wrap thead th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider; color: var(--kdl-text-muted); }
+  .table-wrap tbody tr {
+    border-bottom: 1px solid var(--kdl-border-subtle);
+    transition: background-color var(--duration-short) var(--ease-standard);
+  }
+  .table-wrap tbody tr:hover { background: var(--kdl-hover-bg); }
+  .table-wrap tbody td { @apply px-4 py-3.5 tabular-nums; color: var(--kdl-text-secondary); }
+
+  /* Klikk stat tile */
+  .klikk-stat {
+    background: var(--kdl-card-bg);
+    border: 1px solid var(--kdl-border-subtle);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow-soft);
+  }
+  .klikk-stat .label {
+    font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--kdl-text-muted);
+  }
+  .klikk-stat .value {
+    font-size: 28px; font-weight: 700; line-height: 1.1; margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+    color: var(--kdl-text-primary);
+  }
+  .klikk-stat .delta       { font-size: 14px; margin-top: 4px; color: var(--kdl-text-muted); }
+  .klikk-stat .delta.down  { color: #DC2626; }
+  .klikk-stat .delta.up    { color: #0D9488; }
+
+  /* Alert strip */
+  .klikk-alert-strip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-radius: 8px;
+    background: #FEF3C7; color: #92400E; border-left: 3px solid #D97706;
+    font-size: 15px; font-weight: 500;
+  }
+  .klikk-alert-strip.tone-danger { background: #FEE2E2; color: #991B1B; border-color: #DC2626; }
+  .klikk-alert-strip.tone-info   { background: #DBEAFE; color: #1E40AF; border-color: #2563EB; }
+  .klikk-alert-strip.tone-ok     { background: #DCFCE7; color: #166534; border-color: #0D9488; }
+  .klikk-alert-strip.pulse::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: currentColor; flex-shrink: 0;
+    animation: klikk-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes klikk-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .35; }
+  }
+
+  /* Header navigation */
+  .header-nav {
+    background: rgba(15, 16, 56, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .header-nav-link {
+    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer;
+    color: rgba(255, 255, 255, 0.55);
+    transition: color var(--duration-short) var(--ease-standard),
+                background-color var(--duration-short) var(--ease-standard);
+  }
+  .header-nav-link:hover         { color: rgba(255, 255, 255, 0.9); background: rgba(255, 255, 255, 0.08); }
+  .header-nav-link-active        { color: white !important; background: rgba(255, 255, 255, 0.12); }
+
+  /* Sidebar */
+  .sidebar-link {
+    @apply relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium;
+    color: var(--kdl-text-secondary);
+    transition: background-color var(--duration-short) var(--ease-standard),
+                color var(--duration-short) var(--ease-standard);
+  }
+  .sidebar-link:hover      { background: var(--kdl-hover-bg); color: var(--kdl-text-primary); }
+  .sidebar-link-active     { @apply font-semibold; background: rgba(43,45,110,0.10); color: #2B2D6E; }
+  .sidebar-section-label   { @apply text-xs font-semibold uppercase tracking-wider px-3 mb-1; color: var(--kdl-text-hint); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Dark-mode badge tone overrides — softer alpha backgrounds */
+:root[data-theme="dark"] .klikk-badge                 { background: rgba(255,255,255,0.06); color: var(--kdl-text-secondary); }
+:root[data-theme="dark"] .klikk-badge.tone-active      { background: rgba(52,211,153,0.12);  color: #34D399; }
+:root[data-theme="dark"] .klikk-badge.tone-signing     { background: rgba(251,191,36,0.12);  color: #FBBF24; }
+:root[data-theme="dark"] .klikk-badge.tone-vacant      { background: rgba(255,255,255,0.06); color: var(--kdl-text-muted); }
+:root[data-theme="dark"] .klikk-badge.tone-renewal     { background: rgba(96,165,250,0.12);  color: #60A5FA; }
+:root[data-theme="dark"] .klikk-badge.tone-refund      { background: rgba(248,113,113,0.12); color: #F87171; }
+:root[data-theme="dark"] .klikk-badge.tone-marketing   { background: rgba(255,79,138,0.12);  color: #FF4F8A; }
+:root[data-theme="dark"] .klikk-badge.tone-moveout     { background: rgba(192,132,252,0.12); color: #C084FC; }
+:root[data-theme="dark"] .klikk-badge.tone-applied     { background: rgba(45,212,191,0.12);  color: #2DD4BF; }
+:root[data-theme="dark"] .klikk-badge.tone-ok          { background: rgba(52,211,153,0.12);  color: #34D399; }
+:root[data-theme="dark"] .klikk-badge.tone-warn        { background: rgba(251,191,36,0.12);  color: #FBBF24; }
+:root[data-theme="dark"] .klikk-badge.tone-danger      { background: rgba(248,113,113,0.12); color: #F87171; }
+:root[data-theme="dark"] .klikk-badge.tone-info        { background: rgba(96,165,250,0.12);  color: #60A5FA; }
+:root[data-theme="dark"] .klikk-badge.tone-gate        { background: rgba(192,132,252,0.12); color: #C084FC; }
+
+:root[data-theme="dark"] .klikk-alert-strip             { background: rgba(251,191,36,0.10); color: #FBBF24; border-color: #FBBF24; }
+:root[data-theme="dark"] .klikk-alert-strip.tone-danger { background: rgba(248,113,113,0.10); color: #F87171; border-color: #F87171; }
+:root[data-theme="dark"] .klikk-alert-strip.tone-info   { background: rgba(96,165,250,0.10); color: #60A5FA; border-color: #60A5FA; }
+:root[data-theme="dark"] .klikk-alert-strip.tone-ok     { background: rgba(52,211,153,0.10); color: #34D399; border-color: #34D399; }
+
+:root[data-theme="dark"] .btn-danger                             { background: rgba(248,113,113,0.10); color: #F87171; border-color: rgba(248,113,113,0.25); }
+:root[data-theme="dark"] .btn-danger:hover:not(:disabled)        { background: rgba(248,113,113,0.15); }

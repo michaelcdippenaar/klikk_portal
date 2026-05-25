@@ -19,11 +19,13 @@ module.exports = configure(function (ctx) {
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
     boot: [
       'axios',
+      'theme',
     ],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js#css
     css: [
-      'app.sass'
+      'klikk.css',
+      'app.sass',
     ],
 
     // https://github.com/quasarframework/quasar/tree/dev/extras
@@ -51,6 +53,9 @@ module.exports = configure(function (ctx) {
       // vueRouterBase,
       // vueDevtools,
       // vueOptionsAPI: false,
+
+      // Inject KDL Quasar SCSS variable overrides so q-btn / q-card etc. use brand colours.
+      sassVariables: 'src/css/quasar.variables.sass',
 
       // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
