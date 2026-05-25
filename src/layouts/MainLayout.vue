@@ -1,9 +1,9 @@
 <template>
-  <q-layout view="hHh lpR fFf">
-    <!-- Single-row KDL header -->
-    <q-header class="kdl-header">
-      <q-toolbar class="kdl-toolbar">
-        <!-- Logo / lockup — KLockup component (currentColor inherits parent token) -->
+  <AppShell>
+    <!-- ── Header ─────────────────────────────────────────────────────── -->
+    <template #header>
+      <AppHeader>
+        <!-- Logo / lockup -->
         <span class="kdl-brand-wrapper" role="img" aria-label="Klikk Financials">
           <KLockup size="md" />
         </span>
@@ -53,7 +53,8 @@
           </router-link>
         </nav>
 
-        <q-space />
+        <!-- Flex spacer -->
+        <div class="kdl-spacer" aria-hidden="true" />
 
         <!-- Theme toggle -->
         <button
@@ -87,8 +88,15 @@
           </svg>
         </button>
 
-        <!-- User menu -->
-        <div class="kdl-user-trigger" role="button" :aria-label="`User menu — ${userEmail}`" :aria-expanded="userMenuOpen" @click="userMenuOpen = !userMenuOpen" ref="userTriggerRef">
+        <!-- User trigger -->
+        <div
+          ref="userTriggerRef"
+          class="kdl-user-trigger"
+          role="button"
+          :aria-label="`User menu — ${userEmail}`"
+          :aria-expanded="userMenuOpen"
+          @click="userMenuOpen = !userMenuOpen"
+        >
           <!-- Lucide user -->
           <svg
             xmlns="http://www.w3.org/2000/svg" width="20" height="20"
@@ -111,73 +119,85 @@
           </svg>
         </div>
 
-        <!-- User dropdown -->
-        <q-menu
-          v-model="userMenuOpen"
-          :target="userTriggerRef"
-          anchor="bottom right"
-          self="top right"
-          class="kdl-user-menu"
-          no-parent-event
-        >
-          <div class="kdl-user-menu__header">
-            <!-- Lucide user (24px in menu header) -->
-            <svg
-              xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              class="kdl-user-menu__avatar" aria-hidden="true"
+        <!-- User dropdown — native, teleported to body -->
+        <teleport to="body">
+          <transition name="kdl-menu-fade">
+            <div
+              v-if="userMenuOpen"
+              ref="userMenuRef"
+              class="kdl-user-menu"
+              :style="menuStyle"
+              role="menu"
+              @click.stop
             >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-            <span class="kdl-user-menu__email">{{ userEmail }}</span>
-          </div>
-          <!-- Command palette discoverability hint -->
-          <button class="kdl-user-menu__item" @click="openPalette">
-            <!-- Lucide search -->
-            <svg
-              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <span class="kdl-user-menu__cmd-label">Search &amp; commands</span>
-            <span class="kdl-user-menu__shortcut" aria-hidden="true">⌘K</span>
-          </button>
-          <q-separator />
-          <button class="kdl-user-menu__item kdl-user-menu__item--danger" @click="handleLogout">
-            <!-- Lucide log-out -->
-            <svg
-              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            Logout
-          </button>
-        </q-menu>
-      </q-toolbar>
-    </q-header>
+              <div class="kdl-user-menu__header">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                  class="kdl-user-menu__avatar" aria-hidden="true"
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <span class="kdl-user-menu__email">{{ userEmail }}</span>
+              </div>
 
-    <q-page-container>
-      <router-view />
-    </q-page-container>
+              <button class="kdl-user-menu__item" role="menuitem" @click="openPalette(); userMenuOpen = false">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <span class="kdl-user-menu__cmd-label">Search &amp; commands</span>
+                <span class="kdl-user-menu__shortcut" aria-hidden="true">⌘K</span>
+              </button>
+
+              <hr class="kdl-user-menu__sep" />
+
+              <button class="kdl-user-menu__item kdl-user-menu__item--danger" role="menuitem" @click="handleLogout">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </button>
+            </div>
+          </transition>
+        </teleport>
+      </AppHeader>
+    </template>
+
+    <!-- ── Page content ───────────────────────────────────────────────── -->
+    <router-view />
 
     <!-- ⌘K Command Palette — mounted once at the app shell root -->
     <KCommandPalette />
-  </q-layout>
+  </AppShell>
+
+  <!-- Click-outside overlay to close menu (not the drawer) -->
+  <teleport to="body">
+    <div
+      v-if="userMenuOpen"
+      class="kdl-menu-overlay"
+      aria-hidden="true"
+      @click="userMenuOpen = false"
+    />
+  </teleport>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useDataStore } from '../stores/data';
@@ -186,6 +206,8 @@ import { useTheme } from '../composables/useTheme';
 import { useCommandPalette } from '../composables/useCommandPalette';
 import KLockup from '../components/klikk/KLockup.vue';
 import KCommandPalette from '../components/klikk/KCommandPalette.vue';
+import AppShell from '../components/shell/AppShell.vue';
+import AppHeader from '../components/shell/AppHeader.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -199,6 +221,25 @@ const { open: openPalette, register, unregister } = useCommandPalette({ installG
 
 const userMenuOpen = ref(false);
 const userTriggerRef = ref(null);
+const userMenuRef = ref(null);
+
+// ── Menu positioning ────────────────────────────────────────────────────────
+// Place the dropdown below + right-aligned to the trigger button.
+const menuStyle = ref({ top: '0px', right: '16px' });
+
+watch(userMenuOpen, async (open) => {
+  if (!open) return;
+  await nextTick();
+  const trigger = userTriggerRef.value;
+  if (!trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  menuStyle.value = {
+    position: 'fixed',
+    top: `${rect.bottom + 6}px`,
+    right: `${viewportWidth - rect.right}px`,
+  };
+});
 
 const userEmail = computed(() => authStore.user?.email || authStore.user?.username || 'User');
 
@@ -215,12 +256,10 @@ function isActive(item) {
   return route.path.startsWith('/app/' + item.name);
 }
 
-// ── Command palette — global command registration ────────────────────────────
+// ── Command palette — global command registration ───────────────────────────
 
-/** Build the fixed Navigate + Theme + Logout commands (tenant-independent). */
 function buildStaticCommands() {
   const cmds = [
-    // Navigate
     {
       id: 'nav-dashboard',
       label: 'Go to Dashboard',
@@ -261,7 +300,6 @@ function buildStaticCommands() {
       keywords: ['credentials', 'config', 'xero'],
       perform: () => router.push({ name: 'setup' }),
     },
-    // Investec sub-pages
     {
       id: 'nav-investec-holdings',
       label: 'Investec — Share Holdings',
@@ -294,7 +332,6 @@ function buildStaticCommands() {
       keywords: ['investec', 'account', 'balance'],
       perform: () => router.push({ name: 'investec-account' }),
     },
-    // Theme
     {
       id: 'theme-toggle',
       label: 'Toggle Theme',
@@ -303,7 +340,6 @@ function buildStaticCommands() {
       keywords: ['dark', 'light', 'theme', 'appearance'],
       perform: () => toggleTheme(),
     },
-    // Logout
     {
       id: 'auth-logout',
       label: 'Logout',
@@ -317,7 +353,6 @@ function buildStaticCommands() {
     },
   ];
 
-  // AI Agent — only if the route exists.
   if (router.hasRoute('ai-agent')) {
     cmds.splice(5, 0, {
       id: 'nav-ai-agent',
@@ -332,7 +367,6 @@ function buildStaticCommands() {
   return cmds;
 }
 
-/** Re-build tenant-switching commands from the current tenants list. */
 function buildTenantCommands() {
   return dataStore.tenants.map((t) => ({
     id: `tenant-switch-${t.tenant_id}`,
@@ -344,7 +378,6 @@ function buildTenantCommands() {
   }));
 }
 
-/** Re-build process commands — only meaningful when a tenant is selected. */
 function buildProcessCommands() {
   if (!dataStore.selectedTenant) return [];
   const tenantId = dataStore.selectedTenant;
@@ -400,7 +433,6 @@ onMounted(() => {
   refreshAllCommands();
 });
 
-// Re-register tenant + process commands when tenants list or selected tenant changes.
 watch(
   [() => dataStore.tenants, () => dataStore.selectedTenant],
   () => refreshAllCommands(),
@@ -415,21 +447,6 @@ function handleLogout() {
 </script>
 
 <style scoped>
-/* ── KDL Header shell ─────────────────────────────────── */
-.kdl-header {
-  background: var(--kdl-card-bg);
-  border-bottom: 1px solid var(--kdl-border-subtle);
-  box-shadow: var(--shadow-soft);
-  color: var(--kdl-text-primary);
-}
-
-/* Header density pass: 56px → 44px */
-.kdl-toolbar {
-  min-height: 44px;
-  padding: 0 16px;
-  gap: 2px;
-}
-
 /* ── Brand lockup ─────────────────────────────────────── */
 .kdl-brand-wrapper {
   display: flex;
@@ -439,6 +456,11 @@ function handleLogout() {
   color: var(--kdl-text-primary);
 }
 
+/* ── Flex spacer ──────────────────────────────────────── */
+.kdl-spacer {
+  flex: 1 1 0;
+}
+
 /* ── Primary nav ──────────────────────────────────────── */
 .kdl-nav {
   display: flex;
@@ -446,7 +468,6 @@ function handleLogout() {
   gap: 2px;
 }
 
-/* ── Nav items — density pass ─────────────────────────── */
 .kdl-nav__item {
   display: flex;
   align-items: center;
@@ -482,7 +503,7 @@ function handleLogout() {
   flex-shrink: 0;
 }
 
-/* ── Icon button (theme toggle) — density pass ────────── */
+/* ── Icon button (theme toggle) ───────────────────────── */
 .kdl-icon-btn {
   display: flex;
   align-items: center;
@@ -504,7 +525,7 @@ function handleLogout() {
   color: var(--kdl-text-primary);
 }
 
-/* ── User trigger — density pass ─────────────────────── */
+/* ── User trigger ─────────────────────────────────────── */
 .kdl-user-trigger {
   display: flex;
   align-items: center;
@@ -530,8 +551,15 @@ function handleLogout() {
   transform: rotate(180deg);
 }
 
-/* ── User dropdown menu ───────────────────────────────── */
+/* ── User dropdown (teleported to body — not scoped) ──── */
+/* These styles live in the unscoped block below because the teleport
+   target is outside this component's DOM tree. */
+</style>
+
+<!-- User menu styles are outside the component scope because they're teleported -->
+<style>
 .kdl-user-menu {
+  z-index: 500;
   min-width: 220px;
   background: var(--kdl-card-bg);
   border: 1px solid var(--kdl-border-subtle);
@@ -558,6 +586,12 @@ function handleLogout() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.kdl-user-menu__sep {
+  border: none;
+  border-top: 1px solid var(--kdl-border-subtle);
+  margin: 0;
 }
 
 .kdl-user-menu__item {
@@ -597,5 +631,24 @@ function handleLogout() {
   font-weight: 500;
   color: var(--kdl-text-hint);
   letter-spacing: 0.01em;
+}
+
+/* Click-outside overlay for closing user menu */
+.kdl-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+}
+
+/* Menu fade transition */
+.kdl-menu-fade-enter-active,
+.kdl-menu-fade-leave-active {
+  transition: opacity var(--duration-short) var(--ease-standard),
+              transform var(--duration-short) var(--ease-standard);
+}
+.kdl-menu-fade-enter-from,
+.kdl-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

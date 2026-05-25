@@ -1,13 +1,6 @@
 <template>
   <div class="kdl-pipeline-shell">
-    <q-drawer
-      v-model="drawerOpen"
-      show-if-above
-      bordered
-      class="kdl-drawer"
-      :width="220"
-      :breakpoint="700"
-    >
+    <AppDrawer v-model="drawerOpen">
       <div class="kdl-drawer__inner">
         <!-- Nav groups -->
         <div
@@ -70,6 +63,7 @@
                 :to="{ name: item.name }"
                 class="kdl-nav-item"
                 :class="{ 'kdl-nav-item--active': route.name === item.name }"
+                @click="drawerOpen = false"
               >
                 <!-- Lucide icon via inline SVG — replaces q-icon (Material) -->
                 <svg
@@ -157,7 +151,7 @@
           </transition>
         </div>
       </div>
-    </q-drawer>
+    </AppDrawer>
 
     <div class="kdl-pipeline-content">
       <router-view />
@@ -166,8 +160,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, computed } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppDrawer from '../components/shell/AppDrawer.vue';
 
 const route = useRoute();
 
@@ -220,7 +215,6 @@ function loadExpanded() {
   } catch {
     // ignore
   }
-  // Default: only Xero expanded
   return { xero: true, investec: false, investments: false, pa: false };
 }
 
@@ -260,16 +254,15 @@ watch(
 /**
  * Returns true when any item in the group matches the active route.
  * Used to subtly embolden the section label when the section owns the current page.
- * NOTE: this styles the section LABEL only — not the item active state.
- * Item active state (.kdl-nav-item--active) is handled separately and is in
- * the Bundle 2 guardrail zone. This modifier adds font-weight: 600 to the label
- * only, not background or colour — safe from the Bundle 2 conflict.
  */
 function isSectionActive(group) {
   return group.items.some(item => item.name === route.name);
 }
 
-const drawerOpen = ref(true);
+// Desktop: open by default (AppDrawer ignores this on desktop and is always visible).
+// Mobile: closed by default; MainLayout's hamburger button (provided via AppHeader slot)
+// toggles this when implemented. For now drawerOpen starts false on mobile.
+const drawerOpen = ref(false);
 </script>
 
 <style scoped>
@@ -277,6 +270,7 @@ const drawerOpen = ref(true);
 .kdl-pipeline-shell {
   display: flex;
   height: 100%;
+  min-height: 0;
 }
 
 .kdl-pipeline-content {
@@ -285,13 +279,7 @@ const drawerOpen = ref(true);
   overflow: auto;
 }
 
-/* ── Drawer ─────────────────────────────────────────────── */
-.kdl-drawer {
-  background: var(--kdl-card-bg) !important;
-  border-right: 1px solid var(--kdl-border-subtle);
-}
-
-/* Drawer — density pass */
+/* ── Drawer inner ───────────────────────────────────────── */
 .kdl-drawer__inner {
   padding: 8px 6px;
   display: flex;
@@ -305,27 +293,12 @@ const drawerOpen = ref(true);
   overflow: hidden;
 }
 
-/*
-  Hairline divider above each section (v-if skips first).
-  1px var(--kdl-border-subtle). 4px space above via margin-top on the wrapper.
-  Pattern documented in docs/primitives/drawer-section-header.md.
-*/
 .kdl-nav-group__divider {
   height: 1px;
   background: var(--kdl-border-subtle);
   margin: 4px 2px 0;
 }
 
-/*
-  Section header toggle row.
-  - 8px 12px padding (vertical/horizontal) as spec'd.
-  - Hover: var(--kdl-hover-bg) tint. Cursor pointer.
-  - 11px label — documented exception to 12px floor.
-    Rationale: overline labels in constrained nav drawers (220px wide) at 12px
-    would clip on "Financial Investments". 11px is the smallest we go and is
-    sanctioned here as a sidebar-section-label exception, same as the KDL
-    sidebar-section-label class tradition. Documented in SKILL.md anti-patterns.
-*/
 .kdl-nav-group__toggle {
   display: flex;
   align-items: center;
@@ -347,17 +320,11 @@ const drawerOpen = ref(true);
   background: var(--kdl-hover-bg);
 }
 
-/* Active section: bolder label — NOT item active state (Bundle 2 guardrail zone) */
 .kdl-nav-group__toggle--active-section .kdl-nav-group__label {
   font-weight: 700;
   color: var(--kdl-text-secondary);
 }
 
-/*
-  Rotating caret — ChevronDown rotates 90deg clockwise to point right when collapsed.
-  Expanded → 0deg (pointing down). Collapsed → -90deg (pointing right).
-  CSS transition on transform, not on the icon itself.
-*/
 .kdl-nav-group__caret {
   flex-shrink: 0;
   color: var(--kdl-text-hint);
@@ -369,11 +336,6 @@ const drawerOpen = ref(true);
   transform: rotate(-90deg);
 }
 
-/*
-  Section label.
-  11px — documented exception (see comment above on .kdl-nav-group__toggle).
-  Uppercase + tracking: same tradition as .label-upper and .sidebar-section-label.
-*/
 .kdl-nav-group__label {
   flex: 1;
   font-size: 11px;
@@ -385,10 +347,6 @@ const drawerOpen = ref(true);
               font-weight var(--duration-short) var(--ease-standard);
 }
 
-/*
-  Item count badge — muted, 11px, top-right of toggle row.
-  Shows item count when section has >1 items. Omitted for single-item sections.
-*/
 .kdl-nav-group__count {
   flex-shrink: 0;
   font-size: 11px;
@@ -408,7 +366,6 @@ const drawerOpen = ref(true);
   padding-bottom: 4px;
 }
 
-/* Nav items — density pass */
 .kdl-nav-item {
   display: flex;
   align-items: center;
