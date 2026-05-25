@@ -8,37 +8,37 @@
 
 
     <!-- API Call Stats -->
-    <q-card v-if="apiCallStats" class="q-mb-lg">
-      <q-card-section>
-        <div class="text-subtitle1 q-mb-sm">
-          <q-icon name="api" class="q-mr-sm" />
-          Xero API Calls
-          <q-badge :color="apiCallStats.total_today > 4000 ? 'negative' : 'grey-6'" class="q-ml-sm">
-            {{ apiCallStats.total_today }} today (limit ~5000/day)
-          </q-badge>
-        </div>
-        <div class="row q-col-gutter-md">
-          <div
-            v-for="(proc, key) in processApiLabels"
-            :key="key"
-            class="col-12 col-sm-6 col-md-4"
-          >
-            <div class="q-pa-sm rounded-borders bg-grey-2">
-              <div class="text-caption text-grey-7">{{ proc }}</div>
-              <div class="text-body2">
-                Last run: <strong>{{ (apiCallStats.by_process[key]?.last_run ?? '-') }}</strong>
-                · Today: <strong>{{ (apiCallStats.by_process[key]?.today ?? 0) }}</strong>
-              </div>
+    <SectionCard v-if="apiCallStats" title="Xero API Calls" class="q-mb-lg">
+      <template #actions>
+        <span
+          class="klikk-badge size-sm"
+          :class="apiCallStats.total_today > 4000 ? 'tone-warn' : 'tone-neutral'"
+        >
+          {{ apiCallStats.total_today }} / 5&nbsp;000 today
+        </span>
+      </template>
+      <div class="row q-col-gutter-md">
+        <div
+          v-for="(proc, key) in processApiLabels"
+          :key="key"
+          class="col-12 col-sm-6 col-md-4"
+        >
+          <div class="proc-stat-cell">
+            <div class="label-upper">{{ proc }}</div>
+            <div class="text-muted q-mt-xs">
+              Last run: <strong>{{ (apiCallStats.by_process[key]?.last_run ?? '-') }}</strong>
+              · Today: <strong>{{ (apiCallStats.by_process[key]?.today ?? 0) }}</strong>
             </div>
           </div>
         </div>
-      </q-card-section>
-    </q-card>
+      </div>
+    </SectionCard>
 
-    <div v-if="!dataStore.selectedTenant" class="q-pa-lg text-center">
-      <q-icon name="info" size="3em" color="grey-5" />
-      <div class="text-h6 q-mt-md text-grey-7">Please select a tenant first</div>
-    </div>
+    <EmptyState
+      v-if="!dataStore.selectedTenant"
+      title="Please select a tenant first"
+      body="Use the tenant selector above to pick an organisation."
+    />
 
     <div v-else>
       <!-- Update Metadata -->
@@ -131,6 +131,8 @@ import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
 import ProcessCard from '../components/ProcessCard.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import EmptyState from '../components/klikk/EmptyState.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 import { getApiCallStats } from '../api/endpoints';
 
@@ -258,3 +260,12 @@ async function runTrailBalance() {
 }
 
 </script>
+
+<style scoped>
+.proc-stat-cell {
+  background: var(--kdl-hover-bg);
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+</style>
