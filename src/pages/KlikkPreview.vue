@@ -998,6 +998,71 @@ const activePillTab = ref('overview');
 const activeIconTab = ref('summary');
 const activeUnderlineTab = ref('overview');
 
+// ─── Form primitives demo state (Phase 1.C) ──────────────────────────────
+// KInput v2
+const demoClearable = ref('');
+const demoDebounced = ref('');
+const demoNumber = ref(0);
+
+// KSelect
+const selectOptions = [
+  { value: '1000', label: '1000 — Cash & Cash Equivalents' },
+  { value: '1200', label: '1200 — Accounts Receivable' },
+  { value: '2000', label: '2000 — Accounts Payable' },
+  { value: '4000', label: '4000 — Revenue' },
+  { value: '5000', label: '5000 — Operating Expenses' },
+];
+const demoSelect = ref(null);
+const demoSelectError = ref(null);
+const demoSelectDisabled = ref('Option A');
+
+// KMultiSelect
+const multiSelectOptions = ['Invoices', 'Payments', 'Journals', 'Reconciliations', 'Reports', 'Settings'];
+const demoMultiSelect = ref([]);
+
+// KCheckbox + KToggle
+const demoCheck1 = ref(true);
+const demoCheck2 = ref(false);
+const demoCheckDisabled = ref(false);
+const demoToggle1 = ref(false);
+const demoToggle2 = ref(isDark.value);
+const demoToggleDisabled = ref(true);
+
+function onToggleDark(val) {
+  demoToggle2.value = val;
+  if (val !== isDark.value) toggleTheme();
+}
+
+// KRadioGroup
+const radioOptions = [
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'annual', label: 'Annual' },
+];
+const demoRadio = ref('monthly');
+
+// KFile
+const demoFile = ref(null);
+const demoFiles = ref(null);
+
+// KForm
+const demoFormEmail = ref('');
+const demoFormEntity = ref(null);
+const demoFormAgree = ref(false);
+const demoFormSubmitted = ref(false);
+
+function onFormSubmit() {
+  demoFormSubmitted.value = true;
+  setTimeout(() => { demoFormSubmitted.value = false; }, 4000);
+}
+
+function resetForm() {
+  demoFormEmail.value = '';
+  demoFormEntity.value = null;
+  demoFormAgree.value = false;
+  demoFormSubmitted.value = false;
+}
+
 // ─── KChip demo state ─────────────────────────────────────────────────────
 const demoChips = ref(['Invoices', 'ZAR only', 'Q1 2024', 'Bosch en Dal']);
 function removeChip(chip) {
