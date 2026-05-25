@@ -22,21 +22,19 @@
         description="Pull Xero P&amp;L totals per tracking category for comparison with trail balance"
       >
         <div class="row q-gutter-md items-end">
-          <q-input
+          <KInput
             v-model="pnlTrackingForm.fromDate"
             label="From Date (YYYY-MM-DD)"
-            outlined
-            dense
+            placeholder="YYYY-MM-DD"
+            help-text="Default: 12 months ago"
             class="comp-input--md"
-            hint="Default: 12 months ago"
           />
-          <q-input
+          <KInput
             v-model="pnlTrackingForm.toDate"
             label="To Date (YYYY-MM-DD)"
-            outlined
-            dense
+            placeholder="YYYY-MM-DD"
+            help-text="Default: today"
             class="comp-input--md"
-            hint="Default: today"
           />
           <q-btn
             label="Import P&amp;L by Tracking"
@@ -48,17 +46,17 @@
 
         <div v-if="pnlTrackingLoading" class="text-center q-mt-md">
           <q-spinner color="secondary" size="2em" />
-          <span class="q-ml-sm text-grey-7">Importing...</span>
+          <span class="q-ml-sm" style="color: var(--kdl-text-muted);">Importing...</span>
         </div>
 
         <div v-if="pnlTrackingResult && !pnlTrackingLoading" class="q-mt-md">
-          <q-badge :color="pnlTrackingResult.success ? 'positive' : 'negative'" class="q-mb-sm">
-            {{ pnlTrackingResult.success ? 'Success' : 'Error' }}
-          </q-badge>
-          <div v-if="pnlTrackingResult.success && pnlTrackingResult.result" class="q-mt-xs text-caption">
-            {{ pnlTrackingResult.result.message || 'Import complete' }}
-          </div>
-          <div v-else-if="pnlTrackingResult.error" class="text-negative">{{ pnlTrackingResult.error }}</div>
+          <KAlert
+            :variant="pnlTrackingResult.success ? 'success' : 'error'"
+            :title="pnlTrackingResult.success ? 'Import complete' : 'Import failed'"
+            :body="pnlTrackingResult.success
+              ? (pnlTrackingResult.result?.message || 'Import complete')
+              : pnlTrackingResult.error"
+          />
         </div>
       </SectionCard>
 
@@ -69,31 +67,24 @@
         description="Compare Xero P&amp;L and Balance Sheet reports to constructed trail balance"
       >
         <div class="row q-gutter-md items-end">
-          <q-input
+          <KInput
             v-model.number="reconcileForm.financialYear"
             label="Financial Year"
             type="number"
-            outlined
-            dense
             class="comp-input--sm"
           />
-          <q-input
+          <KInput
             v-model.number="reconcileForm.fiscalYearStartMonth"
             label="Fiscal Year Start Month"
             type="number"
-            min="1"
-            max="12"
-            outlined
-            dense
+            placeholder="1–12"
             class="comp-input--md"
           />
-          <q-input
+          <KInput
             v-model.number="reconcileForm.tolerance"
             label="Tolerance"
             type="number"
             step="0.01"
-            outlined
-            dense
             class="comp-input--xs"
           />
           <q-btn
@@ -108,303 +99,299 @@
       <!-- Results -->
       <div v-if="reconciliationResult">
 
-        <!-- Overall Status Banner -->
-        <q-banner
-          :class="reconciliationResult.success ? 'bg-positive text-white' : 'bg-negative text-white'"
+        <!-- Overall Status Alert -->
+        <KAlert
           class="q-mb-md"
-          rounded
-        >
-          <template v-slot:avatar>
-            <q-icon :name="reconciliationResult.success ? 'check_circle' : 'error'" />
-          </template>
-          <div class="text-subtitle1">
-            {{ reconciliationResult.success ? 'Reconciliation Passed' : 'Reconciliation Failed' }}
-            <span v-if="reconciliationResult.financial_year"> — FY {{ reconciliationResult.financial_year }}</span>
-          </div>
-          <div v-if="reconciliationResult.errors && reconciliationResult.errors.length" class="q-mt-xs">
-            <div v-for="(err, i) in reconciliationResult.errors" :key="i" class="text-caption">{{ err }}</div>
-          </div>
-        </q-banner>
+          :variant="reconciliationResult.success ? 'success' : 'error'"
+          :title="reconciliationResult.success
+            ? ('Reconciliation Passed' + (reconciliationResult.financial_year ? ' — FY ' + reconciliationResult.financial_year : ''))
+            : ('Reconciliation Failed' + (reconciliationResult.financial_year ? ' — FY ' + reconciliationResult.financial_year : ''))"
+          :body="reconciliationResult.errors && reconciliationResult.errors.length
+            ? reconciliationResult.errors.join(' • ')
+            : undefined"
+        />
 
-        <!-- Tabs: P&L / Balance Sheet / Exceptions -->
+        <!-- Result tabs + panels -->
         <SectionCard>
-          <template #actions>
-            <q-tabs v-model="activeTab" dense align="left" class="text-primary" active-color="primary" indicator-color="primary">
-              <q-tab name="pnl" label="Profit &amp; Loss" />
-              <q-tab name="bs" label="Balance Sheet" />
-              <q-tab name="exceptions" :label="'Exceptions (' + exceptionCount + ')'" />
-            </q-tabs>
-          </template>
+          <KTabs
+            :tabs="resultTabs"
+            v-model="activeTab"
+            :url-sync="false"
+            class="q-mb-md"
+          />
 
-          <q-tab-panels v-model="activeTab" animated>
+          <!-- P&L Tab -->
+          <div v-show="activeTab === 'pnl'">
+            <div v-if="reconciliationResult.profit_loss">
 
-            <!-- P&L Tab -->
-            <q-tab-panel name="pnl">
-              <div v-if="reconciliationResult.profit_loss">
-
-                <!-- P&L Import Summary -->
-                <div v-if="reconciliationResult.profit_loss.import" class="q-mb-md">
-                  <div class="text-subtitle2 q-mb-xs">Import Summary</div>
-                  <div class="row q-gutter-md">
-                    <q-chip icon="event" color="grey-3">{{ reconciliationResult.profit_loss.import.from_date }} — {{ reconciliationResult.profit_loss.import.to_date }}</q-chip>
-                    <q-chip icon="format_list_numbered" color="grey-3">{{ reconciliationResult.profit_loss.import.lines_created }} lines imported</q-chip>
-                  </div>
+              <!-- P&L Import Summary -->
+              <div v-if="reconciliationResult.profit_loss.import" class="q-mb-md">
+                <div class="text-subtitle2 q-mb-xs">Import Summary</div>
+                <div class="row q-gutter-md">
+                  <q-chip icon="event" color="grey-3">{{ reconciliationResult.profit_loss.import.from_date }} — {{ reconciliationResult.profit_loss.import.to_date }}</q-chip>
+                  <q-chip icon="format_list_numbered" color="grey-3">{{ reconciliationResult.profit_loss.import.lines_created }} lines imported</q-chip>
                 </div>
-
-                <!-- P&L Overall Stats -->
-                <div v-if="pnlOverall" class="q-mb-md">
-                  <div class="text-subtitle2 q-mb-xs">Overall Statistics</div>
-                  <div class="row q-gutter-sm">
-                    <q-badge :color="pnlOverall.overall_match_percentage >= 95 ? 'positive' : 'warning'" class="text-body2 q-pa-sm">
-                      {{ pnlOverall.overall_match_percentage.toFixed(1) }}% Match
-                    </q-badge>
-                    <q-chip dense color="green-2" text-color="green-9">{{ pnlOverall.total_matches }} matches</q-chip>
-                    <q-chip dense color="red-2" text-color="red-9" v-if="pnlOverall.total_mismatches > 0">{{ pnlOverall.total_mismatches }} mismatches</q-chip>
-                    <q-chip dense color="grey-3">{{ pnlOverall.total_comparisons }} total comparisons</q-chip>
-                  </div>
-                </div>
-
-                <!-- P&L Period Stats Table -->
-                <div v-if="pnlPeriodRows.length">
-                  <div class="text-subtitle2 q-mb-xs">Period Breakdown</div>
-                  <q-table
-                    :rows="pnlPeriodRows"
-                    :columns="pnlPeriodColumns"
-                    row-key="period"
-                    dense
-                    flat
-                    bordered
-                    :pagination="{ rowsPerPage: 0 }"
-                    hide-pagination
-                  >
-                    <template v-slot:body-cell-match_percentage="props">
-                      <q-td :props="props" class="kdl-numeric">
-                        <q-badge :color="props.row.match_percentage >= 95 ? 'positive' : props.row.match_percentage >= 80 ? 'warning' : 'negative'">
-                          {{ props.row.match_percentage.toFixed(1) }}%
-                        </q-badge>
-                      </q-td>
-                    </template>
-                    <template v-slot:body-cell-mismatches="props">
-                      <q-td :props="props" class="kdl-numeric">
-                        <!-- text-negative permitted here: mismatch count is an explicit variance signal -->
-                        <span :class="props.row.mismatches > 0 ? 'text-negative text-weight-bold' : ''">{{ props.row.mismatches }}</span>
-                      </q-td>
-                    </template>
-                  </q-table>
-                </div>
-
               </div>
-              <EmptyState v-else title="No Profit &amp; Loss data" body="Run a reconciliation to see P&amp;L results." />
-            </q-tab-panel>
 
-            <!-- Balance Sheet Tab -->
-            <q-tab-panel name="bs">
-              <div v-if="reconciliationResult.balance_sheet">
-
-                <!-- BS Import Summary -->
-                <div v-if="reconciliationResult.balance_sheet.import" class="q-mb-md">
-                  <div class="text-subtitle2 q-mb-xs">Import Summary</div>
-                  <div class="row q-gutter-md">
-                    <q-chip icon="event" color="grey-3">Report date: {{ reconciliationResult.balance_sheet.import.report_date }}</q-chip>
-                    <q-chip icon="format_list_numbered" color="grey-3">{{ reconciliationResult.balance_sheet.import.lines_created }} lines imported</q-chip>
-                  </div>
+              <!-- P&L Overall Stats -->
+              <div v-if="pnlOverall" class="q-mb-md">
+                <div class="text-subtitle2 q-mb-xs">Overall Statistics</div>
+                <div class="row q-gutter-sm">
+                  <q-badge :color="pnlOverall.overall_match_percentage >= 95 ? 'positive' : 'warning'" class="text-body2 q-pa-sm">
+                    {{ pnlOverall.overall_match_percentage.toFixed(1) }}% Match
+                  </q-badge>
+                  <q-chip dense color="green-2" text-color="green-9">{{ pnlOverall.total_matches }} matches</q-chip>
+                  <q-chip dense color="red-2" text-color="red-9" v-if="pnlOverall.total_mismatches > 0">{{ pnlOverall.total_mismatches }} mismatches</q-chip>
+                  <q-chip dense color="grey-3">{{ pnlOverall.total_comparisons }} total comparisons</q-chip>
                 </div>
+              </div>
 
-                <!-- BS Validation Summary -->
-                <div v-if="bsValidation" class="q-mb-md">
-                  <div class="text-subtitle2 q-mb-xs">Validation Summary</div>
-                  <div class="row q-gutter-sm">
-                    <q-badge :color="bsValidation.overall_status === 'pass' ? 'positive' : 'negative'" class="text-body2 q-pa-sm">
-                      {{ bsValidation.overall_status === 'pass' ? 'PASS' : 'FAIL' }}
-                    </q-badge>
-                    <q-badge :color="bsValidation.match_percentage >= 95 ? 'positive' : 'warning'" class="text-body2 q-pa-sm">
-                      {{ bsValidation.match_percentage.toFixed(1) }}% Match
-                    </q-badge>
-                    <q-chip dense color="green-2" text-color="green-9">{{ bsValidation.matches }} matches</q-chip>
-                    <q-chip dense color="red-2" text-color="red-9" v-if="bsValidation.mismatches > 0">{{ bsValidation.mismatches }} mismatches</q-chip>
-                  </div>
+              <!-- P&L Period Stats Table -->
+              <div v-if="pnlPeriodRows.length">
+                <div class="text-subtitle2 q-mb-xs">Period Breakdown</div>
+                <q-table
+                  :rows="pnlPeriodRows"
+                  :columns="pnlPeriodColumns"
+                  row-key="period"
+                  dense
+                  flat
+                  bordered
+                  :pagination="{ rowsPerPage: 0 }"
+                  hide-pagination
+                >
+                  <template v-slot:body-cell-match_percentage="props">
+                    <q-td :props="props" class="kdl-numeric">
+                      <q-badge :color="props.row.match_percentage >= 95 ? 'positive' : props.row.match_percentage >= 80 ? 'warning' : 'negative'">
+                        {{ props.row.match_percentage.toFixed(1) }}%
+                      </q-badge>
+                    </q-td>
+                  </template>
+                  <template v-slot:body-cell-mismatches="props">
+                    <q-td :props="props" class="kdl-numeric">
+                      <!-- text-negative permitted here: mismatch count is an explicit variance signal -->
+                      <span :class="props.row.mismatches > 0 ? 'text-negative text-weight-bold' : ''">{{ props.row.mismatches }}</span>
+                    </q-td>
+                  </template>
+                </q-table>
+              </div>
+
+            </div>
+            <EmptyState v-else title="No Profit &amp; Loss data" body="Run a reconciliation to see P&amp;L results." />
+          </div>
+
+          <!-- Balance Sheet Tab -->
+          <div v-show="activeTab === 'bs'">
+            <div v-if="reconciliationResult.balance_sheet">
+
+              <!-- BS Import Summary -->
+              <div v-if="reconciliationResult.balance_sheet.import" class="q-mb-md">
+                <div class="text-subtitle2 q-mb-xs">Import Summary</div>
+                <div class="row q-gutter-md">
+                  <q-chip icon="event" color="grey-3">Report date: {{ reconciliationResult.balance_sheet.import.report_date }}</q-chip>
+                  <q-chip icon="format_list_numbered" color="grey-3">{{ reconciliationResult.balance_sheet.import.lines_created }} lines imported</q-chip>
                 </div>
+              </div>
 
-                <!-- BS Details Table -->
-                <div v-if="bsDetailRows.length">
-                  <div class="text-subtitle2 q-mb-xs">Account Details</div>
-                  <q-table
-                    :rows="bsDetailRows"
-                    :columns="bsDetailColumns"
-                    row-key="account_code"
-                    dense
-                    flat
-                    bordered
-                    :pagination="{ rowsPerPage: 25 }"
-                    :filter="bsFilter"
-                  >
-                    <template v-slot:top-right>
-                      <q-input v-model="bsFilter" dense outlined placeholder="Filter accounts..." class="q-mr-sm">
-                        <template v-slot:append><q-icon name="search" /></template>
-                      </q-input>
+              <!-- BS Validation Summary -->
+              <div v-if="bsValidation" class="q-mb-md">
+                <div class="text-subtitle2 q-mb-xs">Validation Summary</div>
+                <div class="row q-gutter-sm">
+                  <q-badge :color="bsValidation.overall_status === 'pass' ? 'positive' : 'negative'" class="text-body2 q-pa-sm">
+                    {{ bsValidation.overall_status === 'pass' ? 'PASS' : 'FAIL' }}
+                  </q-badge>
+                  <q-badge :color="bsValidation.match_percentage >= 95 ? 'positive' : 'warning'" class="text-body2 q-pa-sm">
+                    {{ bsValidation.match_percentage.toFixed(1) }}% Match
+                  </q-badge>
+                  <q-chip dense color="green-2" text-color="green-9">{{ bsValidation.matches }} matches</q-chip>
+                  <q-chip dense color="red-2" text-color="red-9" v-if="bsValidation.mismatches > 0">{{ bsValidation.mismatches }} mismatches</q-chip>
+                </div>
+              </div>
+
+              <!-- BS Details Table -->
+              <div v-if="bsDetailRows.length">
+                <div class="text-subtitle2 q-mb-xs">Account Details</div>
+                <q-table
+                  :rows="bsDetailRows"
+                  :columns="bsDetailColumns"
+                  row-key="account_code"
+                  dense
+                  flat
+                  bordered
+                  :pagination="{ rowsPerPage: 25 }"
+                  :filter="bsFilter"
+                >
+                  <template v-slot:top-right>
+                    <!-- KInput for filter — note: value bound via bsFilter ref, no Quasar slot magic needed -->
+                    <div class="bs-filter-row">
+                      <KInput
+                        v-model="bsFilter"
+                        placeholder="Filter accounts..."
+                        class="comp-filter-input"
+                      />
                       <q-toggle v-model="bsShowMismatchOnly" label="Mismatches only" dense />
-                    </template>
-                    <template v-slot:body-cell-status="props">
-                      <q-td :props="props">
-                        <q-badge
-                          :color="props.row.status === 'match' ? 'positive' : props.row.status === 'mismatch' ? 'negative' : 'warning'"
-                        >
-                          {{ props.row.status }}
-                        </q-badge>
-                      </q-td>
-                    </template>
-                    <template v-slot:body-cell-xero_value="props">
-                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
-                    </template>
-                    <template v-slot:body-cell-db_value="props">
-                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
-                    </template>
-                    <template v-slot:body-cell-difference="props">
-                      <q-td :props="props" class="kdl-numeric">
-                        <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
-                        <span :class="parseFloat(props.row.difference) !== 0 ? 'text-negative text-weight-bold' : ''">
-                          {{ formatNum(props.row.difference) }}
-                        </span>
-                      </q-td>
-                    </template>
-                  </q-table>
-                </div>
-
+                    </div>
+                  </template>
+                  <template v-slot:body-cell-status="props">
+                    <q-td :props="props">
+                      <q-badge
+                        :color="props.row.status === 'match' ? 'positive' : props.row.status === 'mismatch' ? 'negative' : 'warning'"
+                      >
+                        {{ props.row.status }}
+                      </q-badge>
+                    </q-td>
+                  </template>
+                  <template v-slot:body-cell-xero_value="props">
+                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                  </template>
+                  <template v-slot:body-cell-db_value="props">
+                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                  </template>
+                  <template v-slot:body-cell-difference="props">
+                    <q-td :props="props" class="kdl-numeric">
+                      <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
+                      <span :class="parseFloat(props.row.difference) !== 0 ? 'text-negative text-weight-bold' : ''">
+                        {{ formatNum(props.row.difference) }}
+                      </span>
+                    </q-td>
+                  </template>
+                </q-table>
               </div>
-              <EmptyState v-else title="No Balance Sheet data" body="Run a reconciliation to see Balance Sheet results." />
-            </q-tab-panel>
 
-            <!-- Exceptions Tab -->
-            <q-tab-panel name="exceptions">
-              <EmptyState
-                v-if="allExceptions.length === 0"
-                icon="check_circle"
-                title="No exceptions found"
-                body="All periods and accounts reconcile within tolerance."
+            </div>
+            <EmptyState v-else title="No Balance Sheet data" body="Run a reconciliation to see Balance Sheet results." />
+          </div>
+
+          <!-- Exceptions Tab -->
+          <div v-show="activeTab === 'exceptions'">
+            <EmptyState
+              v-if="allExceptions.length === 0"
+              icon="check_circle"
+              title="No exceptions found"
+              body="All periods and accounts reconcile within tolerance."
+            />
+            <div v-else>
+              <KAlert
+                variant="warning"
+                :body="`${allExceptions.length} exception(s) require attention.`"
+                class="q-mb-md"
               />
-              <div v-else>
-                <q-banner class="bg-orange-1 q-mb-md" rounded>
-                  <template v-slot:avatar><q-icon name="warning" color="warning" /></template>
-                  {{ allExceptions.length }} exception(s) require attention.
-                </q-banner>
 
-                <!-- P&L Period Exceptions -->
-                <div v-if="pnlExceptionPeriods.length" class="q-mb-md">
-                  <div class="text-subtitle1 q-mb-xs">P&amp;L — Periods with Mismatches</div>
-                  <q-table
-                    :rows="pnlExceptionPeriods"
-                    :columns="pnlPeriodColumns"
-                    row-key="period"
-                    dense
-                    flat
-                    bordered
-                    :pagination="{ rowsPerPage: 0 }"
-                    hide-pagination
-                  >
-                    <template v-slot:body-cell-match_percentage="props">
-                      <q-td :props="props" class="kdl-numeric">
-                        <q-badge :color="props.row.match_percentage >= 95 ? 'positive' : props.row.match_percentage >= 80 ? 'warning' : 'negative'">
-                          {{ props.row.match_percentage.toFixed(1) }}%
-                        </q-badge>
-                      </q-td>
-                    </template>
-                    <template v-slot:body-cell-mismatches="props">
-                      <q-td :props="props" class="kdl-numeric">
-                        <!-- text-negative permitted: mismatch count is an explicit variance signal -->
-                        <span class="text-negative text-weight-bold">{{ props.row.mismatches }}</span>
-                      </q-td>
-                    </template>
-                  </q-table>
-                </div>
-
-                <!-- P&L Accounts that mismatch per period -->
-                <div v-if="pnlPeriodExceptionAccounts.length" class="q-mb-md">
-                  <div class="text-subtitle1 q-mb-sm">P&amp;L — Accounts that mismatch per period</div>
-                  <q-list bordered>
-                    <q-expansion-item
-                      v-for="item in pnlPeriodExceptionAccounts"
-                      :key="item.period"
-                      :label="`Period ${item.period} (${item.period_date}) — ${item.accounts.length} account(s) out`"
-                      header-class="text-weight-medium"
-                      default-opened
-                    >
-                      <q-card flat bordered>
-                        <q-table
-                          :rows="item.accounts"
-                          :columns="pnlAccountExceptionColumns"
-                          row-key="account_code"
-                          dense
-                          flat
-                          bordered
-                          :pagination="{ rowsPerPage: 0 }"
-                          hide-pagination
-                        >
-                          <template v-slot:body-cell-status="props">
-                            <q-td :props="props">
-                              <q-badge
-                                :color="props.row.status === 'mismatch' ? 'negative' : 'warning'"
-                              >
-                                {{ props.row.status }}
-                              </q-badge>
-                            </q-td>
-                          </template>
-                          <template v-slot:body-cell-xero_value="props">
-                            <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
-                          </template>
-                          <template v-slot:body-cell-db_value="props">
-                            <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
-                          </template>
-                          <template v-slot:body-cell-difference="props">
-                            <q-td :props="props" class="kdl-numeric">
-                              <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
-                              <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
-                            </q-td>
-                          </template>
-                        </q-table>
-                      </q-card>
-                    </q-expansion-item>
-                  </q-list>
-                </div>
-
-                <!-- BS Account Exceptions -->
-                <div v-if="bsExceptionRows.length">
-                  <div class="text-subtitle1 q-mb-xs">Balance Sheet — Account Exceptions</div>
-                  <q-table
-                    :rows="bsExceptionRows"
-                    :columns="bsDetailColumns"
-                    row-key="account_code"
-                    dense
-                    flat
-                    bordered
-                    :pagination="{ rowsPerPage: 25 }"
-                  >
-                    <template v-slot:body-cell-status="props">
-                      <q-td :props="props">
-                        <q-badge
-                          :color="props.row.status === 'mismatch' ? 'negative' : 'warning'"
-                        >
-                          {{ props.row.status }}
-                        </q-badge>
-                      </q-td>
-                    </template>
-                    <template v-slot:body-cell-xero_value="props">
-                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
-                    </template>
-                    <template v-slot:body-cell-db_value="props">
-                      <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
-                    </template>
-                    <template v-slot:body-cell-difference="props">
-                      <q-td :props="props" class="kdl-numeric">
-                        <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
-                        <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
-                      </q-td>
-                    </template>
-                  </q-table>
-                </div>
+              <!-- P&L Period Exceptions -->
+              <div v-if="pnlExceptionPeriods.length" class="q-mb-md">
+                <div class="text-subtitle1 q-mb-xs">P&amp;L — Periods with Mismatches</div>
+                <q-table
+                  :rows="pnlExceptionPeriods"
+                  :columns="pnlPeriodColumns"
+                  row-key="period"
+                  dense
+                  flat
+                  bordered
+                  :pagination="{ rowsPerPage: 0 }"
+                  hide-pagination
+                >
+                  <template v-slot:body-cell-match_percentage="props">
+                    <q-td :props="props" class="kdl-numeric">
+                      <q-badge :color="props.row.match_percentage >= 95 ? 'positive' : props.row.match_percentage >= 80 ? 'warning' : 'negative'">
+                        {{ props.row.match_percentage.toFixed(1) }}%
+                      </q-badge>
+                    </q-td>
+                  </template>
+                  <template v-slot:body-cell-mismatches="props">
+                    <q-td :props="props" class="kdl-numeric">
+                      <!-- text-negative permitted: mismatch count is an explicit variance signal -->
+                      <span class="text-negative text-weight-bold">{{ props.row.mismatches }}</span>
+                    </q-td>
+                  </template>
+                </q-table>
               </div>
-            </q-tab-panel>
 
-          </q-tab-panels>
+              <!-- P&L Accounts that mismatch per period -->
+              <div v-if="pnlPeriodExceptionAccounts.length" class="q-mb-md">
+                <div class="text-subtitle1 q-mb-sm">P&amp;L — Accounts that mismatch per period</div>
+                <q-list bordered>
+                  <q-expansion-item
+                    v-for="item in pnlPeriodExceptionAccounts"
+                    :key="item.period"
+                    :label="`Period ${item.period} (${item.period_date}) — ${item.accounts.length} account(s) out`"
+                    header-class="text-weight-medium"
+                    default-opened
+                  >
+                    <q-card flat bordered>
+                      <q-table
+                        :rows="item.accounts"
+                        :columns="pnlAccountExceptionColumns"
+                        row-key="account_code"
+                        dense
+                        flat
+                        bordered
+                        :pagination="{ rowsPerPage: 0 }"
+                        hide-pagination
+                      >
+                        <template v-slot:body-cell-status="props">
+                          <q-td :props="props">
+                            <q-badge
+                              :color="props.row.status === 'mismatch' ? 'negative' : 'warning'"
+                            >
+                              {{ props.row.status }}
+                            </q-badge>
+                          </q-td>
+                        </template>
+                        <template v-slot:body-cell-xero_value="props">
+                          <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                        </template>
+                        <template v-slot:body-cell-db_value="props">
+                          <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                        </template>
+                        <template v-slot:body-cell-difference="props">
+                          <q-td :props="props" class="kdl-numeric">
+                            <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
+                            <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
+                          </q-td>
+                        </template>
+                      </q-table>
+                    </q-card>
+                  </q-expansion-item>
+                </q-list>
+              </div>
+
+              <!-- BS Account Exceptions -->
+              <div v-if="bsExceptionRows.length">
+                <div class="text-subtitle1 q-mb-xs">Balance Sheet — Account Exceptions</div>
+                <q-table
+                  :rows="bsExceptionRows"
+                  :columns="bsDetailColumns"
+                  row-key="account_code"
+                  dense
+                  flat
+                  bordered
+                  :pagination="{ rowsPerPage: 25 }"
+                >
+                  <template v-slot:body-cell-status="props">
+                    <q-td :props="props">
+                      <q-badge
+                        :color="props.row.status === 'mismatch' ? 'negative' : 'warning'"
+                      >
+                        {{ props.row.status }}
+                      </q-badge>
+                    </q-td>
+                  </template>
+                  <template v-slot:body-cell-xero_value="props">
+                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.xero_value) }}</q-td>
+                  </template>
+                  <template v-slot:body-cell-db_value="props">
+                    <q-td :props="props" class="kdl-numeric">{{ formatNum(props.row.db_value) }}</q-td>
+                  </template>
+                  <template v-slot:body-cell-difference="props">
+                    <q-td :props="props" class="kdl-numeric">
+                      <!-- text-negative permitted: difference is an explicit variance/delta column (ADR §3) -->
+                      <span class="text-negative text-weight-bold">{{ formatNum(props.row.difference) }}</span>
+                    </q-td>
+                  </template>
+                </q-table>
+              </div>
+            </div>
+          </div>
+
         </SectionCard>
 
       </div>
@@ -420,6 +407,9 @@ import { useFormatCurrency } from '../composables/useFormatCurrency';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import EmptyState from '../components/klikk/EmptyState.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 
 const dataStore = useDataStore();
@@ -455,6 +445,13 @@ const reconciliationResult = ref(null);
 const activeTab = ref('pnl');
 const bsFilter = ref('');
 const bsShowMismatchOnly = ref(false);
+
+// KTabs definition for result tabs
+const resultTabs = computed(() => [
+  { name: 'pnl', label: 'Profit & Loss' },
+  { name: 'bs', label: 'Balance Sheet' },
+  { name: 'exceptions', label: `Exceptions (${exceptionCount.value})` },
+]);
 
 const reconcileForm = reactive({
   financialYear: new Date().getFullYear(),
@@ -604,4 +601,15 @@ async function runReconciliation() {
 .comp-input--xs { min-width: 120px; }
 .comp-input--sm { min-width: 150px; }
 .comp-input--md { min-width: 180px; }
+
+/* Filter row inside BS table top-right slot */
+.bs-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.comp-filter-input {
+  min-width: 200px;
+}
 </style>
