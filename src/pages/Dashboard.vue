@@ -4,19 +4,48 @@
 
     <div class="kdl-app-grid">
       <button class="kdl-app-tile" @click="openDjango()">
-        <q-icon name="dashboard" size="40px" class="kdl-app-tile__icon" />
+        <!-- Lucide layout-dashboard: console/operations concept -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg" width="32" height="32"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+          class="kdl-app-tile__icon" aria-hidden="true"
+        >
+          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+          <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+        </svg>
         <div class="kdl-app-tile__label">Console</div>
         <div class="kdl-app-tile__desc">Xero, Investec, and reporting workflows</div>
       </button>
 
       <button class="kdl-app-tile" @click="openPaw()">
-        <q-icon name="analytics" size="40px" class="kdl-app-tile__icon" />
+        <!-- Lucide bar-chart-3: analytics concept -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg" width="32" height="32"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+          class="kdl-app-tile__icon" aria-hidden="true"
+        >
+          <path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" />
+        </svg>
         <div class="kdl-app-tile__label">Planning Analytics</div>
         <div class="kdl-app-tile__desc">TM1 and PAW on the RedHat VM</div>
       </button>
 
       <button class="kdl-app-tile" @click="openAgent()">
-        <q-icon name="smart_toy" size="40px" class="kdl-app-tile__icon" />
+        <!-- Lucide bot: AI Agent concept -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg" width="32" height="32"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+          class="kdl-app-tile__icon" aria-hidden="true"
+        >
+          <rect x="3" y="11" width="18" height="10" rx="2" />
+          <circle cx="12" cy="5" r="2" />
+          <path d="M12 7v4" />
+          <line x1="8" y1="16" x2="8" y2="16" />
+          <line x1="16" y1="16" x2="16" y2="16" />
+        </svg>
         <div class="kdl-app-tile__label">AI Agent</div>
         <div class="kdl-app-tile__desc">Financial assistant and model tools</div>
       </button>
