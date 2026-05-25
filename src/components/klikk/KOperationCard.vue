@@ -24,7 +24,7 @@
       last-error="Xero API returned 503 — connection timeout after 30s"
       :primary-action="{ label: 'Retry', handler: () => retryRecon() }"
     >
-      <!-- optional body slot for config controls -->
+      (optional body slot for config controls — checkbox, etc.)
     </KOperationCard>
 
   DOCTRINE:
