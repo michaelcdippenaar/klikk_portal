@@ -2,42 +2,18 @@
   <div class="fullscreen flex flex-center login-page">
     <div class="login-card-wrapper">
 
-      <!-- Tally lockup — centred above the form card. Login is the highest-stakes
-           brand moment; the lockup must appear here per finance-admin spec. -->
+      <!-- Environment pill — hidden on production. Derives env from hostname
+           because no VITE_ENV variable is defined in this project.
+           Logic: localhost / 127.0.0.1 / 192.168.x → Development
+                  staging.* → Staging
+                  anything else → Production (pill hidden) -->
+      <div v-if="envLabel !== 'Production'" class="login-env-pill" :class="`login-env-pill--${envLabel.toLowerCase()}`" aria-label="`Environment: ${envLabel}`">
+        {{ envLabel }}
+      </div>
+
+      <!-- Brand lockup — single source of truth via KLockup component -->
       <div class="login-lockup" aria-label="klikk financials">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 240 36"
-          class="login-lockup__svg"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <!-- Tally mark proportional to 36px tall lockup -->
-          <rect x="0" y="5" width="18" height="5.5" rx="2" fill="currentColor" />
-          <rect x="0" y="13" width="13" height="5.5" rx="2" fill="currentColor" />
-          <rect x="0" y="21" width="8" height="5.5" rx="2" fill="currentColor" />
-          <!-- "klikk" — ~28px / 600 for the larger login variant -->
-          <text
-            x="26"
-            y="30"
-            font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
-            font-size="28"
-            font-weight="600"
-            letter-spacing="-0.7"
-            fill="currentColor"
-          >klikk</text>
-          <!-- "financials" — ~18px / 500 / 60% opacity -->
-          <text
-            x="132"
-            y="30"
-            font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
-            font-size="18"
-            font-weight="500"
-            letter-spacing="0.5"
-            fill="currentColor"
-            opacity="0.6"
-          >financials</text>
-        </svg>
+        <KLockup size="lg" class="login-lockup__svg" />
       </div>
 
       <SectionCard description="Sign in to continue">
@@ -51,14 +27,45 @@
             :error-message="usernameError"
           />
 
-          <KInput
-            v-model="password"
-            label="Password"
-            type="password"
-            autocomplete="current-password"
-            :error="!!passwordError"
-            :error-message="passwordError"
-          />
+          <!-- Password field + caps-lock indicator -->
+          <div class="login-password-group">
+            <KInput
+              v-model="password"
+              label="Password"
+              type="password"
+              autocomplete="current-password"
+              :error="!!passwordError"
+              :error-message="passwordError"
+              @keydown="handlePasswordKey"
+              @keyup="handlePasswordKey"
+              @blur="capsLockOn = false"
+            />
+
+            <!-- Caps-lock indicator — info tone, not an error -->
+            <div v-if="capsLockOn" class="login-capslock-hint" role="status" aria-live="polite">
+              <!-- Lucide arrow-big-up at 14px / stroke-width 1.75 -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 18V12H5l7-7 7 7h-4v6H9z" />
+                <path d="M9 21h6" />
+              </svg>
+              Caps Lock is on
+            </div>
+
+            <!-- Forgot password — no password-reset route exists in this project,
+                 so we fall back to a mailto link with a pre-filled subject.
+                 Decision: mailto avoids a 404 and routes the request to a human. -->
+            <div class="login-forgot-row">
+              <a
+                href="mailto:?subject=Klikk%20Financials%20password%20reset"
+                class="login-forgot-link"
+              >Forgot your password?</a>
+            </div>
+          </div>
 
           <KAlert
             v-if="error"
@@ -88,12 +95,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KAlert from '../components/klikk/KAlert.vue';
+import KLockup from '../components/klikk/KLockup.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -106,13 +114,35 @@ const error = ref('');
 const usernameError = ref('');
 const passwordError = ref('');
 
+// ── Caps-lock indicator ────────────────────────────────────────────────────
+const capsLockOn = ref(false);
+
+function handlePasswordKey(event) {
+  capsLockOn.value = event.getModifierState('CapsLock');
+}
+
+// ── Environment detection ──────────────────────────────────────────────────
+// No VITE_ENV defined in this project — derive from hostname.
+//   localhost / 127.x.x.x / 192.168.x.x → Development
+//   staging.*                            → Staging
+//   anything else                        → Production (pill hidden)
+const envLabel = computed(() => {
+  const hostname = window.location.hostname;
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    /^192\.168\./.test(hostname)
+  ) return 'Development';
+  if (/^staging\./.test(hostname)) return 'Staging';
+  return 'Production';
+});
+
+// ── Login handler ──────────────────────────────────────────────────────────
 async function handleLogin() {
-  // Clear previous errors
   error.value = '';
   usernameError.value = '';
   passwordError.value = '';
 
-  // Basic client-side validation
   if (!username.value) {
     usernameError.value = 'Username is required';
     return;
@@ -154,9 +184,38 @@ async function handleLogin() {
   flex-direction: column;
   align-items: center;
   gap: 24px;
+  position: relative;
 }
 
-/* Tally lockup above the form */
+/* ── Environment pill ─────────────────────────────────────────────────────
+   Sits above the lockup, centred. 11px overline-style — exempt from 12px floor
+   per standing policy ("overline labels exempt").
+   Production: hidden (v-if guard above).
+   Development: accent tint (muted, not garish)
+   Staging: warning tint
+──────────────────────────────────────────────────────────────────────────── */
+.login-env-pill {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 2px 10px;
+  border-radius: 20px;
+  line-height: 1.6;
+  align-self: center;
+}
+
+.login-env-pill--development {
+  background: color-mix(in srgb, var(--kdl-accent) 10%, transparent);
+  color: var(--kdl-text-muted);
+}
+
+.login-env-pill--staging {
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  color: #b45309;
+}
+
+/* Brand lockup above the form */
 .login-lockup {
   color: var(--kdl-text-primary);
   display: flex;
@@ -164,16 +223,57 @@ async function handleLogin() {
 }
 
 .login-lockup__svg {
+  /* Height is controlled by KLockup's size="lg" scoped style (36px).
+     Override just in case the parent context needs it explicit. */
   height: 36px;
   width: auto;
-  display: block;
 }
 
-/* Form stack */
+/* ── Form stack ───────────────────────────────────────────────────────────── */
 .login-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Password group: field + caps-lock hint + forgot link */
+.login-password-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Caps-lock indicator ──────────────────────────────────────────────────
+   Info tone: warning-600 colour (#d97706), small, not an error message.
+──────────────────────────────────────────────────────────────────────────── */
+.login-capslock-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d97706;
+  line-height: 1.35;
+}
+
+/* ── Forgot password link ─────────────────────────────────────────────────
+   Right-aligned, muted at rest, accent on hover.
+──────────────────────────────────────────────────────────────────────────── */
+.login-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.login-forgot-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--kdl-text-muted);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+.login-forgot-link:hover {
+  color: var(--kdl-accent);
 }
 
 /* Full-width submit button */
