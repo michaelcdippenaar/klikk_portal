@@ -53,8 +53,8 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 
-const username = ref('mc@tremly.com');
-const password = ref('Number55dip');
+const username = ref('');
+const password = ref('');
 const loading = ref(false);
 const error = ref('');
 
