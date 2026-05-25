@@ -45,9 +45,9 @@
         subtitle="Consolidated view across all entities"
       >
         <template #breadcrumbs>
-          <span style="font-size: 13px; color: var(--kdl-text-muted);">Portal</span>
+          <span class="breadcrumb-muted">Portal</span>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-          <span style="font-size: 13px; color: var(--kdl-text-primary);">Financial Overview</span>
+          <span class="breadcrumb-active">Financial Overview</span>
         </template>
         <template #tenantContext>
           <span class="klikk-badge tone-info">Bosch en Dal</span>
@@ -66,7 +66,7 @@
         <template #actions>
           <button class="btn-ghost btn-sm">View all</button>
         </template>
-        <div style="color: var(--kdl-text-muted); font-size: 15px;">
+        <div class="section-body-text">
           Table content would appear here. SectionCard replaces the
           <code>q-card &gt; q-card-section &gt; q-card-section</code> nesting pattern.
         </div>
@@ -171,5 +171,17 @@ const { isDark, toggleTheme } = useTheme();
 }
 .klikk-preview-section:last-child {
   border-bottom: none;
+}
+.breadcrumb-muted {
+  font-size: 13px;
+  color: var(--kdl-text-muted);
+}
+.breadcrumb-active {
+  font-size: 13px;
+  color: var(--kdl-text-primary);
+}
+.section-body-text {
+  color: var(--kdl-text-muted);
+  font-size: 15px;
 }
 </style>

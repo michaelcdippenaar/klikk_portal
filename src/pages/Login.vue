@@ -1,11 +1,11 @@
 <template>
-  <div class="fullscreen flex flex-center" style="background: var(--kdl-page-bg);">
+  <div class="fullscreen flex flex-center login-page">
     <q-card class="login-card" flat bordered>
       <q-card-section class="q-pb-xs">
-        <div class="text-subtitle1 text-weight-bold text-center" style="color: var(--kdl-text-primary);">
+        <div class="text-subtitle1 text-weight-bold text-center login-title">
           Klikk Financials
         </div>
-        <div class="text-caption text-center q-mt-xs" style="color: var(--kdl-text-muted);">
+        <div class="text-caption text-center q-mt-xs login-subtitle">
           Sign in to continue
         </div>
       </q-card-section>
@@ -85,6 +85,15 @@ async function handleLogin() {
 </script>
 
 <style scoped>
+.login-page {
+  background: var(--kdl-page-bg);
+}
+.login-title {
+  color: var(--kdl-text-primary);
+}
+.login-subtitle {
+  color: var(--kdl-text-muted);
+}
 .login-card {
   width: 100%;
   max-width: 380px;
