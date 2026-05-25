@@ -8,7 +8,7 @@
     >
       <div class="kdl-section-card__meta">
         <h2 v-if="title" class="section-header">{{ title }}</h2>
-        <p v-if="description" class="page-description" style="margin-top: 2px;">{{ description }}</p>
+        <p v-if="description" class="page-description">{{ description }}</p>
       </div>
 
       <div v-if="$slots.actions" class="kdl-section-card__actions">
@@ -40,13 +40,13 @@ defineProps({
 </script>
 
 <style scoped>
-/* SectionCard — finance-admin density pass */
+/* SectionCard — Geist 14px scale (CDO Fix #1) */
 .kdl-section-card__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 12px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--kdl-border-subtle);
 }
 
@@ -58,11 +58,11 @@ defineProps({
 .kdl-section-card__actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .kdl-section-card__body {
-  padding: 14px;
+  padding: 20px;
 }
 </style>

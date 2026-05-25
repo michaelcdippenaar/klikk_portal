@@ -212,13 +212,13 @@ function formatTime(ts) {
 </script>
 
 <style scoped>
-/* ResultPanel — finance-admin density pass */
+/* ResultPanel — Geist 14px scale (CDO Fix #1) */
 .kdl-result-panel {
   border-radius: 6px;
   border: 1px solid var(--kdl-border-subtle);
   background: var(--kdl-raised-bg);
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 14px 16px;
+  font-size: 14px;
 }
 
 .kdl-result-panel--loading {
@@ -287,7 +287,7 @@ function formatTime(ts) {
 }
 
 .kdl-result-panel__meta {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--kdl-text-muted);
   margin-left: auto;
 }
@@ -307,17 +307,17 @@ function formatTime(ts) {
 }
 
 .kdl-result-panel__count-value {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 600;
   line-height: 1.1;
   color: var(--kdl-text-primary);
 }
 
 .kdl-result-panel__count-label {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--kdl-text-muted);
 }
 
@@ -335,7 +335,7 @@ function formatTime(ts) {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: #92400E;
 }
 
@@ -357,7 +357,7 @@ function formatTime(ts) {
   background: none;
   border: none;
   padding: 0;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--kdl-text-muted);
   cursor: pointer;
@@ -375,7 +375,7 @@ function formatTime(ts) {
   border-radius: 6px;
   background: var(--kdl-hover-bg);
   border: 1px solid var(--kdl-border-subtle);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--kdl-text-secondary);
   overflow-x: auto;
   white-space: pre;

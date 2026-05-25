@@ -43,11 +43,11 @@ defineProps({
 </script>
 
 <style scoped>
-/* PageHeader — finance-admin density pass */
+/* PageHeader — Geist 14px scale (CDO Fix #1) */
 .kdl-page-header {
-  padding-bottom: 12px;
+  padding-bottom: 24px;
   border-bottom: 1px solid var(--kdl-border-subtle);
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 .kdl-page-header__crumbs {
