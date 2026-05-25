@@ -13,6 +13,12 @@
     <KInput v-model="notes" label="Notes" help-text="Optional — max 200 characters" />
     <KInput v-model="query" label="Search" icon="search" />
     <KInput v-model="price" label="Price" prefix="R" suffix="ZAR" />
+    <KInput v-model="price" label="Price" type="number" />
+    <KInput v-model="query" label="Search" clearable />
+    <KInput v-model="query" label="Live search" :debounce="300" />
+
+  Numeric coercion: use type="number" — the emitted value will be a JS Number.
+  This is the equivalent of v-model.number in vanilla Vue without modifier pass-through complexity.
 
   Slots:
     #prefix — alternative to the `prefix` string prop (e.g. icon)
@@ -72,10 +78,37 @@
         :aria-invalid="error ? 'true' : undefined"
         :aria-describedby="(error && errorMessage) ? `${inputId}-error` : helpText ? `${inputId}-help` : undefined"
         v-bind="$attrs"
-        @input="$emit('update:modelValue', $event.target.value)"
+        @input="handleInput"
         @focus="isFocused = true"
         @blur="isFocused = false"
       />
+
+      <!-- Clear button — only shown when clearable=true and there is a value -->
+      <button
+        v-if="clearable && hasValue"
+        type="button"
+        class="kinput-clear"
+        aria-label="Clear input"
+        tabindex="-1"
+        @click="clearValue"
+      >
+        <!-- Lucide x — 12px -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
 
       <!-- Suffix string or slot -->
       <span v-if="suffix || $slots.suffix" class="kinput-affix kinput-affix--suffix" aria-hidden="true">
@@ -105,13 +138,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
 
 // Suppress attribute inheritance — we apply $attrs to the <input> directly.
 defineOptions({ inheritAttrs: false });
 
 const props = defineProps({
-  /** v-model binding. */
+  /** v-model binding. Accepts string or number; use type="number" for numeric coercion. */
   modelValue: {
     type: [String, Number],
     default: '',
@@ -121,7 +155,7 @@ const props = defineProps({
     type: String,
     default: null,
   },
-  /** Input type. */
+  /** Input type. Use "number" to coerce the emitted value to a JS Number. */
   type: {
     type: String,
     default: 'text',
@@ -171,15 +205,67 @@ const props = defineProps({
     type: String,
     default: null,
   },
+  /**
+   * Show a clear (×) button when the input has a non-empty value.
+   * Clicking it emits update:modelValue with '' (or 0 for type=number).
+   */
+  clearable: {
+    type: Boolean,
+    default: false,
+  },
+  /**
+   * Debounce the update:modelValue emit by N milliseconds.
+   * Useful for search / filter inputs to avoid hammering the API on every keystroke.
+   * Set to 0 (default) for immediate emit.
+   */
+  debounce: {
+    type: Number,
+    default: 0,
+  },
 });
 
-defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue']);
 
 const isFocused = ref(false);
 
 // Stable, unique id per instance — avoids label/input linkage collisions.
-// Math.random gives sufficient uniqueness for DOM ids in a SPA context.
 const inputId = `kinput-${Math.random().toString(36).slice(2, 8)}`;
+
+/** Whether there is a current non-empty value (drives clearable button visibility). */
+const hasValue = computed(() => {
+  const v = props.modelValue;
+  return v !== '' && v !== null && v !== undefined;
+});
+
+/** Coerce raw string value to the appropriate JS type for the emit. */
+function coerce(rawValue) {
+  if (props.type === 'number') {
+    const n = Number(rawValue);
+    return Number.isNaN(n) ? rawValue : n;
+  }
+  return rawValue;
+}
+
+/** Inner emit — may be wrapped with debounce below. */
+function emitValue(rawValue) {
+  emit('update:modelValue', coerce(rawValue));
+}
+
+/** Potentially-debounced emit function. */
+const debouncedEmit = computed(() => {
+  if (props.debounce > 0) {
+    return useDebounceFn(emitValue, props.debounce);
+  }
+  return emitValue;
+});
+
+function handleInput(event) {
+  debouncedEmit.value(event.target.value);
+}
+
+function clearValue() {
+  emit('update:modelValue', props.type === 'number' ? 0 : '');
+}
 </script>
 
 <style scoped>
@@ -209,7 +295,6 @@ const inputId = `kinput-${Math.random().toString(36).slice(2, 8)}`;
   font-weight: 500;
   line-height: 1.4;
   color: var(--kdl-text-primary);
-  /* cursor pointer highlights the label is interactive */
   cursor: default;
   user-select: none;
 }
@@ -278,6 +363,29 @@ const inputId = `kinput-${Math.random().toString(36).slice(2, 8)}`;
 
 .kinput-field:disabled {
   cursor: not-allowed;
+}
+
+/* Clear button */
+.kinput-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--kdl-border);
+  color: var(--kdl-text-muted);
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1),
+              color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.kinput-clear:hover {
+  background: var(--kdl-text-hint);
+  color: var(--kdl-card-bg);
 }
 
 /* Prefix / suffix affixes */
