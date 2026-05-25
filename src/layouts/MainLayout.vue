@@ -7,32 +7,35 @@
         <span class="kdl-brand-wrapper" role="img" aria-label="Klikk Financials">
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 164 20"
+            viewBox="0 0 196 24"
             class="kdl-brand-lockup"
             aria-hidden="true"
             focusable="false"
           >
-            <rect x="0" y="4" width="12" height="3" rx="1" fill="currentColor" />
-            <rect x="0" y="8.5" width="8" height="3" rx="1" fill="currentColor" />
-            <rect x="0" y="13" width="4" height="3" rx="1" fill="currentColor" />
+            <!-- Tally mark: three bars proportional to 24px tall lockup -->
+            <rect x="0" y="4" width="14" height="4" rx="1.5" fill="currentColor" />
+            <rect x="0" y="10" width="10" height="4" rx="1.5" fill="currentColor" />
+            <rect x="0" y="16" width="6" height="4" rx="1.5" fill="currentColor" />
+            <!-- "klikk" — 18px / 600 -->
             <text
-              x="20"
-              y="14"
+              x="22"
+              y="18"
+              font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
+              font-size="18"
+              font-weight="600"
+              letter-spacing="-0.45"
+              fill="currentColor"
+            >klikk</text>
+            <!-- "financials" — 13px / 500 / 60% opacity -->
+            <text
+              x="87"
+              y="18"
               font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
               font-size="13"
               font-weight="500"
-              letter-spacing="-0.325"
+              letter-spacing="0.5"
               fill="currentColor"
-            >klikk</text>
-            <text
-              x="62"
-              y="14"
-              font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
-              font-size="10"
-              font-weight="400"
-              letter-spacing="0.7"
-              fill="currentColor"
-              opacity="0.4"
+              opacity="0.6"
             >financials</text>
           </svg>
         </span>
@@ -46,7 +49,38 @@
             class="kdl-nav__item"
             :class="{ 'kdl-nav__item--active': isActive(item) }"
           >
-            <q-icon :name="item.icon" size="16px" class="kdl-nav__icon" />
+            <!-- Lucide icons inlined — home / refresh-cw / settings -->
+            <svg
+              v-if="item.name === 'portal'"
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              class="kdl-nav__icon" aria-hidden="true"
+            >
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <svg
+              v-else-if="item.name === 'pipeline'"
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              class="kdl-nav__icon" aria-hidden="true"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            <svg
+              v-else-if="item.name === 'setup'"
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              class="kdl-nav__icon" aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
             {{ item.label }}
           </router-link>
         </nav>
@@ -59,13 +93,54 @@
           :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
           @click="toggleTheme"
         >
-          <q-icon :name="isDark ? 'light_mode' : 'dark_mode'" size="16px" />
+          <!-- Lucide sun (light mode) -->
+          <svg
+            v-if="isDark"
+            xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="5" />
+            <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+          <!-- Lucide moon (dark mode) -->
+          <svg
+            v-else
+            xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
         </button>
 
         <!-- User menu -->
         <div class="kdl-user-trigger" role="button" :aria-label="`User menu — ${userEmail}`" :aria-expanded="userMenuOpen" @click="userMenuOpen = !userMenuOpen" ref="userTriggerRef">
-          <q-icon name="account_circle" size="22px" />
-          <q-icon name="expand_more" size="16px" class="kdl-chevron" :class="{ 'kdl-chevron--open': userMenuOpen }" />
+          <!-- Lucide user -->
+          <svg
+            xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          <!-- Lucide chevron-down -->
+          <svg
+            xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+            class="kdl-chevron" :class="{ 'kdl-chevron--open': userMenuOpen }"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </div>
 
         <!-- User dropdown -->
@@ -78,12 +153,31 @@
           no-parent-event
         >
           <div class="kdl-user-menu__header">
-            <q-icon name="account_circle" size="24px" class="kdl-user-menu__avatar" />
+            <!-- Lucide user (24px in menu header) -->
+            <svg
+              xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              class="kdl-user-menu__avatar" aria-hidden="true"
+            >
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
             <span class="kdl-user-menu__email">{{ userEmail }}</span>
           </div>
           <q-separator />
           <button class="kdl-user-menu__item kdl-user-menu__item--danger" @click="handleLogout">
-            <q-icon name="logout" size="16px" />
+            <!-- Lucide log-out -->
+            <svg
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
             Logout
           </button>
         </q-menu>
@@ -115,9 +209,9 @@ const userTriggerRef = ref(null);
 const userEmail = computed(() => authStore.user?.email || authStore.user?.username || 'User');
 
 const navItems = [
-  { name: 'portal',   label: 'Home',        icon: 'home',     to: { name: 'portal' } },
-  { name: 'pipeline', label: 'Operations',  icon: 'sync',     to: { name: 'pipeline' } },
-  { name: 'setup',    label: 'Setup',       icon: 'settings', to: { name: 'setup' } },
+  { name: 'portal',   label: 'Home',       to: { name: 'portal' } },
+  { name: 'pipeline', label: 'Operations', to: { name: 'pipeline' } },
+  { name: 'setup',    label: 'Setup',      to: { name: 'setup' } },
 ];
 
 function isActive(item) {
@@ -166,7 +260,7 @@ function handleLogout() {
 }
 
 .kdl-brand-lockup {
-  height: 20px;
+  height: 24px;
   width: auto;
   display: block;
 }
