@@ -356,9 +356,10 @@ async function fetchTransactions() {
     transactionCount.value = 0;
     console.error(err);
   } finally {
-    if (thisController.signal.aborted) return;
-    if (fetchAbortController === thisController) fetchAbortController = null;
-    loadingTable.value = false;
+    if (!thisController.signal.aborted) {
+      if (fetchAbortController === thisController) fetchAbortController = null;
+      loadingTable.value = false;
+    }
   }
 }
 
