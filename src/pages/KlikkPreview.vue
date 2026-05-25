@@ -416,6 +416,136 @@
       </div>
     </div>
 
+    <!-- ⑭ KSpinner — loading indicator primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑭ KSpinner — loading indicator (size × tone)</span>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <p class="preview-variant-label">Sizes: xs / sm / md (default) / lg — tone: default</p>
+          <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <span class="preview-variant-label">xs (12px)</span>
+              <KSpinner size="xs" />
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <span class="preview-variant-label">sm (16px)</span>
+              <KSpinner size="sm" />
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <span class="preview-variant-label">md (20px)</span>
+              <KSpinner size="md" />
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <span class="preview-variant-label">lg (32px)</span>
+              <KSpinner size="lg" />
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">Tones: default / accent / muted — size: md</p>
+          <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <KSpinner tone="default" />
+              <span style="font-size: 12px; color: var(--kdl-text-muted);">default</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <KSpinner tone="accent" />
+              <span style="font-size: 12px; color: var(--kdl-text-muted);">accent</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <KSpinner tone="muted" />
+              <span style="font-size: 12px; color: var(--kdl-text-muted);">muted</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">Inline with text — "Syncing journals"</p>
+          <span style="font-size: 13px; color: var(--kdl-text-secondary); display: inline-flex; align-items: center; gap: 6px;">
+            <KSpinner size="sm" tone="accent" />
+            Syncing journals…
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑮ KBadge — count / label / metadata primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑮ KBadge — count / label / metadata (size × tone)</span>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <p class="preview-variant-label">Tones: default / accent / muted — size: md</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <KBadge label="12 new" tone="default" />
+            <KBadge label="v2.4.1" tone="default" />
+            <KBadge label="BETA" tone="accent" />
+            <KBadge label="STAGING" tone="accent" />
+            <KBadge label="archived" tone="muted" />
+            <KBadge label="deprecated" tone="muted" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">Size: sm (tight — table cells, inline metadata)</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <KBadge label="3" tone="accent" size="sm" />
+            <KBadge label="v1.0" tone="default" size="sm" />
+            <KBadge label="read-only" tone="muted" size="sm" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">In context — badge next to a heading</p>
+          <div style="display: inline-flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 600; color: var(--kdl-text-primary);">Journal Automation</span>
+            <KBadge label="BETA" tone="accent" size="sm" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑯ KChip — removable filter pill primitive -->
+    <div class="klikk-preview-section">
+      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑯ KChip — removable filter pill</span>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <p class="preview-variant-label">Static chips (no icon, no remove)</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <KChip label="Bosch en Dal" />
+            <KChip label="Journals" />
+            <KChip label="2024-Q1" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">With leading icon</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <KChip label="Bosch en Dal" icon="building" />
+            <KChip label="Active filter" icon="filter" />
+            <KChip label="admin@klikk.co.za" icon="user" />
+            <KChip label="Jan 2024" icon="calendar" />
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">Removable (click × to remove in demo)</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <KChip
+              v-for="chip in demoChips"
+              :key="chip"
+              :label="chip"
+              icon="tag"
+              removable
+              @remove="removeChip(chip)"
+            />
+            <span v-if="demoChips.length === 0" style="font-size: 12px; color: var(--kdl-text-hint);">All chips removed — reload to reset</span>
+          </div>
+        </div>
+        <div>
+          <p class="preview-variant-label">Disabled state</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <KChip label="Cannot remove" removable disabled icon="filter" />
+            <KChip label="Read-only tag" disabled />
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -436,6 +566,9 @@ import FreshnessChip from '../components/klikk/FreshnessChip.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import PersistentResultStrip from '../components/klikk/PersistentResultStrip.vue';
 import MetricTile from '../components/klikk/MetricTile.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+import KBadge from '../components/klikk/KBadge.vue';
+import KChip from '../components/klikk/KChip.vue';
 
 const { isDark, toggleTheme } = useTheme();
 
@@ -486,6 +619,12 @@ const demoTabsWithIcons = [
 const activePillTab = ref('overview');
 const activeIconTab = ref('summary');
 const activeUnderlineTab = ref('overview');
+
+// ─── KChip demo state ─────────────────────────────────────────────────────
+const demoChips = ref(['Invoices', 'ZAR only', 'Q1 2024', 'Bosch en Dal']);
+function removeChip(chip) {
+  demoChips.value = demoChips.value.filter((c) => c !== chip);
+}
 </script>
 
 <style scoped>
