@@ -9,21 +9,12 @@
       <slot name="form"></slot>
     </q-card-section>
 
-    <q-card-section v-if="loading" class="text-center">
-      <q-spinner color="primary" size="3em" />
-      <div class="q-mt-md text-grey-7">Running process...</div>
-    </q-card-section>
-
-    <q-card-section v-if="result && !loading">
-      <q-badge :color="result.success ? 'positive' : 'negative'" class="q-mb-sm">
-        {{ result.success ? 'Success' : 'Error' }}
-      </q-badge>
-      <div v-if="result.success && (result.data || result.result)">
-        <pre class="q-mt-sm" style="max-height: 300px; overflow: auto; font-size: 12px; font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;">{{ JSON.stringify(result.data || result.result, null, 2) }}</pre>
-      </div>
-      <div v-else-if="result.error" class="text-negative">
-        {{ result.error }}
-      </div>
+    <q-card-section v-if="panelStatus !== 'idle'">
+      <ResultPanel
+        :status="panelStatus"
+        :summary="panelSummary"
+        :rawPayload="panelRawPayload"
+      />
     </q-card-section>
 
     <q-card-actions align="right">
@@ -41,7 +32,10 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue';
+import ResultPanel from './klikk/ResultPanel.vue';
+
+const props = defineProps({
   title: {
     type: String,
     required: true,
@@ -73,4 +67,95 @@ defineProps({
 });
 
 defineEmits(['run']);
+
+/**
+ * Derive the ResultPanel status from loading + result props.
+ * - loading=true           → 'loading'
+ * - result present, success  → 'success'
+ * - result present, !success → 'error'
+ * - no result, not loading   → 'idle'
+ */
+const panelStatus = computed(() => {
+  if (props.loading) return 'loading';
+  if (!props.result) return 'idle';
+  return props.result.success ? 'success' : 'error';
+});
+
+/**
+ * Extract numeric counts from a raw API payload object.
+ * Walks the top level and one level deep for numeric values that look like
+ * operational counters (integers or small numbers). Tolerates unknown shapes.
+ * @param {*} data
+ * @returns {Record<string, number>}
+ */
+function extractCounts(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const counts = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      counts[key] = val;
+    }
+  }
+  return counts;
+}
+
+/**
+ * Extract a timestamp from a raw API payload.
+ * Looks for common timestamp field names.
+ */
+function extractTimestamp(data) {
+  if (!data || typeof data !== 'object') return null;
+  const tsKeys = ['timestamp', 'completed_at', 'updated_at', 'created_at', 'synced_at', 'last_run'];
+  for (const key of tsKeys) {
+    if (data[key]) return data[key];
+  }
+  return null;
+}
+
+/**
+ * Extract warnings from a raw API payload.
+ * Looks for common warning/error list fields.
+ */
+function extractWarnings(data) {
+  if (!data || typeof data !== 'object') return [];
+  const warnKeys = ['warnings', 'errors', 'messages'];
+  for (const key of warnKeys) {
+    if (Array.isArray(data[key]) && data[key].length > 0) {
+      return data[key].map((w) => (typeof w === 'string' ? w : JSON.stringify(w)));
+    }
+  }
+  return [];
+}
+
+/**
+ * Build the summary object for ResultPanel.
+ * On error: { message: string }
+ * On success: { ...counts, timestamp?, warnings? }
+ */
+const panelSummary = computed(() => {
+  if (!props.result) return null;
+
+  if (!props.result.success) {
+    return { message: props.result.error || 'An unexpected error occurred.' };
+  }
+
+  // The raw API response lives in result.result (set by processStore.runProcess)
+  const apiData = props.result.result;
+  const counts = extractCounts(apiData);
+  const timestamp = extractTimestamp(apiData) || new Date().toISOString();
+  const warnings = extractWarnings(apiData);
+
+  const summary = { ...counts, timestamp };
+  if (warnings.length) summary.warnings = warnings;
+  return summary;
+});
+
+/**
+ * The raw payload shown in the disclosure toggle.
+ * On error: the error string. On success: the full API response.
+ */
+const panelRawPayload = computed(() => {
+  if (!props.result) return null;
+  return props.result.success ? props.result.result : { error: props.result.error };
+});
 </script>
