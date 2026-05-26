@@ -318,7 +318,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { ref, computed, shallowRef, watchEffect, watch, nextTick, onMounted } from 'vue';
 import {
   useVueTable,
   getCoreRowModel,
@@ -509,16 +509,29 @@ const rows = computed(() => {
 });
 
 // ── Virtual scroll ────────────────────────────────────────────────────────────
+// useVirtualizer() returns Ref<Virtualizer>. We store that Ref in a shallowRef,
+// then unwrap it via a computed so the template sees the Virtualizer instance
+// directly (one auto-unwrap from the computed, zero leftover wrapping).
+// Calling useVirtualizer inside watchEffect is intentional — the virtualizer
+// manages its own internal reactivity; we only re-init when virtual toggles.
 
-const virtualizer = computed(() => {
-  if (!props.virtual) return null;
-  return useVirtualizer({
+const _virtualizerRef = shallowRef(null); // holds Ref<Virtualizer> | null
+
+watchEffect(() => {
+  if (!props.virtual) {
+    _virtualizerRef.value = null;
+    return;
+  }
+  _virtualizerRef.value = useVirtualizer({
     count: rows.value.length,
     getScrollElement: () => scrollContainerRef.value,
     estimateSize: () => (props.dense ? 32 : 44),
     overscan: 10,
   });
 });
+
+// Unwrap the inner Ref<Virtualizer> so the template receives a Virtualizer instance.
+const virtualizer = computed(() => _virtualizerRef.value?.value ?? null);
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 
