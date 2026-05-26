@@ -8,12 +8,16 @@
     <!-- Main header row -->
     <div class="kdl-page-header__row">
       <div class="kdl-page-header__identity">
-        <!-- Tenant context (e.g. tenant badge / switcher) -->
-        <div v-if="$slots.tenantContext" class="kdl-page-header__tenant">
-          <slot name="tenantContext" />
+        <div class="kdl-page-header__title-row">
+          <h1 class="page-title">{{ title }}</h1>
+          <!-- Tenant context (e.g. tenant badge / switcher) — inline with title, separated by a dot -->
+          <template v-if="$slots.tenantContext">
+            <span class="kdl-page-header__sep" aria-hidden="true">·</span>
+            <span class="kdl-page-header__tenant">
+              <slot name="tenantContext" />
+            </span>
+          </template>
         </div>
-
-        <h1 class="page-title">{{ title }}</h1>
         <p v-if="subtitle" class="page-description">{{ subtitle }}</p>
       </div>
 
@@ -70,8 +74,26 @@ defineProps({
   min-width: 0;
 }
 
+.kdl-page-header__title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kdl-page-header__sep {
+  color: var(--kdl-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 400;
+  user-select: none;
+}
+
 .kdl-page-header__tenant {
-  margin-bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  /* Visual weight matches the page-title baseline, sitting inline next to it */
 }
 
 .kdl-page-header__actions {
