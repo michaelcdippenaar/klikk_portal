@@ -73,6 +73,7 @@ defineProps({
 
 <style scoped>
 /* ── Tooltip content ─────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-tooltip (teleported to body) */
 .kt-content {
   /* Distinct tooltip surface: dark in light mode, slightly lighter in dark */
   background: var(--kdl-text-secondary);
@@ -84,8 +85,6 @@ defineProps({
   border-radius: 6px;
   border: 1px solid transparent;
   max-width: 240px;
-  /* Reka sets z-index via its floating-ui layer */
-  z-index: 9995;
   /* Reka provides data-state for animation targeting */
 }
 

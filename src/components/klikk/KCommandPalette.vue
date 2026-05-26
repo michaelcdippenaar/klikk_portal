@@ -343,10 +343,10 @@ function getIconSvg(name) {
 
 <style scoped>
 /* ── Backdrop ─────────────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-command-palette (Teleport to body) */
 .kcp-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9998;
   background: rgba(0, 0, 0, 0.4);
 }
 
@@ -355,12 +355,12 @@ function getIconSvg(name) {
 }
 
 /* ── Dialog ───────────────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-command-palette + 1 (Teleport to body) */
 .kcp-dialog {
   position: fixed;
   top: 15vh;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 9999;
   width: 100%;
   max-width: 640px;
   border-radius: 12px;

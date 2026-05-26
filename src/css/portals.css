@@ -1,0 +1,82 @@
+/*
+ * portals.css — global z-index rules for Reka-portalled primitives.
+ *
+ * WHY THIS FILE EXISTS
+ * Reka UI teleports dropdown / tooltip / dialog content to <body> via a Portal.
+ * Vue's <style scoped> adds a data-v-<hash> attribute selector that is scoped to
+ * the component's own DOM subtree. Teleported nodes are appended to <body>, which
+ * is outside that subtree, so the scoped attribute is never present on them.
+ * window.getComputedStyle(teleportedEl).zIndex therefore returns "auto", and the
+ * sticky <thead> at z-index 2 paints over the dropdown.
+ *
+ * FIX: declare z-index on portal-content classes in a global (non-scoped) stylesheet.
+ * Each class uses a --kdl-z-* token from klikk.css :root so that the stacking scale
+ * is controlled in one place.
+ *
+ * IMPORTED: src/main.js (after klikk.css).
+ *
+ * CLASSES COVERED
+ *   .kselect-content      — KSelect dropdown (SelectPortal → body)
+ *   .kmselect-content     — KMultiSelect dropdown (ComboboxPortal → body)
+ *   .km-content           — KMenu panel (DropdownMenuPortal → body)
+ *   .kp-content           — KPopover panel (PopoverPortal → body)
+ *   .kt-content           — KTooltip bubble (TooltipPortal → body)
+ *   .kcp-backdrop         — KCommandPalette backdrop (Teleport to body)
+ *   .kcp-dialog           — KCommandPalette dialog (Teleport to body)
+ *   .kd-overlay           — KDialog overlay (DialogPortal → body)
+ *   .kd-content           — KDialog content panel (DialogPortal → body)
+ *   .ktr-viewport         — KToastRegion viewport (ToastProvider → body)
+ *
+ * NOTE: All other rules (trigger styles, item styles, animations, dark-mode
+ * overrides that don't involve z-index) remain in each component's <style scoped>.
+ */
+
+/* ── KSelect dropdown ──────────────────────────────────────────────────────── */
+.kselect-content {
+  z-index: var(--kdl-z-popover);
+}
+
+/* ── KMultiSelect dropdown ─────────────────────────────────────────────────── */
+.kmselect-content {
+  z-index: var(--kdl-z-popover);
+}
+
+/* ── KMenu panel ───────────────────────────────────────────────────────────── */
+.km-content {
+  z-index: var(--kdl-z-menu);
+}
+
+/* ── KPopover panel ────────────────────────────────────────────────────────── */
+.kp-content {
+  z-index: var(--kdl-z-popover);
+}
+
+/* ── KTooltip bubble ───────────────────────────────────────────────────────── */
+.kt-content {
+  z-index: var(--kdl-z-tooltip);
+}
+
+/* ── KCommandPalette ───────────────────────────────────────────────────────── */
+.kcp-backdrop {
+  z-index: var(--kdl-z-command-palette);
+}
+
+.kcp-dialog {
+  /* Dialog sits one unit above its own backdrop */
+  z-index: calc(var(--kdl-z-command-palette) + 1);
+}
+
+/* ── KDialog ───────────────────────────────────────────────────────────────── */
+.kd-overlay {
+  z-index: var(--kdl-z-dialog);
+}
+
+.kd-content {
+  /* Content panel sits one unit above the overlay */
+  z-index: calc(var(--kdl-z-dialog) + 1);
+}
+
+/* ── KToastRegion viewport ─────────────────────────────────────────────────── */
+.ktr-viewport {
+  z-index: var(--kdl-z-toast);
+}

@@ -139,10 +139,10 @@ defineEmits(['update:modelValue']);
 
 <style scoped>
 /* ── Overlay ─────────────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-dialog (DialogPortal → body) */
 .kd-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9998;
   background: rgba(0, 0, 0, 0.4);
 }
 
@@ -151,12 +151,12 @@ defineEmits(['update:modelValue']);
 }
 
 /* ── Content panel ────────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-dialog + 1 (DialogPortal → body) */
 .kd-content {
   position: fixed;
   top: 15vh;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 9999;
   width: calc(100% - 32px);
   background: var(--kdl-card-bg);
   border-radius: 12px;

@@ -7,6 +7,8 @@ import { initTheme } from './composables/useTheme.js';
 
 // CSS — klikk.css owns Tailwind base/components/utilities layers
 import './css/klikk.css';
+// portals.css: global z-index for Reka-portalled nodes (must follow klikk.css for token access)
+import './css/portals.css';
 import './css/app.sass';
 
 // Apply persisted theme to <html> before first paint

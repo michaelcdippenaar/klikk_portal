@@ -460,6 +460,7 @@ function filterOptions(options, search) {
 }
 
 /* Dropdown content */
+/* z-index is set globally in src/css/portals.css via --kdl-z-popover (teleported to body) */
 .kmselect-content {
   background: var(--kdl-card-bg);
   border: 1px solid var(--kdl-border);
@@ -468,7 +469,6 @@ function filterOptions(options, search) {
   min-width: var(--reka-combobox-trigger-width, 200px);
   max-height: 280px;
   overflow: hidden;
-  z-index: 9000;
 }
 
 .kmselect-viewport {

@@ -18,6 +18,19 @@
     --ease-standard:   cubic-bezier(0.2, 0, 0, 1);
     --ease-enter:      cubic-bezier(0, 0, 0, 1);
 
+    /* Z-index stacking scale — Reka portal primitives
+     * All portal-rendered content uses these tokens via portals.css so that
+     * scoped data-v-* attributes (which don't follow teleported nodes) are
+     * never the source of a z-index value.
+     * Order: popovers < menus < tooltips < command-palette < dialogs < toasts
+     */
+    --kdl-z-popover:         1000;
+    --kdl-z-menu:            1100;
+    --kdl-z-tooltip:         1200;
+    --kdl-z-command-palette: 1300;
+    --kdl-z-dialog:          1400;
+    --kdl-z-toast:           1500;
+
     /* Light theme tokens */
     --kdl-page-bg:        #F5F5F8;
     --kdl-card-bg:        #FFFFFF;

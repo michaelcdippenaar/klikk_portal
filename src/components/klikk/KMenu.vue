@@ -80,6 +80,7 @@ defineEmits(['update:modelValue']);
 
 <style scoped>
 /* ── Menu content panel ──────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-menu (teleported to body) */
 .km-content {
   min-width: 200px;
   padding: 4px;
@@ -87,7 +88,6 @@ defineEmits(['update:modelValue']);
   border: 1px solid var(--kdl-border);
   border-radius: 8px;
   box-shadow: var(--shadow-floating);
-  z-index: 9990;
   /* Reka positions this via its floating-ui internals */
 }
 

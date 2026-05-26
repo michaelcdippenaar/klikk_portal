@@ -39,6 +39,7 @@ const { toasts, dismiss } = useToast();
 
 <style scoped>
 /* ── Viewport ─────────────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-toast (ToastProvider → body) */
 .ktr-viewport {
   position: fixed;
   bottom: 24px;
@@ -46,7 +47,6 @@ const { toasts, dismiss } = useToast();
   display: flex;
   flex-direction: column;
   gap: 8px;
-  z-index: 9999;
   /* List semantics from Reka */
   list-style: none;
   margin: 0;

@@ -370,6 +370,7 @@ function clearSelection() {
 }
 
 /* Dropdown content panel */
+/* z-index is set globally in src/css/portals.css via --kdl-z-popover (teleported to body) */
 .kselect-content {
   background: var(--kdl-card-bg);
   border: 1px solid var(--kdl-border);
@@ -378,7 +379,6 @@ function clearSelection() {
   min-width: var(--reka-select-trigger-width);
   max-height: var(--reka-select-content-available-height);
   overflow: hidden;
-  z-index: 9000;
 }
 
 .kselect-viewport {

@@ -82,6 +82,7 @@ defineEmits(['update:modelValue']);
 
 <style scoped>
 /* ── Popover panel ───────────────────────────────────────────────────────── */
+/* z-index is set globally in src/css/portals.css via --kdl-z-popover (teleported to body) */
 .kp-content {
   padding: 12px;
   background: var(--kdl-card-bg);
@@ -90,7 +91,6 @@ defineEmits(['update:modelValue']);
   box-shadow: var(--shadow-floating);
   min-width: 200px;
   max-width: 400px;
-  z-index: 9990;
 }
 
 :root[data-theme="dark"] .kp-content {
