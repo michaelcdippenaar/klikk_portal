@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "klikk-portal",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["quasar", "dev"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 9000
     }
   ]

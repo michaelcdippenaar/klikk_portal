@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HTML table — basic vs reality</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 880px;
+      margin: 40px auto;
+      padding: 0 24px;
+      color: #1a1a1a;
+      line-height: 1.55;
+    }
+    h1, h2 { line-height: 1.2; }
+    h1 { font-size: 28px; margin-bottom: 6px; }
+    h2 { font-size: 20px; margin-top: 40px; margin-bottom: 12px; }
+    p.subtitle { color: #6b7280; margin-top: 0; }
+    code {
+      font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+      background: #f4f4f5;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 12px 0 4px;
+    }
+    th, td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th { font-weight: 600; background: #f9fafb; }
+    .note {
+      background: #fff8e6;
+      border-left: 3px solid #c8922a;
+      padding: 10px 14px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .note strong { color: #8a5b00; }
+    ul { margin: 6px 0 12px; padding-left: 22px; }
+    li { margin: 4px 0; }
+  </style>
+</head>
+<body>
+
+  <h1>HTML table — the basic thing</h1>
+  <p class="subtitle">You're right. The four-tag version is fine.</p>
+
+  <h2>1. Bare HTML — 6 lines</h2>
+  <table>
+    <tr>
+      <th>Date</th>
+      <th>Description</th>
+      <th>Amount</th>
+    </tr>
+    <tr>
+      <td>2026-05-24</td>
+      <td>FIGMA FIGMA.COM US</td>
+      <td>389.26</td>
+    </tr>
+    <tr>
+      <td>2026-05-25</td>
+      <td>DME CIVIL PROJECTS (PTY) LTD</td>
+      <td>90,152.85</td>
+    </tr>
+  </table>
+  <p style="color:#6b7280; font-size: 13px;">That's <code>&lt;table&gt; &lt;tr&gt; &lt;th&gt; &lt;td&gt;</code>. Done.</p>
+
+  <h2>2. Why the portal's table needed more</h2>
+  <p>The portal isn't rendering 3 rows. It's rendering <strong>20,503 bank transactions across 11 accounts</strong>, with seven concerns the bare HTML doesn't address:</p>
+
+  <ul>
+    <li><strong>Virtual scroll</strong> — putting 20k <code>&lt;tr&gt;</code> in the DOM kills the browser. Solution: render only the ~15 visible rows, absolute-position them, recompute on scroll. That's TanStack <code>useVirtualizer</code>.</li>
+    <li><strong>Sort, filter, pagination</strong> — bare HTML doesn't sort. You need a row-model engine (TanStack Table).</li>
+    <li><strong>Sticky thead</strong> — the header has to stay visible when you scroll 20k rows. <code>position: sticky</code> on <code>&lt;thead&gt;</code>.</li>
+    <li><strong>Column alignment</strong> — virtual rows are <code>position: absolute</code>, which means they don't influence column widths. The browser sizes columns from <code>&lt;thead&gt;</code> alone and you get header-left, data-clustered drift. Solution: <code>table-layout: fixed</code> + <code>&lt;colgroup&gt;</code> with explicit widths.</li>
+    <li><strong>Dropdown over thead</strong> — when an Account-selector dropdown opens, sticky thead at <code>z-index: 2</code> covers it. The dropdown is teleported to <code>&lt;body&gt;</code> by the popover library. Its z-index has to be higher (we use a 1000+ token scale).</li>
+    <li><strong>Accessibility</strong> — keyboard sort (Tab + Enter on <code>&lt;th&gt;</code>), <code>aria-controls</code> linking filters → table, <code>aria-live</code> on empty states, screen-reader-friendly result count.</li>
+    <li><strong>Slot contract</strong> — Vue passes the row data to a slot template, but is it <code>row</code> or <code>row.original</code>? Get it wrong, the whole table renders nothing. Twice in one session.</li>
+  </ul>
+
+  <div class="note">
+    <strong>The honest take:</strong> the "drama" wasn't HTML. The four tags work perfectly. The drama was making them work at the scale + interactivity + a11y bar of a finance ops console. Most of the time we were paying for one of those seven concerns, not for the <code>&lt;table&gt;</code> itself.
+  </div>
+
+  <h2>3. Side-by-side</h2>
+  <table>
+    <tr>
+      <th>Concern</th>
+      <th>Bare HTML</th>
+      <th>Production KTable</th>
+    </tr>
+    <tr><td>Render 20k rows</td><td>Browser hangs</td><td>Virtual scroll, ~15 in DOM</td></tr>
+    <tr><td>Sort by column</td><td>None</td><td>Click header / Enter</td></tr>
+    <tr><td>Filter inputs</td><td>None</td><td>Linked via aria-controls</td></tr>
+    <tr><td>Sticky header on scroll</td><td>None</td><td>position: sticky + z-index</td></tr>
+    <tr><td>Column alignment</td><td>Auto from content</td><td>colgroup + table-layout: fixed</td></tr>
+    <tr><td>Dropdown overlays header</td><td>n/a</td><td>Portal + z-index tokens</td></tr>
+    <tr><td>Currency right-align</td><td>Manual per-cell</td><td>meta.align contract</td></tr>
+    <tr><td>Empty state announce</td><td>None</td><td>role=status + aria-live</td></tr>
+    <tr><td>Keyboard nav</td><td>None</td><td>Tab + Enter on th</td></tr>
+  </table>
+
+  <p style="color:#6b7280; font-size: 13px; margin-top: 28px;">
+    <strong>Bottom line:</strong> if the portal only needed to show 50 rows of static data, <code>&lt;table&gt;&lt;tr&gt;&lt;th&gt;&lt;td&gt;</code> would be it. The portal needs to show 20k rows with sort/filter/virtual-scroll/sticky/aria/portals — and the answer to "why so much code?" is: each of those seven concerns is its own primitive.
+  </p>
+
+</body>
+</html>
