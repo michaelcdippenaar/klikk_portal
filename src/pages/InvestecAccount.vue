@@ -82,9 +82,6 @@
         virtual
         :virtualHeight="520"
       >
-        <template #cell-posting_date="{ value }">
-          {{ formatDate(value) }}
-        </template>
         <template #cell-transaction_date="{ value }">
           {{ formatDate(value) }}
         </template>
@@ -178,8 +175,7 @@ const syncResult = ref(null);
 const loadingExport = ref(false);
 
 const kColumns = [
-  { accessorKey: 'posting_date', header: 'Posting date', enableSorting: true },
-  { accessorKey: 'transaction_date', header: 'Transaction date', enableSorting: false },
+  { accessorKey: 'transaction_date', header: 'Date', enableSorting: true },
   { accessorKey: 'account_number', header: 'Account', enableSorting: false },
   { accessorKey: 'account_name', header: 'Account name', enableSorting: false },
   { accessorKey: 'type', header: 'Type', enableSorting: false },
