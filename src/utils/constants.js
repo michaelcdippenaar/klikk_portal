@@ -85,6 +85,7 @@ export const API_ENDPOINTS = {
   // Investec
   INVESTEC_UPLOAD: '/api/investec/upload/',
   INVESTEC_TRANSACTIONS: '/api/investec/transactions/',
+  INVESTEC_PORTFOLIO: '/api/investec/portfolio/',
   INVESTEC_PORTFOLIO_UPLOAD: '/api/investec/portfolio/upload/',
   INVESTEC_MAPPING: '/api/investec/mapping/',
   INVESTEC_UNMAPPED_SHARE_NAMES: '/api/investec/mapping/unmapped-share-names/',

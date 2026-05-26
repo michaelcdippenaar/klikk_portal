@@ -265,6 +265,23 @@ export async function uploadInvestecTransactions(file) {
 }
 
 /**
+ * Get Investec JSE portfolio holdings (paginated).
+ * Params: limit, offset, year, month, share_code.
+ */
+export async function getInvestecPortfolio(params = {}) {
+  const response = await apiClient.get(API_ENDPOINTS.INVESTEC_PORTFOLIO, {
+    params: {
+      limit: params.limit ?? 100,
+      offset: params.offset ?? 0,
+      year: params.year || undefined,
+      month: params.month || undefined,
+      share_code: params.share_code || undefined,
+    },
+  });
+  return response.data;
+}
+
+/**
  * Upload Investec portfolio Excel file(s)
  */
 export async function uploadInvestecPortfolio(files) {
