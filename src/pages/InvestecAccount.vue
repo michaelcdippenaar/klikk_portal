@@ -122,11 +122,13 @@
           <template #cell-transaction_date="{ value }">
             {{ formatDate(value) }}
           </template>
-          <!-- Merged Account column: account_number (primary) + account_name (muted) -->
+          <!-- Merged Account column: account_number (primary) + account_name (muted).
+               KTable's cell slot passes `row` as the raw data object (already unwrapped
+               from TanStack's row.original), so we read row.account_number directly. -->
           <template #cell-account="{ row }">
             <span class="investec-account-cell">
-              <code class="investec-account-num">{{ row.original.account_number }}</code>
-              <span class="investec-account-name">{{ row.original.account_name }}</span>
+              <code class="investec-account-num">{{ row.account_number }}</code>
+              <span class="investec-account-name">{{ row.account_name }}</span>
             </span>
           </template>
           <template #cell-amount="{ value }">
