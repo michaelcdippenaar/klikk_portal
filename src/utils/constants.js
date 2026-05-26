@@ -44,6 +44,10 @@ export const API_ENDPOINTS = {
   PNL_SUMMARY: '/xero/cube/pnl-summary/',
   ACCOUNT_SUMMARY: '/xero/cube/account-summary/',
   
+  // Aged reports — sync triggers
+  SYNC_AGED_PAYABLES: '/xero/data/aged-payables/sync/',
+  SYNC_AGED_RECEIVABLES: '/xero/data/aged-receivables/sync/',
+
   // Sync
   API_CALL_STATS: '/xero/sync/api-call-stats/',
 

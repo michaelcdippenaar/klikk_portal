@@ -8,6 +8,8 @@ import {
   reconcileReports,
   importPnlByTracking,
   syncXeroDocuments,
+  syncAgedPayables,
+  syncAgedReceivables,
 } from '../api/endpoints';
 
 export const useProcessStore = defineStore('processes', () => {
@@ -66,6 +68,12 @@ export const useProcessStore = defineStore('processes', () => {
             transaction_ids: params.transaction_ids,
             types: params.types,
           });
+          break;
+        case 'aged-payables':
+          result = await syncAgedPayables(params.tenantId);
+          break;
+        case 'aged-receivables':
+          result = await syncAgedReceivables(params.tenantId);
           break;
         default:
           throw new Error(`Unknown process type: ${processType}`);

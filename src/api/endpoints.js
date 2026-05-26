@@ -177,6 +177,28 @@ export async function getPnlSummary(tenantId, filters = {}) {
 }
 
 /**
+ * Trigger Aged Payables By Contact sync from Xero into local DB.
+ * Returns { created, updated, skipped, errors, contact_count, completed_at }.
+ */
+export async function syncAgedPayables(tenantId) {
+  const response = await apiClient.post(API_ENDPOINTS.SYNC_AGED_PAYABLES, {
+    tenant_id: tenantId,
+  }, { timeout: 300000 });
+  return response.data;
+}
+
+/**
+ * Trigger Aged Receivables By Contact sync from Xero into local DB.
+ * Returns { created, updated, skipped, errors, contact_count, completed_at }.
+ */
+export async function syncAgedReceivables(tenantId) {
+  const response = await apiClient.post(API_ENDPOINTS.SYNC_AGED_RECEIVABLES, {
+    tenant_id: tenantId,
+  }, { timeout: 300000 });
+  return response.data;
+}
+
+/**
  * Import P&L by tracking category from Xero
  */
 export async function importPnlByTracking(tenantId, options = {}) {

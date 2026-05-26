@@ -159,6 +159,46 @@
         />
       </div>
 
+      <!-- Sync Aged Payables (sidecar — not part of the linear pipeline) -->
+      <div class="processes-stack__item">
+        <PersistentResultStrip
+          v-if="persistedResults.agedPayables"
+          :result="persistedResults.agedPayables"
+          title="Last run"
+          compact
+          class="processes-stack__result-strip"
+        />
+        <KOperationCard
+          title="Sync Aged Payables"
+          description="Pull aged-payables-by-contact report from Xero into the local database"
+          :state="cardState('agedPayables')"
+          :last-run-at="cardLastRunAt('agedPayables')"
+          metric="—"
+          :last-error="cardLastError('agedPayables')"
+          :primary-action="{ label: loading.agedPayables ? 'Running…' : 'Run', handler: runSyncAgedPayables }"
+        />
+      </div>
+
+      <!-- Sync Aged Receivables (sidecar — not part of the linear pipeline) -->
+      <div class="processes-stack__item">
+        <PersistentResultStrip
+          v-if="persistedResults.agedReceivables"
+          :result="persistedResults.agedReceivables"
+          title="Last run"
+          compact
+          class="processes-stack__result-strip"
+        />
+        <KOperationCard
+          title="Sync Aged Receivables"
+          description="Pull aged-receivables-by-contact report from Xero into the local database"
+          :state="cardState('agedReceivables')"
+          :last-run-at="cardLastRunAt('agedReceivables')"
+          metric="—"
+          :last-error="cardLastError('agedReceivables')"
+          :primary-action="{ label: loading.agedReceivables ? 'Running…' : 'Run', handler: runSyncAgedReceivables }"
+        />
+      </div>
+
     </div>
 
 
@@ -260,11 +300,13 @@ const quotaTone = computed(() => {
 // ── Process loading state ─────────────────────────────────────────────────────
 
 const loading = reactive({
-  metadata:     false,
-  data:         false,
-  journals:     false,
-  documents:    false,
-  trailBalance: false,
+  metadata:          false,
+  data:              false,
+  journals:          false,
+  documents:         false,
+  trailBalance:      false,
+  agedPayables:      false,
+  agedReceivables:   false,
 });
 
 // ── Per-process session results (in-memory + localStorage fallback) ───────────
@@ -304,7 +346,7 @@ function savePersistedResult(processId, result) {
 }
 
 // processId keys match the loading/results reactive keys
-const PROCESS_IDS = ['metadata', 'data', 'journals', 'documents', 'trailBalance'];
+const PROCESS_IDS = ['metadata', 'data', 'journals', 'documents', 'trailBalance', 'agedPayables', 'agedReceivables'];
 
 const persistedResults = reactive(
   Object.fromEntries(PROCESS_IDS.map((id) => [id, loadPersistedResult(id)])),
@@ -321,11 +363,13 @@ watch(() => dataStore.selectedTenant, () => {
 // Separate from persistedResults — used only while the session is live.
 
 const sessionState = reactive({
-  metadata:     { state: 'idle', lastRunAt: null, lastError: null },
-  data:         { state: 'idle', lastRunAt: null, lastError: null },
-  journals:     { state: 'idle', lastRunAt: null, lastError: null },
-  documents:    { state: 'idle', lastRunAt: null, lastError: null },
-  trailBalance: { state: 'idle', lastRunAt: null, lastError: null },
+  metadata:        { state: 'idle', lastRunAt: null, lastError: null },
+  data:            { state: 'idle', lastRunAt: null, lastError: null },
+  journals:        { state: 'idle', lastRunAt: null, lastError: null },
+  documents:       { state: 'idle', lastRunAt: null, lastError: null },
+  trailBalance:    { state: 'idle', lastRunAt: null, lastError: null },
+  agedPayables:    { state: 'idle', lastRunAt: null, lastError: null },
+  agedReceivables: { state: 'idle', lastRunAt: null, lastError: null },
 });
 
 // Helpers — derive KOperationCard props from session state
@@ -352,8 +396,13 @@ async function runProcess(processId, params, extraAfter) {
   sessionState[processId].lastError = null;
 
   try {
+    const PROCESS_TYPE_MAP = {
+      trailBalance:    'trail-balance',
+      agedPayables:    'aged-payables',
+      agedReceivables: 'aged-receivables',
+    };
     const result = await processStore.runProcess(
-      processId === 'trailBalance' ? 'trail-balance' : processId,
+      PROCESS_TYPE_MAP[processId] ?? processId,
       params,
     );
 
@@ -431,6 +480,14 @@ function runTrailBalance() {
     },
     () => dataStore.fetchSummary(),
   );
+}
+
+function runSyncAgedPayables() {
+  return runProcess('agedPayables', { tenantId: dataStore.selectedTenant });
+}
+
+function runSyncAgedReceivables() {
+  return runProcess('agedReceivables', { tenantId: dataStore.selectedTenant });
 }
 </script>
 
