@@ -74,7 +74,7 @@
           v-model="perfHours"
           label=""
           :options="[1, 6, 12, 24, 48, 72, 168]"
-          style="width: 100px;"
+          class="am-select--100"
           @update:model-value="loadPerformance"
         />
       </div>
@@ -114,7 +114,7 @@
             v-model="sessionDays"
             label=""
             :options="[1, 3, 7, 14, 30]"
-            style="width: 80px;"
+            class="am-select--80"
             @update:model-value="loadSessions"
           />
         </div>
@@ -212,7 +212,7 @@
             <div class="am-error-item__section-label">Error:</div>
             <pre class="am-code-block">{{ err.error }}</pre>
             <template v-if="err.input">
-              <div class="am-error-item__section-label" style="margin-top:8px">Input:</div>
+              <div class="am-error-item__section-label am-error-item__section-label--gap">Input:</div>
               <pre class="am-code-block am-code-block--scroll">{{ JSON.stringify(err.input, null, 2) }}</pre>
             </template>
           </div>
@@ -228,14 +228,14 @@
           Slow Tools
           <KBadge v-if="slow.count" :label="String(slow.count)" tone="default" />
         </div>
-        <div class="am-section__row" style="gap: 8px;">
+        <div class="am-section__row am-section__row--tight">
           <KInput
             v-model="slowThreshold"
             label=""
             type="number"
-            style="width: 100px;"
+            class="am-input--100"
           />
-          <span class="am-muted" style="font-size:13px; margin-right:4px;">ms</span>
+          <span class="am-muted am-muted--unit">ms</span>
           <button class="btn btn-ghost btn-sm" :disabled="loadingSlow" @click="loadSlowTools">
             <!-- Lucide zap -->
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -842,11 +842,32 @@ onMounted(() => {
   color: var(--kdl-text-muted);
 }
 
+/* Unit label next to threshold input */
+.am-muted--unit {
+  font-size: 13px;
+  margin-right: 4px;
+}
+
 .am-cell--error { color: var(--kdl-status-error); }
 .am-cell--bold  { font-weight: 700; }
 .am-cell--muted { color: var(--kdl-text-hint); }
 
 .font-mono {
   font-family: 'Fira Code', 'Consolas', monospace;
+}
+
+/* Sized selects / inputs */
+.am-select--100 { width: 100px; }
+.am-select--80  { width: 80px; }
+.am-input--100  { width: 100px; }
+
+/* Section row with tight gap override */
+.am-section__row--tight {
+  gap: 8px;
+}
+
+/* Error detail label gap */
+.am-error-item__section-label--gap {
+  margin-top: 8px;
 }
 </style>

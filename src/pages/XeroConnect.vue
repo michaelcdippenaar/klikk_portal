@@ -80,7 +80,7 @@
 
     <!-- Connected Tenants -->
     <div v-if="connectionStatus?.tenants?.length > 0" class="xc-card">
-      <h2 class="xc-card__title" style="margin-bottom: 12px;">Connected Tenants</h2>
+      <h2 class="xc-card__title xc-card__title--spaced">Connected Tenants</h2>
       <div class="xc-tenant-list">
         <div v-for="tenant in connectionStatus.tenants" :key="tenant.tenant_id" class="xc-tenant-row">
           <div class="xc-tenant-row__icon">
@@ -252,6 +252,10 @@ onMounted(async () => {
   font-weight: 600;
   color: var(--kdl-text-primary);
   margin: 0;
+}
+
+.xc-card__title--spaced {
+  margin-bottom: 12px;
 }
 
 .xc-card__desc {

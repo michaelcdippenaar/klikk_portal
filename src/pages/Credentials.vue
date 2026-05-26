@@ -84,7 +84,7 @@
 
     <div v-else-if="tab === 'tm1'" class="cred-panel">
       <div class="cred-card">
-        <div class="cred-card__title" style="margin-bottom: 12px;">TM1 Server</div>
+        <div class="cred-card__title cred-card__title--spaced">TM1 Server</div>
         <KInput v-model="tm1ServerUrl" label="Server URL" placeholder="https://hostname:port" />
         <KInput v-model="tm1Username" label="Username" class="cred-mt" />
         <KInput
@@ -294,6 +294,10 @@ onMounted(() => {
   font-size: 15px;
   font-weight: 600;
   color: var(--kdl-text-primary);
+}
+
+.cred-card__title--spaced {
+  margin-bottom: 12px;
 }
 
 .cred-mt {

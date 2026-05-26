@@ -24,7 +24,7 @@
           v-model="calendarFilter"
           label=""
           :options="calendarFilterOpts"
-          style="width: 160px;"
+          class="df-calendar-filter"
         />
         <div class="df-toolbar__spacer" />
         <button class="btn btn-ghost btn-sm" @click="loadCalendar">
@@ -86,7 +86,7 @@
             v-model="row.dividend_category"
             label=""
             :options="categoryOpts"
-            style="min-width: 90px;"
+            class="df-category-select"
             @update:model-value="v => handleCategoryChange(row, v)"
           />
         </template>
@@ -108,10 +108,10 @@
     <div v-else-if="tab === 'forecast'" class="df-tab">
       <!-- Read forecast -->
       <div class="df-form-row">
-        <KInput v-model="forecastShare" label="Share code" placeholder="e.g. ABG" style="flex: 1; max-width: 180px;" />
-        <KInput v-model="forecastYear" label="Year" placeholder="2026" style="max-width: 100px;" />
-        <KSelect v-model="forecastMonth" label="Month" :options="monthOpts" style="max-width: 120px;" />
-        <button class="btn btn-primary btn-sm" :disabled="readingForecast" @click="handleReadForecast" style="align-self: flex-end;">
+        <KInput v-model="forecastShare" label="Share code" placeholder="e.g. ABG" class="df-share-input" />
+        <KInput v-model="forecastYear" label="Year" placeholder="2026" class="df-year-input" />
+        <KSelect v-model="forecastMonth" label="Month" :options="monthOpts" class="df-month-select" />
+        <button class="btn btn-primary btn-sm df-form-btn" :disabled="readingForecast" @click="handleReadForecast">
           <!-- Lucide search -->
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           {{ readingForecast ? 'Reading…' : 'Read forecast' }}
@@ -145,11 +145,11 @@
       <div class="df-card">
         <div class="df-card__title">Write adjustment</div>
         <div class="df-form-row">
-          <KInput v-model="adjustShare" label="Share code" style="flex: 1; max-width: 180px;" />
-          <KInput v-model="adjustDps" label="Declared DPS" type="number" style="max-width: 140px;" />
-          <KInput v-model="adjustYear" label="Year" style="max-width: 100px;" />
-          <KSelect v-model="adjustMonth" label="Month" :options="monthOpts" style="max-width: 120px;" />
-          <div class="df-btn-group" style="align-self: flex-end;">
+          <KInput v-model="adjustShare" label="Share code" class="df-share-input" />
+          <KInput v-model="adjustDps" label="Declared DPS" type="number" class="df-dps-input" />
+          <KInput v-model="adjustYear" label="Year" class="df-year-input" />
+          <KSelect v-model="adjustMonth" label="Month" :options="monthOpts" class="df-month-select" />
+          <div class="df-btn-group df-btn-group--end">
             <button class="btn btn-ghost btn-sm" :disabled="adjusting" @click="handleAdjust(false)">Dry run</button>
             <button class="btn btn-primary btn-sm" :disabled="adjusting" @click="handleAdjust(true)">Write</button>
           </div>
@@ -186,7 +186,7 @@
         </div>
       </div>
 
-      <button class="btn btn-primary" :disabled="workflowRunning" @click="runSelectedWorkflowSteps" style="margin-bottom: 16px;">
+      <button class="btn btn-primary df-run-btn" :disabled="workflowRunning" @click="runSelectedWorkflowSteps">
         <!-- Lucide play-circle -->
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
         {{ workflowRunning ? 'Running…' : 'Run selected steps' }}
@@ -818,4 +818,15 @@ export default defineComponent({
 .df-warn    { color: var(--kdl-status-warning); }
 .df-bold    { font-weight: 600; }
 .df-currency { font-size: 11px; color: var(--kdl-text-hint); margin-left: 3px; }
+
+/* Form field sizing */
+.df-calendar-filter { width: 160px; }
+.df-category-select { min-width: 90px; }
+.df-share-input     { flex: 1; max-width: 180px; }
+.df-year-input      { max-width: 100px; }
+.df-month-select    { max-width: 120px; }
+.df-dps-input       { max-width: 140px; }
+.df-form-btn        { align-self: flex-end; }
+.df-btn-group--end  { align-self: flex-end; }
+.df-run-btn         { margin-bottom: 16px; }
 </style>

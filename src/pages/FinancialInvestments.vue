@@ -9,7 +9,7 @@
           v-model="newSymbol"
           label=""
           placeholder="Add symbol"
-          style="max-width: 140px;"
+          class="fi-symbol-input"
           @keyup.enter="addSymbol"
         />
         <button class="btn btn-primary btn-sm" :disabled="addingSymbol || !newSymbol.trim()" @click="addSymbol">
@@ -131,9 +131,9 @@
             <!-- Prices / Overview -->
             <template v-if="detailTab === 'prices'">
               <div class="fi-date-row">
-                <KInput v-model="startDate" label="From" type="date" style="max-width: 160px;" />
-                <KInput v-model="endDate" label="To" type="date" style="max-width: 160px;" />
-                <button class="btn btn-ghost btn-sm" :disabled="loadingHistory" @click="loadHistory" style="align-self: flex-end;">
+                <KInput v-model="startDate" label="From" type="date" class="fi-date-input" />
+                <KInput v-model="endDate" label="To" type="date" class="fi-date-input" />
+                <button class="btn btn-ghost btn-sm fi-date-btn" :disabled="loadingHistory" @click="loadHistory">
                   {{ loadingHistory ? 'Loading…' : 'Load' }}
                 </button>
               </div>
@@ -184,7 +184,7 @@
 
             <!-- Financials -->
             <template v-else-if="detailTab === 'financials'">
-              <KSelect v-model="financialsFreq" label="" :options="['yearly', 'quarterly', 'trailing']" style="max-width: 140px; margin-bottom: 8px;" @update:model-value="loadFinancials" />
+              <KSelect v-model="financialsFreq" label="" :options="['yearly', 'quarterly', 'trailing']" class="fi-freq-select" @update:model-value="loadFinancials" />
               <div v-if="loadingExtra.financials" class="text-muted">Loading…</div>
               <div v-else-if="financialStatements.length">
                 <div v-for="stmt in financialStatements" :key="stmt.statement_type" class="fi-stmt">
@@ -197,7 +197,7 @@
 
             <!-- Earnings -->
             <template v-else-if="detailTab === 'earnings'">
-              <KSelect v-model="earningsFreq" label="" :options="['yearly', 'quarterly', 'trailing']" style="max-width: 140px; margin-bottom: 8px;" @update:model-value="loadEarnings" />
+              <KSelect v-model="earningsFreq" label="" :options="['yearly', 'quarterly', 'trailing']" class="fi-freq-select" @update:model-value="loadEarnings" />
               <div v-if="loadingExtra.earnings" class="text-muted">Loading…</div>
               <pre v-else-if="earningsData.length" class="fi-json-pre fi-json-pre--tall">{{ JSON.stringify(earningsData, null, 2) }}</pre>
               <p v-else class="text-muted">No earnings data. Click "Refresh extra data" to fetch.</p>
@@ -818,4 +818,23 @@ onMounted(async () => {
 .fi-num { display: block; text-align: right; }
 .fi-pos { color: var(--kdl-status-success); }
 .fi-neg { color: var(--kdl-status-error); }
+
+/* Toolbar symbol add input */
+.fi-symbol-input {
+  max-width: 140px;
+}
+
+/* Date range inputs + load button in prices tab */
+.fi-date-input {
+  max-width: 160px;
+}
+.fi-date-btn {
+  align-self: flex-end;
+}
+
+/* Frequency select in financials / earnings tabs */
+.fi-freq-select {
+  max-width: 140px;
+  margin-bottom: 8px;
+}
 </style>
