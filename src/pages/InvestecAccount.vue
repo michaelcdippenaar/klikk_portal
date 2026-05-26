@@ -102,9 +102,26 @@
         >
           Previous
         </button>
-        <span class="text-sm text-muted">
-          {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
-        </span>
+        <div class="flex items-center gap-3 text-sm text-muted">
+          <span>
+            {{ pagination.offset + 1 }}–{{ Math.min(pagination.offset + pagination.rowsPerPage, transactionCount) }} of {{ transactionCount }}
+          </span>
+          <label class="flex items-center gap-2">
+            <span>Rows</span>
+            <select
+              class="input input-sm"
+              :value="pagination.rowsPerPage"
+              @change="onPageSizeChange($event.target.value)"
+            >
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+              <option :value="250">250</option>
+              <option :value="500">500</option>
+              <option :value="1000">1000</option>
+              <option :value="transactionCount">All</option>
+            </select>
+          </label>
+        </div>
         <button
           class="btn btn-ghost btn-sm"
           :disabled="pagination.offset + pagination.rowsPerPage >= transactionCount"
@@ -333,6 +350,14 @@ async function fetchTransactions() {
 
 function goPage(delta) {
   pagination.offset = Math.max(0, pagination.offset + delta * pagination.rowsPerPage);
+  fetchTransactions();
+}
+
+function onPageSizeChange(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return;
+  pagination.rowsPerPage = n;
+  pagination.offset = 0;
   fetchTransactions();
 }
 
