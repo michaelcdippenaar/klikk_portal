@@ -85,7 +85,12 @@
     </div>
 
     <!-- ── Empty state ──────────────────────────────────────────────────── -->
-    <div v-else-if="!loading && !error && !data.length" class="ktable-state-wrapper">
+    <div
+      v-else-if="!loading && !error && !data.length"
+      class="ktable-state-wrapper"
+      role="status"
+      aria-live="polite"
+    >
       <slot name="empty">
         <EmptyState title="No data" body="There are no rows to display.">
           <template #icon>
@@ -104,6 +109,7 @@
       v-else
       class="ktable-scroll-container"
       ref="scrollContainerRef"
+      :id="regionId"
       :style="virtual ? { height: `${virtualHeight}px`, overflowY: 'auto' } : {}"
     >
       <!-- Loading overlay (data already present) -->
@@ -139,7 +145,10 @@
                 'ktable-th--align-center': header.column.columnDef.meta?.align === 'center',
               }"
               :aria-sort="ariaSort(header.column.getIsSorted())"
+              :tabindex="header.column.getCanSort() ? 0 : -1"
               @click="header.column.getCanSort() ? header.column.toggleSorting(false, $event.shiftKey) : undefined"
+              @keydown.enter.prevent="header.column.getCanSort() ? header.column.toggleSorting(false) : undefined"
+              @keydown.space.prevent="header.column.getCanSort() ? header.column.toggleSorting(false) : undefined"
             >
               <div class="ktable-th__inner">
                 <!-- Checkbox column header -->
@@ -336,7 +345,7 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, watch, nextTick, onMounted, onScopeDispose, effectScope } from 'vue';
+import { ref, computed, shallowRef, watch, onMounted, onScopeDispose, effectScope } from 'vue';
 import {
   useVueTable,
   getCoreRowModel,
@@ -355,6 +364,12 @@ import KAlert from './KAlert.vue';
 // ── Props ────────────────────────────────────────────────────────────────────
 
 const props = defineProps({
+  /**
+   * Optional id to apply to the scrollable table region.
+   * Consumers pass this id to aria-controls on their filter inputs.
+   * Auto-generated (kt-<random>) if omitted.
+   */
+  id: { type: String, default: null },
   /** TanStack ColumnDef array. */
   columns: { type: Array, required: true },
   /** The row data. */
@@ -425,6 +440,15 @@ const columnVisibility = ref(props.visibleColumns ?? {});
 const rowSelection = ref(buildSelectionState(props.selectedRowIds));
 const visMenuOpen = ref(false);
 const scrollContainerRef = ref(null);
+
+// ── Region id (for aria-controls) ────────────────────────────────────────────
+// Vue 3.4 does not have useId(); generate a stable id once at setup.
+// Consumers can override via the :id prop; KTable exposes the resolved id
+// so consumers can bind aria-controls without knowing the auto-generated value.
+const _autoId = `kt-${Math.random().toString(36).slice(2, 9)}`;
+const regionId = computed(() => props.id ?? _autoId);
+
+defineExpose({ regionId });
 
 // ── Selection helpers ────────────────────────────────────────────────────────
 
@@ -792,6 +816,11 @@ onMounted(() => {
 
 .ktable-th--sortable:hover {
   background: var(--kdl-hover-bg);
+}
+
+.ktable-th--sortable:focus-visible {
+  outline: 2px solid var(--kdl-accent);
+  outline-offset: -2px;
 }
 
 .ktable-th--sorted {
