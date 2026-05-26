@@ -6,7 +6,9 @@
   Respects prefers-reduced-motion: animation stops, static icon shown.
 
   API:
-    size?   ('xs' | 'sm' | 'md' | 'lg') — 12 / 16 / 20 / 32 px icon. Default 'md'.
+    size?   ('xs' | 'sm' | 'md' | 'lg' | number | numeric-string) — preset: 12/16/20/32 px;
+            or an exact pixel value as a number or numeric string (e.g. :size="14" or size="14").
+            Default 'md'.
     label?  (string) — sr-only text for screen readers. Default 'Loading'.
     tone?   ('default' | 'accent' | 'muted') — colour variant. Default 'default'.
 
@@ -17,7 +19,7 @@
 <template>
   <span
     class="kspinner"
-    :class="[`kspinner--${tone}`, `kspinner--${size}`]"
+    :class="[`kspinner--${tone}`, isPreset ? `kspinner--${size}` : null]"
     role="status"
     aria-live="polite"
   >
@@ -43,21 +45,35 @@
   </span>
 </template>
 
+<!--
+  Module-scope constants exported here are accessible in <script setup> AND
+  inside defineProps() validators without triggering Vue's "cannot reference
+  locally declared variables" compile error.
+-->
+<script>
+export const SPINNER_PRESETS = ['xs', 'sm', 'md', 'lg'];
+export const SPINNER_SIZE_MAP = { xs: 12, sm: 16, md: 20, lg: 32 };
+</script>
+
 <script setup>
 import { computed } from 'vue';
 
 const props = defineProps({
   /**
-   * Icon size variant.
-   *   'xs' — 12px   (tight inline use, e.g. inside a button)
-   *   'sm' — 16px   (table cells, compact UIs)
-   *   'md' — 20px   (default; card-level loading)
-   *   'lg' — 32px   (full-section / page-level loading)
+   * Icon size.
+   *   Preset strings: 'xs' — 12px | 'sm' — 16px | 'md' — 20px | 'lg' — 32px.
+   *   Numeric or numeric-string: renders the spinner at exactly that pixel size.
+   *   e.g. :size="14" or size="14" → 14px.
    */
   size: {
-    type: String,
+    type: [String, Number],
     default: 'md',
-    validator: (v) => ['xs', 'sm', 'md', 'lg'].includes(v),
+    validator: (v) => {
+      if (typeof v === 'number') return v > 0;
+      if (SPINNER_PRESETS.includes(v)) return true;
+      const n = Number(v);
+      return !Number.isNaN(n) && n > 0;
+    },
   },
   /**
    * Screen-reader-only label announced to assistive technology.
@@ -79,8 +95,14 @@ const props = defineProps({
   },
 });
 
-const SIZE_MAP = { xs: 12, sm: 16, md: 20, lg: 32 };
-const px = computed(() => SIZE_MAP[props.size]);
+/** Whether the current size value is a preset string key. */
+const isPreset = computed(() => SPINNER_PRESETS.includes(String(props.size)));
+
+/** Resolved pixel size — preset map lookup or direct numeric value. */
+const px = computed(() => {
+  if (isPreset.value) return SPINNER_SIZE_MAP[props.size];
+  return Number(props.size);
+});
 </script>
 
 <style scoped>
