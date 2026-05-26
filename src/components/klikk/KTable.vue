@@ -27,6 +27,45 @@
     />
 
   API: frozen as of Phase 1.E — any change is a breaking change (open a ticket).
+
+  ════════════════════════════════════════════════════════════════════════════════
+  SLOT CONTRACT — cell-<columnId>
+  ════════════════════════════════════════════════════════════════════════════════
+
+  Each cell slot receives three named bindings:
+
+    - value:  the result of cell.getValue() — the field value for this cell
+              (i.e. what the accessorKey or accessorFn returns).
+
+    - row:    the RAW DATA OBJECT — TanStack's row.original, already unwrapped.
+              Access fields directly on `row`. Do NOT use `row.original`.
+
+              ✓ Correct:    row.account_number
+              ✗ WRONG:      row.original.account_number   (row IS row.original)
+
+    - cell:   the TanStack Cell<T> instance — for advanced / escape-hatch use.
+              Rarely needed. Use `value` for the rendered value and `row` for
+              sibling fields.
+
+  Example — merged account cell reading two fields from the same row:
+    <template #cell-account="{ row }">
+      <code>{{ row.account_number }}</code>
+      <span class="muted">{{ row.account_name }}</span>
+    </template>
+
+  Example — cell slot using value + a sibling field for tooltip:
+    <template #cell-prior_year_dps="{ value, row }">
+      <span :title="row.prior_year_date ? `Prior year: ${row.prior_year_date}` : ''">
+        {{ value != null ? value.toFixed(4) : '—' }}
+      </span>
+    </template>
+
+  For sort-disabled merged-content columns (e.g. account_number + account_name
+  rendered as one cell), use `enableSorting: false` and read each field from
+  `row` directly. Do NOT use a synthetic accessorKey that doesn't exist on the
+  data — TanStack will not be able to extract a value for that column.
+
+  ════════════════════════════════════════════════════════════════════════════════
 -->
 <template>
   <div
