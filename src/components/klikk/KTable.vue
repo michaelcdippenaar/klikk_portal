@@ -112,6 +112,15 @@
       </div>
 
       <table class="ktable" :class="{ 'ktable--loading': loading }">
+        <!-- ── <colgroup> — drives column widths for both thead and virtual tbody ── -->
+        <colgroup>
+          <col
+            v-for="header in table.getHeaderGroups()[0]?.headers ?? []"
+            :key="header.id"
+            :style="colWidth(header.column)"
+          />
+        </colgroup>
+
         <!-- ── <thead> ──────────────────────────────────────────────── -->
         <thead class="ktable-thead">
           <tr
@@ -127,7 +136,6 @@
                 'ktable-th--sortable': header.column.getCanSort(),
                 'ktable-th--sorted': header.column.getIsSorted(),
               }"
-              :style="header.column.columnDef.meta?.width ? { width: header.column.columnDef.meta.width } : {}"
               :aria-sort="ariaSort(header.column.getIsSorted())"
               @click="header.column.getCanSort() ? header.column.toggleSorting(false, $event.shiftKey) : undefined"
             >
@@ -554,6 +562,19 @@ function handleRowClick(row) {
   emit('row-click', original);
 }
 
+// ── Column width helper (for <colgroup>) ──────────────────────────────────────
+// Priority: meta.width (string, e.g. '180px') > column.getSize() (number, px) > 150px default.
+// With table-layout: fixed the browser respects these widths regardless of whether
+// body rows are in normal flow (non-virtual) or absolutely positioned (virtual).
+
+function colWidth(column) {
+  const meta = column.columnDef.meta;
+  if (meta?.width) return { width: meta.width };
+  const size = column.getSize?.();
+  if (size && size !== 150) return { width: `${size}px` };
+  return { width: `${size || 150}px` };
+}
+
 // ── Aria sort ─────────────────────────────────────────────────────────────────
 
 function ariaSort(sorted) {
@@ -693,7 +714,7 @@ onMounted(() => {
   border-collapse: collapse;
   font-size: 13px;
   color: var(--kdl-text-primary);
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 .ktable--loading {
