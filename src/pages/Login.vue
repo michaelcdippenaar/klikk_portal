@@ -1,4 +1,5 @@
 <template>
+  <!-- AppPage intentionally omitted: Login is a full-screen centred page outside the app shell. -->
   <div class="fullscreen flex flex-center login-page">
     <div class="login-card-wrapper">
 

@@ -1,4 +1,6 @@
 <template>
+  <!-- AppPage intentionally omitted: AiAgent is a full-viewport chat shell with its
+       own topbar and flex layout. AppPage's padding would fight the sidebar/chat layout. -->
   <div class="ai-agent-page">
     <!-- Custom topbar with session/project badges -->
     <div class="ai-topbar">

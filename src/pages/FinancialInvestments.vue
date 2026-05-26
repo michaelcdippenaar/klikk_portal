@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="Watchlist" subtitle="Stock data from yfinance — select a symbol for details and chart" />
 
     <div class="fi-toolbar">
@@ -271,11 +271,12 @@
         </div>
       </div>
     </div>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import FinancialLineChart from '../components/FinancialLineChart.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';

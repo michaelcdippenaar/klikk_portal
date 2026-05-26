@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
 
     <!-- ── 1. Page header — quota pill in actions slot ─────────────────────── -->
     <PageHeader
@@ -206,11 +206,12 @@
       </details>
     </div>
 
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
 import PageHeader from '../components/klikk/PageHeader.vue';

@@ -1,5 +1,5 @@
 <template>
-  <div class="p-4">
+  <AppPage>
     <PageHeader title="Data Viewer" subtitle="Explore trial balance, P&amp;L summaries, and line items">
       <template #tenantContext>
         <TenantSelector />
@@ -670,12 +670,13 @@
         </SectionCard>
       </div>
     </template>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import AppPage from '../components/shell/AppPage.vue';
 import { useDataStore } from '../stores/data';
 import { useFormatCurrency } from '../composables/useFormatCurrency.js';
 import PageHeader from '../components/klikk/PageHeader.vue';

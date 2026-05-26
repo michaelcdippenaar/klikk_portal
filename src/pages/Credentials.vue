@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="Credentials" subtitle="Manage API keys and service credentials — saved to database, no restart needed" />
 
     <KTabs
@@ -111,11 +111,12 @@
       </div>
     </div>
 
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import { useToast } from '../composables/useToast';
 import { listCredentials, setCredential } from '../api/skills';
 import PageHeader from '../components/klikk/PageHeader.vue';

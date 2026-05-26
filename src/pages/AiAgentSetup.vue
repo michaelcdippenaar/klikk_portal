@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="AI Agent Setup" subtitle="Manage skills, tools, and routing keywords" />
 
     <div class="setup-header">
@@ -115,11 +115,12 @@
         </div>
       </template>
     </KDialog>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import { useToast } from '../composables/useToast';
 import { listSkills, getSkillDetail, updateSkill } from '../api/skills';
 import PageHeader from '../components/klikk/PageHeader.vue';

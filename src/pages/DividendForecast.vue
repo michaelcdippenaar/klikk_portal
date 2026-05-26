@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="Dividend Forecast Budget" subtitle="Manage dividend calendar and TM1 forecast adjustments" />
 
     <KTabs
@@ -277,11 +277,12 @@
         <button class="btn btn-ghost btn-sm" @click="adjustDialogOpen = false">Close</button>
       </template>
     </KDialog>
-  </div>
+  </AppPage>
 </template>
 
 <script>
 import { defineComponent, ref, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import {
   getDividendCalendar,
   checkDeclaredDividends,
@@ -305,7 +306,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export default defineComponent({
   name: 'DividendForecast',
-  components: { PageHeader, KTabs, KTable, KInput, KSelect, KCheckbox, KDialog, StatusPill },
+  components: { AppPage, PageHeader, KTabs, KTable, KInput, KSelect, KCheckbox, KDialog, StatusPill },
   setup() {
     const tab = ref('calendar');
 

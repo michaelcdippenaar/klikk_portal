@@ -1,4 +1,5 @@
 <template>
+  <!-- AppPage intentionally omitted: Error404 is a full-screen centred error page outside the normal layout. -->
   <div class="error-404-page">
     <EmptyState
       title="Page not found"

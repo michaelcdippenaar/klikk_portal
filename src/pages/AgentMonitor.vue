@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="Agent Monitor" subtitle="Performance, health, and diagnostics">
       <template #actions>
         <button class="btn btn-ghost btn-sm" :disabled="loading" @click="refreshAll">
@@ -258,11 +258,12 @@
       </KTable>
       <div v-else class="am-muted">Click Load to find slow tool executions</div>
     </div>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import { useToast } from '../composables/useToast';
 import { fetchPerformance, fetchSessions, fetchHealth, fetchErrors, fetchSlowTools } from '../api/monitor';
 import PageHeader from '../components/klikk/PageHeader.vue';

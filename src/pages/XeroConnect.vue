@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="Xero Connection" subtitle="Configure API credentials and connect to your Xero organisation" />
 
     <!-- Callback result banners -->
@@ -107,11 +107,12 @@
       <div class="xc-skeleton-line xc-skeleton-line--short"></div>
       <div class="xc-skeleton-line xc-skeleton-line--long"></div>
     </div>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import AppPage from '../components/shell/AppPage.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from '../composables/useToast';
 import { useDataStore } from '../stores/data';

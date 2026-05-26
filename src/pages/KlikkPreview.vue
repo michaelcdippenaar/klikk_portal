@@ -1,5 +1,6 @@
 <template>
   <!-- DEV ONLY — not exposed in the app nav. Access via /_klikk-preview -->
+  <!-- AppPage intentionally omitted: KlikkPreview is a dev-only component preview with its own inline padding. -->
   <div style="padding: 24px; max-width: 900px; margin: 0 auto;">
 
     <!-- Theme toggle -->

@@ -1,5 +1,5 @@
 <template>
-  <div class="page-content">
+  <AppPage>
     <PageHeader title="Dashboard" subtitle="System status — Xero, Investec, Planning Analytics">
       <template #tenantContext>
         <TenantSelector />
@@ -366,13 +366,14 @@
       </div>
 
     </template>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 
+import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import FreshnessChip from '../components/klikk/FreshnessChip.vue';

@@ -1,4 +1,5 @@
 <template>
+  <!-- AppPage intentionally omitted: Hub is a full-screen centred landing page with its own layout. -->
   <div class="hub-layout">
     <div class="hub-center">
       <div class="hub-wrapper">

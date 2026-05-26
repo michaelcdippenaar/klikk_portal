@@ -1,5 +1,5 @@
 <template>
-  <div class="comp-page">
+  <AppPage>
     <PageHeader title="Report Comparison" subtitle="Compare Xero P&amp;L and Balance Sheet reports against the trail balance">
       <template #tenantContext>
         <TenantSelector />
@@ -578,12 +578,13 @@
       </KAccordion>
 
     </div>
-  </div>
+  </AppPage>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import AppPage from '../components/shell/AppPage.vue';
 import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
 import { useFormatCurrency } from '../composables/useFormatCurrency';
@@ -1099,11 +1100,6 @@ function exportCsv() {
 </script>
 
 <style scoped>
-/* ── Page wrapper ────────────────────────────────────────────────────────── */
-.comp-page {
-  padding: 16px;
-}
-
 /* ── Spacing utilities (scoped — no Quasar dependency) ───────────────────── */
 .comp-mb-xs  { margin-bottom: 4px; }
 .comp-mb-sm  { margin-bottom: 8px; }
