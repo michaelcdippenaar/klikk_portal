@@ -56,6 +56,7 @@
             clearable
             placeholder="Search in description"
             class="flex-1 min-w-48"
+            :aria-controls="tableRegionId"
             @update:model-value="debouncedSearch"
           />
           <KInput
@@ -64,6 +65,7 @@
             clearable
             placeholder="Exact amount"
             class="flex-1 min-w-32"
+            :aria-controls="tableRegionId"
             @update:model-value="debouncedSearch"
           />
           <KInput
@@ -72,6 +74,7 @@
             type="date"
             clearable
             class="flex-1 min-w-36"
+            :aria-controls="tableRegionId"
             @update:model-value="debouncedSearch"
           />
           <KInput
@@ -80,6 +83,7 @@
             type="date"
             clearable
             class="flex-1 min-w-36"
+            :aria-controls="tableRegionId"
             @update:model-value="debouncedSearch"
           />
           <KSelect
@@ -89,6 +93,7 @@
             clearable
             placeholder="All accounts"
             class="flex-1 min-w-48"
+            :aria-controls="tableRegionId"
             @update:model-value="debouncedSearch"
           />
         </FilterBar>
@@ -114,6 +119,7 @@
           :columns="kColumns"
           :data="transactions"
           :loading="loadingTable"
+          :id="tableRegionId"
           dense
           pagination="none"
           virtual
@@ -211,10 +217,15 @@ const router = useRouter();
 const dataStore = useDataStore();
 
 // Virtual-scroll height grows with the viewport — fills space below the
-// header (44px) + page padding (48px) + page-header (~80px) + filter bar
-// (~160px, taller now chips may appear) + pagination footer (~40px) ≈ 372px.
+// header + page padding + page-header + filter bar + pagination footer.
+// The summed chrome offset is extracted as TABLE_CHROME_OFFSET_PX below.
+const TABLE_CHROME_OFFSET_PX = 372;
 const { height: windowHeight } = useWindowSize();
-const tableHeight = computed(() => Math.max(380, windowHeight.value - 372));
+const tableHeight = computed(() => Math.max(380, windowHeight.value - TABLE_CHROME_OFFSET_PX));
+
+// ── Table region id (for aria-controls on filter inputs) ─────────────────────
+// Stable id generated once; passed to KTable :id and referenced by filter inputs.
+const tableRegionId = `kt-investec-${Math.random().toString(36).slice(2, 9)}`;
 
 // ── Tenant context ──────────────────────────────────────────────────────────
 const tenantName = computed(() => dataStore.selectedTenantName);
