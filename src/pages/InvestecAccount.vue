@@ -533,26 +533,31 @@ onUnmounted(() => {
   color: var(--kdl-text-muted);
 }
 
-/* ── Merged Account cell ──────────────────────────────────────────────────── */
+/* ── Merged Account cell — single inline line, dense-table-friendly ───────── */
 .investec-account-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .investec-account-num {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   font-family: 'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
-  color: var(--kdl-text-primary);
+  color: var(--kdl-text-muted);
   background: none;
   padding: 0;
 }
 
 .investec-account-name {
-  font-size: 12px;
-  color: var(--kdl-text-muted);
+  font-size: 13px;
+  color: var(--kdl-text-primary);
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Pagination footer ────────────────────────────────────────────────────── */
