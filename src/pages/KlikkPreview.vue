@@ -1,10 +1,10 @@
 <template>
   <!-- DEV ONLY — not exposed in the app nav. Access via /_klikk-preview -->
   <!-- AppPage intentionally omitted: KlikkPreview is a dev-only component preview with its own inline padding. -->
-  <div style="padding: 24px; max-width: 900px; margin: 0 auto;">
+  <div class="preview-root">
 
     <!-- Theme toggle -->
-    <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+    <div class="preview-theme-toggle-row">
       <button
         class="btn-ghost btn-sm"
         :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
@@ -40,23 +40,23 @@
 
     <!-- ⓪ Brand Lockup — KLockup component, all three sizes -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⓪ Brand Lockup — KLockup (sm / md / lg)</span>
-      <div style="display: flex; align-items: flex-end; gap: 32px; flex-wrap: wrap;">
-        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
-          <span class="label-upper" style="font-size: 10px;">sm (20px)</span>
-          <div style="color: var(--kdl-text-primary);">
+      <span class="label-upper preview-section-label">⓪ Brand Lockup — KLockup (sm / md / lg)</span>
+      <div class="preview-lockup-row">
+        <div class="preview-lockup-item">
+          <span class="label-upper preview-size-label">sm (20px)</span>
+          <div class="preview-lockup-color">
             <KLockup size="sm" />
           </div>
         </div>
-        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
-          <span class="label-upper" style="font-size: 10px;">md (24px) — header default</span>
-          <div style="color: var(--kdl-text-primary);">
+        <div class="preview-lockup-item">
+          <span class="label-upper preview-size-label">md (24px) — header default</span>
+          <div class="preview-lockup-color">
             <KLockup size="md" />
           </div>
         </div>
-        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
-          <span class="label-upper" style="font-size: 10px;">lg (36px) — login</span>
-          <div style="color: var(--kdl-text-primary);">
+        <div class="preview-lockup-item">
+          <span class="label-upper preview-size-label">lg (36px) — login</span>
+          <div class="preview-lockup-color">
             <KLockup size="lg" />
           </div>
         </div>
@@ -65,7 +65,7 @@
 
     <!-- ① PageHeader -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">① PageHeader</span>
+      <span class="label-upper preview-section-label">① PageHeader</span>
       <PageHeader
         title="Financial Overview"
         subtitle="Consolidated view across all entities"
@@ -87,7 +87,7 @@
 
     <!-- ② SectionCard -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">② SectionCard</span>
+      <span class="label-upper preview-section-label">② SectionCard</span>
       <SectionCard title="Recent Journals" description="Last 50 posted entries">
         <template #actions>
           <button class="btn-ghost btn-sm">View all</button>
@@ -101,8 +101,8 @@
 
     <!-- ③ EmptyState (both split variants) -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">③ EmptyState — split variants</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <span class="label-upper preview-section-label">③ EmptyState — split variants</span>
+      <div class="preview-two-col-grid">
         <div class="card">
           <EmptyState title="No matches" body="Try removing one or more filters.">
             <template #icon>
@@ -128,20 +128,20 @@
 
     <!-- ④ FilterBar -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">④ FilterBar (resize window to see collapse)</span>
+      <span class="label-upper preview-section-label">④ FilterBar (resize window to see collapse)</span>
       <FilterBar>
         <button class="pill pill-active">All</button>
         <button class="pill">Invoices</button>
         <button class="pill">Payments</button>
         <button class="pill">Journals</button>
-        <input class="input" style="max-width: 200px;" placeholder="Search…" />
+        <input class="input preview-filter-search" placeholder="Search…" />
       </FilterBar>
     </div>
 
     <!-- ⑤ ResultPanel — all four states -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑤ ResultPanel — all states</span>
-      <div style="display: flex; flex-direction: column; gap: 12px;">
+      <span class="label-upper preview-section-label">⑤ ResultPanel — all states</span>
+      <div class="preview-col-gap-12">
         <ResultPanel status="loading" />
         <ResultPanel
           status="success"
@@ -163,8 +163,8 @@
 
     <!-- KDL button variant showcase — replaces the old Quasar q-btn colour check -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KDL button variants</span>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+      <span class="label-upper preview-section-label">KDL button variants</span>
+      <div class="preview-btn-row">
         <button class="btn-primary">Primary</button>
         <button class="btn-ghost">Ghost</button>
         <button class="btn-accent">Accent</button>
@@ -178,8 +178,8 @@
 
     <!-- ⑥ KInput — finance-admin input primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑥ KInput — finance-admin primitive</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+      <span class="label-upper preview-section-label">⑥ KInput — finance-admin primitive</span>
+      <div class="preview-two-col-grid preview-two-col-grid--680">
         <KInput v-model="demoEmail" label="Email address" type="email" placeholder="you@example.com" />
         <KInput v-model="demoAmount" label="Amount" prefix="R" placeholder="0.00" type="number" />
         <KInput
@@ -197,8 +197,8 @@
 
     <!-- ⑦ KAlert — finance-admin alert primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑦ KAlert — finance-admin primitive</span>
-      <div style="display: flex; flex-direction: column; gap: 10px; max-width: 680px;">
+      <span class="label-upper preview-section-label">⑦ KAlert — finance-admin primitive</span>
+      <div class="preview-col-gap-10 preview-col-max-680">
         <KAlert variant="info" title="Sync scheduled" body="Next Xero sync runs at 02:00 SAST. No action required." />
         <KAlert variant="success" title="Journals posted" body="All 142 journals were posted successfully to Xero." dismissible />
         <KAlert variant="warning" title="API rate limit" body="Xero returned 429 (Too Many Requests). Retrying in 30 seconds." />
@@ -210,7 +210,7 @@
 
     <!-- ⑩ FreshnessChip — when-did-this-last-happen primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑩ FreshnessChip — relative timestamp primitive</span>
+      <span class="label-upper preview-section-label">⑩ FreshnessChip — relative timestamp primitive</span>
       <div class="preview-chip-grid">
         <div class="preview-chip-row">
           <span class="preview-chip-label">Just now</span>
@@ -237,8 +237,8 @@
 
     <!-- ⑪ StatusPill — six semantic tones -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑪ StatusPill — six tones × two sizes</span>
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+      <span class="label-upper preview-section-label">⑪ StatusPill — six tones × two sizes</span>
+      <div class="preview-col-gap-16">
         <div>
           <p class="preview-variant-label">Size: md (default)</p>
           <div class="preview-pill-row">
@@ -274,8 +274,8 @@
 
     <!-- ⑫ PersistentResultStrip — last-run state inline -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑫ PersistentResultStrip — last-run state persistence</span>
-      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 720px;">
+      <span class="label-upper preview-section-label">⑫ PersistentResultStrip — last-run state persistence</span>
+      <div class="preview-col-gap-12 preview-strip-max">
         <PersistentResultStrip
           title="Last reconciliation"
           :result="{
@@ -321,7 +321,7 @@
 
     <!-- ⑬ MetricTile — formalised klikk-stat pattern -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑬ MetricTile — formalised klikk-stat pattern</span>
+      <span class="label-upper preview-section-label">⑬ MetricTile — formalised klikk-stat pattern</span>
       <div class="preview-metric-grid">
         <MetricTile label="Total Rows" :value="142" />
         <MetricTile label="Processing Time" :value="28" unit="s" />
@@ -349,8 +349,8 @@
 
     <!-- ⑨ KOperationCard — operator-card primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑨ KOperationCard — operator-card primitive</span>
-      <div style="display: flex; flex-direction: column; gap: 16px; max-width: 680px;">
+      <span class="label-upper preview-section-label">⑨ KOperationCard — operator-card primitive</span>
+      <div class="preview-col-gap-16 preview-col-max-680">
 
         <!-- Demo 1: running state with metric -->
         <KOperationCard
@@ -377,8 +377,8 @@
 
     <!-- ⑧ KTabs — finance-admin tabs primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑧ KTabs — finance-admin primitive (pills + underline)</span>
-      <div style="display: flex; flex-direction: column; gap: 24px; max-width: 680px;">
+      <span class="label-upper preview-section-label">⑧ KTabs — finance-admin primitive (pills + underline)</span>
+      <div class="preview-col-gap-24 preview-col-max-680">
         <!-- Pills (default) -->
         <div>
           <p class="preview-variant-label">Variant: pills (default)</p>
@@ -421,51 +421,51 @@
     <!-- Form primitives (Phase 1.C) -->
     <!-- KInput v2 — clearable / debounce / number coercion -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KInput v2 — clearable · debounce · number coercion</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+      <span class="label-upper preview-section-label">KInput v2 — clearable · debounce · number coercion</span>
+      <div class="preview-two-col-grid preview-two-col-grid--680">
         <KInput v-model="demoClearable" label="Clearable input" placeholder="Type something…" clearable />
         <KInput v-model="demoDebounced" label="Debounced (300ms)" placeholder="Search…" :debounce="300" icon="search" clearable />
         <KInput v-model="demoNumber" label="Number input (type=number)" type="number" placeholder="0.00" prefix="R" />
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span style="font-size: 12px; color: var(--kdl-text-muted);">Emitted value:</span>
-          <code style="font-size: 13px; color: var(--kdl-text-primary);">{{ JSON.stringify({ clearable: demoClearable, debounced: demoDebounced, number: demoNumber, numberType: typeof demoNumber }) }}</code>
+        <div class="preview-emitted-value">
+          <span class="preview-emitted-label">Emitted value:</span>
+          <code class="preview-emitted-code">{{ JSON.stringify({ clearable: demoClearable, debounced: demoDebounced, number: demoNumber, numberType: typeof demoNumber }) }}</code>
         </div>
       </div>
     </div>
 
     <!-- KSelect -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KSelect — Reka-backed single select</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+      <span class="label-upper preview-section-label">KSelect — Reka-backed single select</span>
+      <div class="preview-two-col-grid preview-two-col-grid--680">
         <KSelect v-model="demoSelect" label="GL Account" :options="selectOptions" placeholder="Choose account…" clearable />
         <KSelect v-model="demoSelectError" label="Entity (error state)" :options="['Bosch en Dal', 'Tremly Holdings', 'Investo CC']" :error="true" error-message="Entity is required" />
         <KSelect v-model="demoSelectDisabled" label="Disabled select" :options="['Option A', 'Option B']" :disabled="true" />
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span style="font-size: 12px; color: var(--kdl-text-muted);">Selected value:</span>
-          <code style="font-size: 13px; color: var(--kdl-text-primary);">{{ JSON.stringify(demoSelect) }}</code>
+        <div class="preview-emitted-value">
+          <span class="preview-emitted-label">Selected value:</span>
+          <code class="preview-emitted-code">{{ JSON.stringify(demoSelect) }}</code>
         </div>
       </div>
     </div>
 
     <!-- KMultiSelect -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KMultiSelect — Reka Combobox multi-select</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+      <span class="label-upper preview-section-label">KMultiSelect — Reka Combobox multi-select</span>
+      <div class="preview-two-col-grid preview-two-col-grid--680">
         <KMultiSelect v-model="demoMultiSelect" label="Categories" :options="multiSelectOptions" placeholder="Select categories…" />
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span style="font-size: 12px; color: var(--kdl-text-muted);">Selected values:</span>
-          <code style="font-size: 13px; color: var(--kdl-text-primary);">{{ JSON.stringify(demoMultiSelect) }}</code>
+        <div class="preview-emitted-value">
+          <span class="preview-emitted-label">Selected values:</span>
+          <code class="preview-emitted-code">{{ JSON.stringify(demoMultiSelect) }}</code>
         </div>
       </div>
     </div>
 
     <!-- KCheckbox + KToggle -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KCheckbox + KToggle — Reka-backed booleans</span>
-      <div style="display: flex; flex-direction: column; gap: 16px; max-width: 480px;">
+      <span class="label-upper preview-section-label">KCheckbox + KToggle — Reka-backed booleans</span>
+      <div class="preview-col-gap-16 preview-col-max-480">
         <div>
           <p class="preview-variant-label">KCheckbox</p>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="preview-col-gap-10">
             <KCheckbox v-model="demoCheck1" label="Enable Xero journal posting" />
             <KCheckbox v-model="demoCheck2" label="Send email notifications on failure" />
             <KCheckbox v-model="demoCheckDisabled" label="Disabled option" :disabled="true" />
@@ -473,13 +473,13 @@
         </div>
         <div>
           <p class="preview-variant-label">KToggle</p>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="preview-col-gap-10">
             <KToggle v-model="demoToggle1" label="Automatic reconciliation" />
             <KToggle v-model="demoToggle2" label="Dark mode (live!)" @update:model-value="onToggleDark" />
             <KToggle v-model="demoToggleDisabled" label="Disabled toggle" :disabled="true" />
           </div>
         </div>
-        <div style="font-size: 12px; color: var(--kdl-text-muted);">
+        <div class="preview-bool-status">
           Check: {{ demoCheck1 }}, {{ demoCheck2 }} | Toggle: {{ demoToggle1 }}, {{ demoToggle2 }}
         </div>
       </div>
@@ -487,8 +487,8 @@
 
     <!-- KRadioGroup -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KRadioGroup — Reka RadioGroup</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 680px;">
+      <span class="label-upper preview-section-label">KRadioGroup — Reka RadioGroup</span>
+      <div class="preview-two-col-grid preview-two-col-gap-24 preview-two-col-grid--680">
         <div>
           <p class="preview-variant-label">Vertical (default)</p>
           <KRadioGroup v-model="demoRadio" name="period-demo" :options="radioOptions" />
@@ -497,7 +497,7 @@
           <p class="preview-variant-label">Horizontal</p>
           <KRadioGroup v-model="demoRadio" name="period-demo-h" :options="radioOptions" orientation="horizontal" />
         </div>
-        <div style="font-size: 12px; color: var(--kdl-text-muted);">
+        <div class="preview-bool-status">
           Selected: <strong>{{ demoRadio }}</strong>
         </div>
       </div>
@@ -505,11 +505,11 @@
 
     <!-- KFile -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KFile — native file picker wrapper</span>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 680px;">
+      <span class="label-upper preview-section-label">KFile — native file picker wrapper</span>
+      <div class="preview-two-col-grid preview-two-col-grid--680">
         <KFile v-model="demoFile" label="Attachment" accept=".pdf,.csv" placeholder="Choose PDF or CSV…" help-text="Max 10MB" />
         <KFile v-model="demoFiles" label="Documents (multiple)" :multiple="true" accept=".pdf" />
-        <div style="font-size: 12px; color: var(--kdl-text-muted); grid-column: span 2;">
+        <div class="preview-bool-status preview-span-2">
           Single: {{ demoFile?.name ?? 'none' }} | Multiple: {{ Array.isArray(demoFiles) ? demoFiles.map(f => f.name).join(', ') : 'none' }}
         </div>
       </div>
@@ -517,17 +517,17 @@
 
     <!-- KForm -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">KForm — minimal form wrapper</span>
-      <div style="max-width: 480px;">
+      <span class="label-upper preview-section-label">KForm — minimal form wrapper</span>
+      <div class="preview-col-max-480">
         <KForm @submit="onFormSubmit">
           <KInput v-model="demoFormEmail" label="Email" type="email" placeholder="you@example.com" />
           <KSelect v-model="demoFormEntity" label="Entity" :options="['Bosch en Dal', 'Tremly Holdings']" />
           <KCheckbox v-model="demoFormAgree" label="I confirm the data is correct" />
-          <div style="display: flex; gap: 8px;">
+          <div class="preview-btn-row-gap">
             <button type="submit" class="btn-primary btn-sm">Submit</button>
             <button type="button" class="btn-ghost btn-sm" @click="resetForm">Reset</button>
           </div>
-          <p v-if="demoFormSubmitted" style="font-size: 13px; color: var(--kdl-accent); margin: 0;">
+          <p v-if="demoFormSubmitted" class="preview-form-submitted">
             Form submitted! Email: {{ demoFormEmail }}, Entity: {{ demoFormEntity }}, Agreed: {{ demoFormAgree }}
           </p>
         </KForm>
@@ -536,24 +536,24 @@
 
     <!-- ⑭ KSpinner — loading indicator primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑭ KSpinner — loading indicator (size × tone)</span>
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+      <span class="label-upper preview-section-label">⑭ KSpinner — loading indicator (size × tone)</span>
+      <div class="preview-col-gap-16">
         <div>
           <p class="preview-variant-label">Sizes: xs / sm / md (default) / lg — tone: default</p>
-          <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+          <div class="preview-spinner-row">
+            <div class="preview-spinner-item">
               <span class="preview-variant-label">xs (12px)</span>
               <KSpinner size="xs" />
             </div>
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+            <div class="preview-spinner-item">
               <span class="preview-variant-label">sm (16px)</span>
               <KSpinner size="sm" />
             </div>
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+            <div class="preview-spinner-item">
               <span class="preview-variant-label">md (20px)</span>
               <KSpinner size="md" />
             </div>
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+            <div class="preview-spinner-item">
               <span class="preview-variant-label">lg (32px)</span>
               <KSpinner size="lg" />
             </div>
@@ -561,24 +561,24 @@
         </div>
         <div>
           <p class="preview-variant-label">Tones: default / accent / muted — size: md</p>
-          <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="preview-spinner-row">
+            <div class="preview-spinner-tone-item">
               <KSpinner tone="default" />
-              <span style="font-size: 12px; color: var(--kdl-text-muted);">default</span>
+              <span class="preview-spinner-tone-label">default</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="preview-spinner-tone-item">
               <KSpinner tone="accent" />
-              <span style="font-size: 12px; color: var(--kdl-text-muted);">accent</span>
+              <span class="preview-spinner-tone-label">accent</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="preview-spinner-tone-item">
               <KSpinner tone="muted" />
-              <span style="font-size: 12px; color: var(--kdl-text-muted);">muted</span>
+              <span class="preview-spinner-tone-label">muted</span>
             </div>
           </div>
         </div>
         <div>
           <p class="preview-variant-label">Inline with text — "Syncing journals"</p>
-          <span style="font-size: 13px; color: var(--kdl-text-secondary); display: inline-flex; align-items: center; gap: 6px;">
+          <span class="preview-spinner-inline">
             <KSpinner size="sm" tone="accent" />
             Syncing journals…
           </span>
@@ -588,11 +588,11 @@
 
     <!-- ⑮ KBadge — count / label / metadata primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑮ KBadge — count / label / metadata (size × tone)</span>
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+      <span class="label-upper preview-section-label">⑮ KBadge — count / label / metadata (size × tone)</span>
+      <div class="preview-col-gap-16">
         <div>
           <p class="preview-variant-label">Tones: default / accent / muted — size: md</p>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="preview-badge-row">
             <KBadge label="12 new" tone="default" />
             <KBadge label="v2.4.1" tone="default" />
             <KBadge label="BETA" tone="accent" />
@@ -603,7 +603,7 @@
         </div>
         <div>
           <p class="preview-variant-label">Size: sm (tight — table cells, inline metadata)</p>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="preview-badge-row">
             <KBadge label="3" tone="accent" size="sm" />
             <KBadge label="v1.0" tone="default" size="sm" />
             <KBadge label="read-only" tone="muted" size="sm" />
@@ -611,8 +611,8 @@
         </div>
         <div>
           <p class="preview-variant-label">In context — badge next to a heading</p>
-          <div style="display: inline-flex; align-items: center; gap: 8px;">
-            <span style="font-size: 14px; font-weight: 600; color: var(--kdl-text-primary);">Journal Automation</span>
+          <div class="preview-badge-context">
+            <span class="preview-badge-heading">Journal Automation</span>
             <KBadge label="BETA" tone="accent" size="sm" />
           </div>
         </div>
@@ -621,13 +621,13 @@
 
     <!-- ⑰ KDialog — Reka-based modal dialog primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑰ KDialog — modal dialog (sm / md / lg)</span>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <span class="label-upper preview-section-label">⑰ KDialog — modal dialog (sm / md / lg)</span>
+      <div class="preview-btn-row">
         <KDialog v-model="dialogSm" title="Confirm action" description="This cannot be undone. Are you sure?" size="sm">
           <template #trigger>
             <button class="btn-ghost btn-sm">Open sm dialog</button>
           </template>
-          <p style="font-size: 14px; color: var(--kdl-text-secondary); margin: 0;">
+          <p class="preview-dialog-body">
             This is the body content of the small dialog. Ideal for confirmations and short prompts.
           </p>
           <template #footer>
@@ -640,10 +640,10 @@
           <template #trigger>
             <button class="btn-ghost btn-sm">Open md dialog</button>
           </template>
-          <div style="display: flex; flex-direction: column; gap: 12px;">
-            <p style="font-size: 14px; color: var(--kdl-text-secondary); margin: 0;">Review before posting. This action will create journal entries in Xero and cannot be reversed.</p>
-            <div class="card" style="padding: 12px;">
-              <p class="text-micro" style="margin: 0;">Journals ready: <strong>142</strong></p>
+          <div class="preview-col-gap-12">
+            <p class="preview-dialog-body">Review before posting. This action will create journal entries in Xero and cannot be reversed.</p>
+            <div class="card preview-dialog-card-pad">
+              <p class="text-micro preview-dialog-nomargin">Journals ready: <strong>142</strong></p>
             </div>
           </div>
           <template #footer>
@@ -656,7 +656,7 @@
           <template #trigger>
             <button class="btn-ghost btn-sm">Open lg dialog</button>
           </template>
-          <p style="font-size: 14px; color: var(--kdl-text-secondary); margin: 0;">
+          <p class="preview-dialog-body">
             Wider dialog for data tables and multi-column forms. Renders at 720px max-width.
           </p>
           <template #footer>
@@ -668,8 +668,8 @@
 
     <!-- ⑱ KMenu + KMenuItem + KMenuSeparator — Reka-based dropdown menu -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑱ KMenu + KMenuItem + KMenuSeparator — dropdown menu</span>
-      <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;">
+      <span class="label-upper preview-section-label">⑱ KMenu + KMenuItem + KMenuSeparator — dropdown menu</span>
+      <div class="preview-btn-row preview-align-start">
         <!-- Basic menu -->
         <KMenu v-model="menuOpen" align="start">
           <template #trigger>
@@ -701,8 +701,8 @@
 
     <!-- ⑲ KTooltip — Reka-based tooltip primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑲ KTooltip — hover / focus tooltip</span>
-      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+      <span class="label-upper preview-section-label">⑲ KTooltip — hover / focus tooltip</span>
+      <div class="preview-btn-row preview-align-center">
         <KTooltip text="Post journals to Xero">
           <button class="btn-primary btn-sm">Post</button>
         </KTooltip>
@@ -712,7 +712,7 @@
         </KTooltip>
 
         <KTooltip text="Last synced 4 minutes ago" side="bottom" :delay="200">
-          <span style="cursor: help; font-size: 13px; color: var(--kdl-text-muted); border-bottom: 1px dashed var(--kdl-border);">Sync status</span>
+          <span class="preview-tooltip-anchor">Sync status</span>
         </KTooltip>
 
         <KTooltip text="Navigate to the settings page" side="left">
@@ -723,8 +723,8 @@
 
     <!-- ⑳ KPopover — Reka-based arbitrary-content popover -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑳ KPopover — arbitrary content popover</span>
-      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start;">
+      <span class="label-upper preview-section-label">⑳ KPopover — arbitrary content popover</span>
+      <div class="preview-btn-row preview-align-start">
         <KPopover v-model="popoverFilter">
           <template #trigger>
             <button class="btn-ghost btn-sm" :aria-expanded="popoverFilter">
@@ -733,18 +733,18 @@
               Filters
             </button>
           </template>
-          <div style="display: flex; flex-direction: column; gap: 10px; min-width: 240px;">
-            <p class="label-upper" style="margin: 0; font-size: 10px;">Filter by status</p>
-            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kdl-text-secondary); cursor: pointer;">
+          <div class="preview-popover-body">
+            <p class="label-upper preview-popover-title">Filter by status</p>
+            <label class="preview-popover-label">
               <input type="checkbox" checked /> Posted
             </label>
-            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kdl-text-secondary); cursor: pointer;">
+            <label class="preview-popover-label">
               <input type="checkbox" /> Draft
             </label>
-            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kdl-text-secondary); cursor: pointer;">
+            <label class="preview-popover-label">
               <input type="checkbox" /> Failed
             </label>
-            <div style="display: flex; justify-content: flex-end; gap: 6px; padding-top: 6px; border-top: 1px solid var(--kdl-border-subtle);">
+            <div class="preview-popover-footer">
               <button class="btn-ghost btn-xs" @click="popoverFilter = false">Reset</button>
               <button class="btn-primary btn-xs" @click="popoverFilter = false">Apply</button>
             </div>
@@ -755,8 +755,8 @@
 
     <!-- ㉑ KToast — toast notifications via useToast() -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">㉑ KToast — toast notification system</span>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <span class="label-upper preview-section-label">㉑ KToast — toast notification system</span>
+      <div class="preview-btn-row">
         <button class="btn-success btn-sm" @click="toast.success('142 journals posted successfully.')">Success toast</button>
         <button class="btn-danger btn-sm" @click="toast.error('Xero API returned 503 — connection timeout.', { title: 'Connection failed' })">Error toast</button>
         <button class="btn-ghost btn-sm" @click="toast.info('Next sync scheduled for 02:00 SAST.')">Info toast</button>
@@ -768,7 +768,7 @@
 
     <!-- ㉒ KTable — TanStack Table v8 primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">㉒ KTable — TanStack Table v8 (sort / filter / pagination / virtual / selectable)</span>
+      <span class="label-upper preview-section-label">㉒ KTable — TanStack Table v8 (sort / filter / pagination / virtual / selectable)</span>
 
       <!-- A: Client-paginated with sort + filter slots + dense mode -->
       <h3 class="preview-section-h3">A — Client paginated, sort, filter slots, dense mode</h3>
@@ -801,15 +801,15 @@
           </select>
         </template>
         <template #cell-debit="{ value }">
-          <span style="font-variant-numeric: tabular-nums;">R {{ Number(value).toLocaleString('en-ZA', { minimumFractionDigits: 2 }) }}</span>
+          <span class="preview-tabular-nums">R {{ Number(value).toLocaleString('en-ZA', { minimumFractionDigits: 2 }) }}</span>
         </template>
       </KTable>
-      <p v-if="ktableLastClick" class="preview-variant-label" style="margin-top: 8px;">
+      <p v-if="ktableLastClick" class="preview-variant-label preview-row-click-margin">
         Last row-click: <strong>{{ ktableLastClick.account_code }} — {{ ktableLastClick.account_name }}</strong>
       </p>
 
       <!-- B: Virtual scroll (1000 rows) -->
-      <h3 class="preview-section-h3" style="margin-top: 32px;">B — Virtual scroll (1 000 rows)</h3>
+      <h3 class="preview-section-h3 preview-section-h3--gap">B — Virtual scroll (1 000 rows)</h3>
       <p class="preview-variant-label">All 1 000 rows rendered via @tanstack/vue-virtual. Scroll smoothly at any speed.</p>
       <KTable
         :columns="ktableCols"
@@ -820,7 +820,7 @@
       />
 
       <!-- C: Selectable rows -->
-      <h3 class="preview-section-h3" style="margin-top: 32px;">C — Selectable rows</h3>
+      <h3 class="preview-section-h3 preview-section-h3--gap">C — Selectable rows</h3>
       <p class="preview-variant-label">Checkbox column + v-model:selectedRowIds. {{ ktableSelected.size }} row(s) selected.</p>
       <KTable
         :columns="ktableCols"
@@ -830,14 +830,14 @@
         pagination="client"
         :pageSize="10"
       />
-      <p v-if="ktableSelected.size" class="preview-variant-label" style="margin-top: 8px;">
+      <p v-if="ktableSelected.size" class="preview-variant-label preview-row-click-margin">
         Selected IDs: {{ [...ktableSelected].join(', ') }}
       </p>
 
       <!-- D: Loading state -->
-      <h3 class="preview-section-h3" style="margin-top: 32px;">D — Loading state</h3>
+      <h3 class="preview-section-h3 preview-section-h3--gap">D — Loading state</h3>
       <p class="preview-variant-label">Toggle button below to show the loading spinner (no data).</p>
-      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <div class="preview-btn-row-gap preview-btn-row-gap--bottom">
         <button class="btn-ghost btn-sm" @click="ktableLoading = !ktableLoading">
           {{ ktableLoading ? 'Stop loading' : 'Start loading' }}
         </button>
@@ -850,12 +850,12 @@
       />
 
       <!-- E: Empty state -->
-      <h3 class="preview-section-h3" style="margin-top: 32px;">E — Empty state</h3>
+      <h3 class="preview-section-h3 preview-section-h3--gap">E — Empty state</h3>
       <p class="preview-variant-label">Built-in empty state (no data, no loading).</p>
       <KTable :columns="ktableCols" :data="[]" pagination="none" />
 
       <!-- F: Error state -->
-      <h3 class="preview-section-h3" style="margin-top: 32px;">F — Error state</h3>
+      <h3 class="preview-section-h3 preview-section-h3--gap">F — Error state</h3>
       <p class="preview-variant-label">Pass the error prop to render KAlert inside the table.</p>
       <KTable
         :columns="ktableCols"
@@ -867,11 +867,11 @@
 
     <!-- ⑯ KChip — removable filter pill primitive -->
     <div class="klikk-preview-section">
-      <span class="label-upper" style="display: block; margin-bottom: 12px;">⑯ KChip — removable filter pill</span>
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+      <span class="label-upper preview-section-label">⑯ KChip — removable filter pill</span>
+      <div class="preview-col-gap-16">
         <div>
           <p class="preview-variant-label">Static chips (no icon, no remove)</p>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="preview-badge-row">
             <KChip label="Bosch en Dal" />
             <KChip label="Journals" />
             <KChip label="2024-Q1" />
@@ -879,7 +879,7 @@
         </div>
         <div>
           <p class="preview-variant-label">With leading icon</p>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="preview-badge-row">
             <KChip label="Bosch en Dal" icon="building" />
             <KChip label="Active filter" icon="filter" />
             <KChip label="admin@klikk.co.za" icon="user" />
@@ -888,7 +888,7 @@
         </div>
         <div>
           <p class="preview-variant-label">Removable (click × to remove in demo)</p>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="preview-badge-row">
             <KChip
               v-for="chip in demoChips"
               :key="chip"
@@ -897,12 +897,12 @@
               removable
               @remove="removeChip(chip)"
             />
-            <span v-if="demoChips.length === 0" style="font-size: 12px; color: var(--kdl-text-hint);">All chips removed — reload to reset</span>
+            <span v-if="demoChips.length === 0" class="preview-chips-empty">All chips removed — reload to reset</span>
           </div>
         </div>
         <div>
           <p class="preview-variant-label">Disabled state</p>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="preview-badge-row">
             <KChip label="Cannot remove" removable disabled icon="filter" />
             <KChip label="Read-only tag" disabled />
           </div>
@@ -1117,6 +1117,26 @@ const toast = useToast();
 </script>
 
 <style scoped>
+/* ── Page shell ──────────────────────────────────────────────────────────── */
+.preview-root {
+  padding: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.preview-theme-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+/* ── Section label (repeated "① ..." headings) ───────────────────────────── */
+.preview-section-label {
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* ── Shared section/card structure ───────────────────────────────────────── */
 .klikk-preview-section {
   margin-bottom: 40px;
   padding-bottom: 40px;
@@ -1125,6 +1145,8 @@ const toast = useToast();
 .klikk-preview-section:last-child {
   border-bottom: none;
 }
+
+/* ── Typography helpers ───────────────────────────────────────────────────── */
 .breadcrumb-muted {
   font-size: 13px;
   color: var(--kdl-text-muted);
@@ -1143,6 +1165,127 @@ const toast = useToast();
   color: var(--kdl-text-hint);
   margin: 0 0 8px;
 }
+
+/* ── Layout primitives ────────────────────────────────────────────────────── */
+.preview-two-col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.preview-two-col-grid--680 {
+  max-width: 680px;
+}
+.preview-two-col-gap-24 {
+  gap: 24px;
+}
+.preview-col-gap-10 {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.preview-col-gap-12 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.preview-col-gap-16 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.preview-col-gap-24 {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.preview-col-max-480 {
+  max-width: 480px;
+}
+.preview-col-max-680 {
+  max-width: 680px;
+}
+.preview-strip-max {
+  max-width: 720px;
+}
+.preview-span-2 {
+  grid-column: span 2;
+}
+
+/* ── Button rows ──────────────────────────────────────────────────────────── */
+.preview-btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.preview-btn-row-gap {
+  display: flex;
+  gap: 8px;
+}
+.preview-btn-row-gap--bottom {
+  margin-bottom: 12px;
+}
+.preview-align-start {
+  align-items: flex-start;
+}
+.preview-align-center {
+  align-items: center;
+}
+
+/* ── Filter search input ─────────────────────────────────────────────────── */
+.preview-filter-search {
+  max-width: 200px;
+}
+
+/* ── Brand lockup showcase ────────────────────────────────────────────────── */
+.preview-lockup-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.preview-lockup-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.preview-lockup-color {
+  color: var(--kdl-text-primary);
+}
+.preview-size-label {
+  font-size: 10px;
+}
+
+/* ── Emitted value display ────────────────────────────────────────────────── */
+.preview-emitted-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.preview-emitted-label {
+  font-size: 12px;
+  color: var(--kdl-text-muted);
+}
+.preview-emitted-code {
+  font-size: 13px;
+  color: var(--kdl-text-primary);
+}
+
+/* ── Bool status line ─────────────────────────────────────────────────────── */
+.preview-bool-status {
+  font-size: 12px;
+  color: var(--kdl-text-muted);
+}
+
+/* ── Form submitted message ───────────────────────────────────────────────── */
+.preview-form-submitted {
+  font-size: 13px;
+  color: var(--kdl-accent);
+  margin: 0;
+}
+
+/* ── Tab content ──────────────────────────────────────────────────────────── */
 .preview-tab-content {
   margin-top: 12px;
   padding: 12px;
@@ -1152,7 +1295,7 @@ const toast = useToast();
   color: var(--kdl-text-muted);
 }
 
-/* FreshnessChip demo */
+/* ── FreshnessChip demo ───────────────────────────────────────────────────── */
 .preview-chip-grid {
   display: flex;
   flex-direction: column;
@@ -1171,7 +1314,7 @@ const toast = useToast();
   flex-shrink: 0;
 }
 
-/* StatusPill demo */
+/* ── StatusPill demo ──────────────────────────────────────────────────────── */
 .preview-pill-row {
   display: flex;
   align-items: center;
@@ -1179,7 +1322,7 @@ const toast = useToast();
   flex-wrap: wrap;
 }
 
-/* MetricTile demo */
+/* ── MetricTile demo ──────────────────────────────────────────────────────── */
 .preview-metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -1187,12 +1330,117 @@ const toast = useToast();
   max-width: 720px;
 }
 
-/* KTable demo */
+/* ── Spinner demo ─────────────────────────────────────────────────────────── */
+.preview-spinner-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.preview-spinner-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.preview-spinner-tone-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-spinner-tone-label {
+  font-size: 12px;
+  color: var(--kdl-text-muted);
+}
+.preview-spinner-inline {
+  font-size: 13px;
+  color: var(--kdl-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── KBadge demo ──────────────────────────────────────────────────────────── */
+.preview-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.preview-badge-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-badge-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+}
+
+/* ── KDialog demo ─────────────────────────────────────────────────────────── */
+.preview-dialog-body {
+  font-size: 14px;
+  color: var(--kdl-text-secondary);
+  margin: 0;
+}
+.preview-dialog-card-pad {
+  padding: 12px;
+}
+.preview-dialog-nomargin {
+  margin: 0;
+}
+
+/* ── Tooltip demo ─────────────────────────────────────────────────────────── */
+.preview-tooltip-anchor {
+  cursor: help;
+  font-size: 13px;
+  color: var(--kdl-text-muted);
+  border-bottom: 1px dashed var(--kdl-border);
+}
+
+/* ── Popover demo ─────────────────────────────────────────────────────────── */
+.preview-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 240px;
+}
+.preview-popover-title {
+  margin: 0;
+  font-size: 10px;
+}
+.preview-popover-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--kdl-text-secondary);
+  cursor: pointer;
+}
+.preview-popover-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--kdl-border-subtle);
+}
+
+/* ── KTable demo ──────────────────────────────────────────────────────────── */
 .preview-section-h3 {
   font-size: 13px;
   font-weight: 600;
   color: var(--kdl-text-primary);
   margin: 0 0 6px;
+}
+.preview-section-h3--gap {
+  margin-top: 32px;
+}
+.preview-row-click-margin {
+  margin-top: 8px;
+}
+.preview-tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 .ktable-demo-filter-input,
@@ -1213,5 +1461,11 @@ const toast = useToast();
 .ktable-demo-filter-select:focus {
   border-color: var(--kdl-accent);
   box-shadow: 0 0 0 2px rgba(255, 61, 127, 0.15);
+}
+
+/* ── KChip demo ───────────────────────────────────────────────────────────── */
+.preview-chips-empty {
+  font-size: 12px;
+  color: var(--kdl-text-hint);
 }
 </style>
