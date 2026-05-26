@@ -541,12 +541,22 @@ const table = useVueTable({
     get columnFilters() { return columnFilters.value; },
     get columnVisibility() { return columnVisibility.value; },
     get rowSelection() { return rowSelection.value; },
+    // Server-mode pagination is controlled externally via props.serverPage.
+    // Client-mode pagination is managed by TanStack internally — DO NOT force
+    // state.pagination in client mode (returning `undefined` for pageIndex
+    // makes getPaginationRowModel() return 0 rows).
     get pagination() {
-      return {
-        pageIndex: props.pagination === 'server' ? (props.serverPage ?? 0) : undefined,
-        pageSize: props.pageSize,
-      };
+      if (props.pagination === 'server') {
+        return {
+          pageIndex: props.serverPage ?? 0,
+          pageSize: props.pageSize,
+        };
+      }
+      return undefined;
     },
+  },
+  initialState: {
+    pagination: { pageIndex: 0, pageSize: props.pageSize },
   },
   // Manual server-side pagination
   manualPagination: props.pagination === 'server',
