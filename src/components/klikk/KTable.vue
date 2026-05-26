@@ -208,7 +208,7 @@
             :key="rows[virtualRow.index]?.id ?? virtualRow.index"
             class="ktable-row"
             :class="{
-              'ktable-row--selected': isRowSelected(rows[virtualRow.index]),
+              'ktable-row--selected': rows[virtualRow.index]?.getIsSelected(),
               'ktable-row--clickable': !!onRowClick || !!$attrs['onRow-click'],
             }"
             :style="{
@@ -217,7 +217,7 @@
               left: 0,
               width: '100%',
             }"
-            :aria-selected="isRowSelected(rows[virtualRow.index]) ? 'true' : undefined"
+            :aria-selected="rows[virtualRow.index]?.getIsSelected() ? 'true' : undefined"
             @click="handleRowClick(rows[virtualRow.index])"
           >
             <td
