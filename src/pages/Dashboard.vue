@@ -435,6 +435,24 @@ const apiCallBudgetTone = computed(() => {
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Normalise a lastSync value from any API response into an ISO string.
+ * Some endpoints return a number (minutes ago) rather than a timestamp.
+ * FreshnessChip accepts Date | string | null — pass a string.
+ */
+function toIsoSync(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'number') {
+    // Treat as "minutes ago" — reconstruct an approximate timestamp.
+    return new Date(Date.now() - raw * 60_000).toISOString();
+  }
+  if (typeof raw === 'string' || raw instanceof Date) {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return null;
+}
+
 async function fetchXeroHealth() {
   try {
     const status = await getXeroConnectionStatus();
@@ -442,8 +460,8 @@ async function fetchXeroHealth() {
     const connected = status?.connected ?? false;
     health.value.xero.tone = connected ? 'success' : 'error';
     health.value.xero.label = connected ? 'Connected' : 'Not connected';
-    if (status?.last_refreshed) {
-      health.value.xero.lastSync = status.last_refreshed;
+    if (status?.last_refreshed != null) {
+      health.value.xero.lastSync = toIsoSync(status.last_refreshed);
     }
   } catch {
     health.value.xero.tone = 'error';
@@ -460,7 +478,7 @@ async function fetchXeroHealth() {
         .filter(Boolean)
         .sort()
         .reverse();
-      if (lastRuns[0]) health.value.xero.lastSync = lastRuns[0];
+      if (lastRuns[0]) health.value.xero.lastSync = toIsoSync(lastRuns[0]);
     }
   } catch {
     // non-fatal — budget bar just won't appear
@@ -474,7 +492,7 @@ async function fetchInvestecHealth() {
     const synced = !!data?.last_synced_at;
     health.value.investec.tone = synced ? 'success' : 'neutral';
     health.value.investec.label = synced ? 'Synced' : 'Never synced';
-    health.value.investec.lastSync = data?.last_synced_at ?? null;
+    health.value.investec.lastSync = toIsoSync(data?.last_synced_at) ?? null;
   } catch {
     health.value.investec.tone = 'neutral';
     health.value.investec.label = '—';
