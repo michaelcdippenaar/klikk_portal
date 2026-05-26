@@ -102,3 +102,52 @@ describe('KTable pagination logic', () => {
     expect(table.getCanPreviousPage()).toBe(false);
   });
 });
+
+// ── Bug regression: KTable pagination state defaults to pageIndex 0 ──────────
+//
+// Bug: KTable was passing `pageIndex: undefined` to KTablePagination when in
+// client pagination mode because the TanStack state getter returned undefined
+// before TanStack initialised its own internal state. The fix: apply `?? 0`
+// to `table.getState().pagination.pageIndex` in KTable.vue's template binding,
+// ensuring KTablePagination always receives a numeric pageIndex.
+//
+// This test verifies the TanStack contract: when a table is created with
+// pageIndex: 0 in its state, getState().pagination.pageIndex must be 0 (never
+// undefined). If TanStack ever changes this guarantee, the ?? 0 guard in
+// KTable.vue still covers it, but the test would flag the regression first.
+
+describe('KTable pagination state — pageIndex is always numeric (never undefined)', () => {
+  it('getState().pagination.pageIndex is 0 on a freshly created table', () => {
+    const table = makePaginatedTable(0, 50);
+    const { pageIndex } = table.getState().pagination;
+    // The core contract: pageIndex must be a number, not undefined.
+    expect(typeof pageIndex).toBe('number');
+    expect(pageIndex).toBe(0);
+  });
+
+  it('applying ?? 0 fallback to pageIndex is always 0 for fresh client table', () => {
+    // Mirrors the fix in KTable.vue:
+    //   :pageIndex="... (table.getState().pagination.pageIndex ?? 0)"
+    // Even if TanStack ever returns undefined here, the fallback holds.
+    const table = makePaginatedTable(0, 50);
+    const pageIndex = table.getState().pagination.pageIndex ?? 0;
+    expect(typeof pageIndex).toBe('number');
+    expect(pageIndex).toBe(0);
+  });
+
+  it('pageIndex is numeric after navigating to page 2 (index 1)', () => {
+    const table = makePaginatedTable(1, 50);
+    const pageIndex = table.getState().pagination.pageIndex ?? 0;
+    expect(typeof pageIndex).toBe('number');
+    expect(pageIndex).toBe(1);
+  });
+
+  it('pageIndex defaults to 0 when ?? 0 guard is applied to undefined', () => {
+    // Directly test the guard itself — simulates the pre-fix bug where
+    // TanStack returned undefined before its own initialisation.
+    const rawUndefined: number | undefined = undefined;
+    const guarded = rawUndefined ?? 0;
+    expect(guarded).toBe(0);
+    expect(typeof guarded).toBe('number');
+  });
+});

@@ -304,7 +304,7 @@
     <!-- ── Pagination footer ─────────────────────────────────────────── -->
     <KTablePagination
       v-if="showPagination && data.length"
-      :pageIndex="pagination === 'server' ? (serverPage ?? 0) : table.getState().pagination.pageIndex"
+      :pageIndex="pagination === 'server' ? (serverPage ?? 0) : (table.getState().pagination.pageIndex ?? 0)"
       :pageCount="pagination === 'server' ? serverPageCount : table.getPageCount()"
       :pageSize="table.getState().pagination.pageSize"
       :pageSizeOptions="pageSizeOptions"
