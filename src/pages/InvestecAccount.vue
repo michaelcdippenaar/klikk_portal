@@ -80,7 +80,7 @@
         dense
         pagination="none"
         virtual
-        :virtualHeight="520"
+        :virtualHeight="tableHeight"
       >
         <template #cell-transaction_date="{ value }">
           {{ formatDate(value) }}
@@ -164,6 +164,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue';
+import { useWindowSize } from '@vueuse/core';
 import {
   getInvestecBankAccounts,
   getInvestecBankTransactions,
@@ -185,6 +186,12 @@ import KTabs from '../components/klikk/KTabs.vue';
 
 const { format } = useFormatCurrency();
 
+// Virtual-scroll height grows with the viewport — fills space below the
+// header (44px) + page padding (48px) + page-header (~80px) + filter bar
+// (~120px) + pagination footer (~40px) ≈ 332px reserved.
+const { height: windowHeight } = useWindowSize();
+const tableHeight = computed(() => Math.max(420, windowHeight.value - 332));
+
 const activeTab = ref('transactions');
 const lastSyncedAt = ref(null);
 const loadingSync = ref(false);
@@ -192,13 +199,13 @@ const syncResult = ref(null);
 const loadingExport = ref(false);
 
 const kColumns = [
-  { accessorKey: 'transaction_date', header: 'Date', enableSorting: true },
-  { accessorKey: 'account_number', header: 'Account', enableSorting: false },
-  { accessorKey: 'account_name', header: 'Account name', enableSorting: false },
-  { accessorKey: 'type', header: 'Type', enableSorting: false },
-  { accessorKey: 'amount', header: 'Amount (R)', enableSorting: false, meta: { align: 'right' } },
-  { accessorKey: 'description', header: 'Description', enableSorting: false },
-  { accessorKey: 'running_balance', header: 'Balance (R)', enableSorting: false, meta: { align: 'right' } },
+  { accessorKey: 'transaction_date', header: 'Date',         enableSorting: true,  size: 110 },
+  { accessorKey: 'account_number',   header: 'Account',      enableSorting: false, size: 130 },
+  { accessorKey: 'account_name',     header: 'Account name', enableSorting: false, size: 160 },
+  { accessorKey: 'type',             header: 'Type',         enableSorting: false, size: 90 },
+  { accessorKey: 'amount',           header: 'Amount (R)',   enableSorting: false, size: 140, meta: { align: 'right' } },
+  { accessorKey: 'description',      header: 'Description',  enableSorting: false, size: 280 },
+  { accessorKey: 'running_balance',  header: 'Balance (R)',  enableSorting: false, size: 140, meta: { align: 'right' } },
 ];
 
 const transactions = ref([]);
