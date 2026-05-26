@@ -10,11 +10,31 @@
 // klikk.css already sets font-family + smoothing on body; these rules
 // supplement at the sass layer for build ordering.
 
-body
+// Apply smoothing globally — Chrome resets it on form controls (button/input/select)
+// which makes labels render heavier than body text. Universal selector ensures
+// consistent rendering between Safari and Chrome on macOS.
+html
   font-family: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif
+  -webkit-font-smoothing: antialiased
+  -moz-osx-font-smoothing: grayscale
+
+body
+  font-family: inherit
   font-size: 14px
   line-height: 1.45
   font-feature-settings: 'cv11', 'ss03'
   -webkit-font-smoothing: antialiased
   -moz-osx-font-smoothing: grayscale
   text-rendering: optimizeLegibility
+
+// Form controls inherit their font from useragent stylesheet, NOT from body in Chrome.
+// Force inheritance so buttons / inputs match the rest of the UI.
+button,
+input,
+select,
+textarea,
+optgroup
+  font-family: inherit
+  font-feature-settings: inherit
+  -webkit-font-smoothing: antialiased
+  -moz-osx-font-smoothing: grayscale
