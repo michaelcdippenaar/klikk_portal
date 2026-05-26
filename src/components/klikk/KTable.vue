@@ -273,7 +273,8 @@
               position: 'absolute',
               top: `${virtualRow.start}px`,
               left: 0,
-              width: '100%',
+              right: 0,
+              display: 'flex',
             }"
             :aria-selected="rows[virtualRow.index]?.getIsSelected() ? 'true' : undefined"
             @click="handleRowClick(rows[virtualRow.index])"
@@ -286,6 +287,7 @@
                 'ktable-td--align-right': cell.column.columnDef.meta?.align === 'right',
                 'ktable-td--align-center': cell.column.columnDef.meta?.align === 'center',
               }"
+              :style="virtualCellStyle(cell.column)"
             >
               <template v-if="cell.column.id === '__select__'">
                 <input
@@ -669,6 +671,22 @@ function colWidth(column) {
   const size = column.getSize?.();
   if (size && size !== 150) return { width: `${size}px` };
   return { width: `${size || 150}px` };
+}
+
+// Virtual rows are absolute-positioned `<tr>` elements with `display: flex`,
+// so their `<td>` children don't participate in the table's <colgroup> width
+// contract — the browser sizes each cell to content unless we tell it not to.
+// Each cell gets a fixed flex basis equal to its column width so the body
+// columns line up exactly under the header columns.
+function virtualCellStyle(column) {
+  const w = colWidth(column).width;
+  return {
+    flex: `0 0 ${w}`,
+    width: w,
+    minWidth: w,
+    maxWidth: w,
+    boxSizing: 'border-box',
+  };
 }
 
 // ── Aria sort ─────────────────────────────────────────────────────────────────
