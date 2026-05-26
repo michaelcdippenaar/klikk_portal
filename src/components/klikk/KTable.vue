@@ -135,6 +135,8 @@
               :class="{
                 'ktable-th--sortable': header.column.getCanSort(),
                 'ktable-th--sorted': header.column.getIsSorted(),
+                'ktable-th--align-right': header.column.columnDef.meta?.align === 'right',
+                'ktable-th--align-center': header.column.columnDef.meta?.align === 'center',
               }"
               :aria-sort="ariaSort(header.column.getIsSorted())"
               @click="header.column.getCanSort() ? header.column.toggleSorting(false, $event.shiftKey) : undefined"
@@ -232,6 +234,10 @@
               v-for="cell in rows[virtualRow.index]?.getVisibleCells() ?? []"
               :key="cell.id"
               class="ktable-td"
+              :class="{
+                'ktable-td--align-right': cell.column.columnDef.meta?.align === 'right',
+                'ktable-td--align-center': cell.column.columnDef.meta?.align === 'center',
+              }"
             >
               <template v-if="cell.column.id === '__select__'">
                 <input
@@ -278,6 +284,10 @@
               v-for="cell in row.getVisibleCells()"
               :key="cell.id"
               class="ktable-td"
+              :class="{
+                'ktable-td--align-right': cell.column.columnDef.meta?.align === 'right',
+                'ktable-td--align-center': cell.column.columnDef.meta?.align === 'center',
+              }"
             >
               <template v-if="cell.column.id === '__select__'">
                 <input
@@ -326,7 +336,7 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, watchEffect, watch, nextTick, onMounted } from 'vue';
+import { ref, computed, shallowRef, watch, nextTick, onMounted, onScopeDispose, effectScope } from 'vue';
 import {
   useVueTable,
   getCoreRowModel,
@@ -517,26 +527,49 @@ const rows = computed(() => {
 });
 
 // ── Virtual scroll ────────────────────────────────────────────────────────────
-// useVirtualizer() returns Ref<Virtualizer>. We store that Ref in a shallowRef,
-// then unwrap it via a computed so the template sees the Virtualizer instance
-// directly (one auto-unwrap from the computed, zero leftover wrapping).
-// Calling useVirtualizer inside watchEffect is intentional — the virtualizer
-// manages its own internal reactivity; we only re-init when virtual toggles.
+// useVirtualizer() is a composable that internally calls onScopeDispose() for
+// cleanup. It MUST be called from setup() (or an effectScope) so that the
+// cleanup hook has an owning scope to attach to.
+//
+// Strategy: use effectScope so we can tear down and re-create the virtualizer
+// if virtual toggles (rare in practice — consumers do not toggle this prop
+// mid-session, but the contract must be correct regardless). The scope gives
+// the internal onScopeDispose call a valid owner.
+//
+// useVirtualizer accepts MaybeRef<options>; we pass a computed so `count` and
+// `estimateSize` stay reactive without re-creating the virtualizer instance.
 
+const _scope = effectScope();
 const _virtualizerRef = shallowRef(null); // holds Ref<Virtualizer> | null
 
-watchEffect(() => {
-  if (!props.virtual) {
-    _virtualizerRef.value = null;
-    return;
-  }
-  _virtualizerRef.value = useVirtualizer({
-    count: rows.value.length,
-    getScrollElement: () => scrollContainerRef.value,
-    estimateSize: () => (props.dense ? 32 : 44),
-    overscan: 10,
+if (props.virtual) {
+  _scope.run(() => {
+    _virtualizerRef.value = useVirtualizer(
+      computed(() => ({
+        count: rows.value.length,
+        getScrollElement: () => scrollContainerRef.value,
+        estimateSize: () => (props.dense ? 32 : 44),
+        overscan: 10,
+      }))
+    );
   });
-});
+}
+
+// Watch for late virtual toggle (guard: only ever goes false→true in practice).
+watch(
+  () => props.virtual,
+  (v) => {
+    if (!v) {
+      _scope.stop();
+      _virtualizerRef.value = null;
+    }
+    // true→false path not expected but handled above; false→true after mount
+    // is not supported by this primitive (virtual is a one-time init prop).
+  }
+);
+
+// Dispose the scope when the component unmounts.
+onScopeDispose(() => _scope.stop());
 
 // Unwrap the inner Ref<Virtualizer> so the template receives a Virtualizer instance.
 const virtualizer = computed(() => _virtualizerRef.value?.value ?? null);
@@ -830,10 +863,29 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.4;
   color: var(--kdl-text-primary);
+  /* F3: prevent long cell content from wrapping and breaking virtual-row height
+     contract (estimateSize is fixed at 44px; wrapped rows would overflow and
+     collide with the next absolutely-positioned row). */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ktable-root--dense .ktable-td {
   padding: 6px 12px;
+}
+
+/* ── Column alignment (F2) ───────────────────────────────────────────────── */
+/* Applied via meta.align on the column def. Both header and body cells must
+   carry the class so the column reads consistently top-to-bottom. */
+.ktable-th--align-right,
+.ktable-td--align-right {
+  text-align: right;
+}
+
+.ktable-th--align-center,
+.ktable-td--align-center {
+  text-align: center;
 }
 
 /* ── Checkbox ────────────────────────────────────────────────────────────── */
