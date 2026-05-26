@@ -196,13 +196,13 @@ import KTable from '../components/klikk/KTable.vue';
 const { format } = useFormatCurrency();
 
 const transactionKColumns = [
-  { accessorKey: 'date', header: 'Date', enableSorting: true },
-  { accessorKey: 'account_number', header: 'Account', enableSorting: false },
-  { accessorKey: 'description', header: 'Description', enableSorting: false },
-  { accessorKey: 'share_name', header: 'Share name', enableSorting: false },
-  { accessorKey: 'type', header: 'Type', enableSorting: false },
-  { accessorKey: 'quantity', header: 'Quantity', enableSorting: false, meta: { align: 'right' } },
-  { accessorKey: 'value', header: 'Value (R)', enableSorting: false, meta: { align: 'right' } },
+  { accessorKey: 'date',           header: 'Date',        enableSorting: true,  size: 110 },
+  { accessorKey: 'account_number', header: 'Account',     enableSorting: false, size: 130 },
+  { accessorKey: 'description',    header: 'Description', enableSorting: false, size: 280 },
+  { accessorKey: 'share_name',     header: 'Share name',  enableSorting: false, size: 200 },
+  { accessorKey: 'type',           header: 'Type',        enableSorting: false, size: 90 },
+  { accessorKey: 'quantity',       header: 'Quantity',    enableSorting: false, size: 120, meta: { align: 'right' } },
+  { accessorKey: 'value',          header: 'Value (R)',   enableSorting: false, size: 140, meta: { align: 'right' } },
 ];
 
 const transactions = ref([]);

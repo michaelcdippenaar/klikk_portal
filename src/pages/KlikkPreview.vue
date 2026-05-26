@@ -1093,13 +1093,13 @@ const ktableSmallData = Array.from({ length: 20 }, (_, i) => makeRow(i));
 const ktableBigData = Array.from({ length: 1000 }, (_, i) => makeRow(i));
 
 const ktableCols = [
-  { accessorKey: 'account_code', header: 'Code', enableSorting: true, enableColumnFilter: true },
-  { accessorKey: 'account_name', header: 'Account Name', enableSorting: true, enableColumnFilter: true },
-  { accessorKey: 'type', header: 'Type', enableSorting: true, enableColumnFilter: true },
-  { accessorKey: 'debit', header: 'Debit', enableSorting: true },
-  { accessorKey: 'credit', header: 'Credit', enableSorting: true },
-  { accessorKey: 'period', header: 'Period', enableSorting: true },
-  { accessorKey: 'status', header: 'Status', enableSorting: true },
+  { accessorKey: 'account_code', header: 'Code',         enableSorting: true, enableColumnFilter: true, size: 120 },
+  { accessorKey: 'account_name', header: 'Account Name', enableSorting: true, enableColumnFilter: true, size: 240 },
+  { accessorKey: 'type',         header: 'Type',         enableSorting: true, enableColumnFilter: true, size: 100 },
+  { accessorKey: 'debit',        header: 'Debit',        enableSorting: true, size: 140 },
+  { accessorKey: 'credit',       header: 'Credit',       enableSorting: true, size: 140 },
+  { accessorKey: 'period',       header: 'Period',       enableSorting: true, size: 100 },
+  { accessorKey: 'status',       header: 'Status',       enableSorting: true, size: 100 },
 ];
 
 const ktableLastClick = ref(null);
