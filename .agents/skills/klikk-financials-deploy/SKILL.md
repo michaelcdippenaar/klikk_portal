@@ -1,9 +1,9 @@
 ---
-name: deploy-klikk-financials
+name: klikk-financials-deploy
 description: Deploy, rebuild, and verify the Klikk Financials staging environment. Use when the user says "rebuild in staging", asks to deploy portal/backend changes, refresh staging after a push, verify console.8-bit.space, check staging data after imports, or coordinate Codex/Claude deployment handoffs for the Klikk portal and Django backend.
 ---
 
-# Deploy Klikk Financials
+# Klikk Financials Deploy
 
 ## Quick Context
 

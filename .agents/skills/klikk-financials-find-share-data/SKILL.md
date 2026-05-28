@@ -1,12 +1,12 @@
 ---
-name: find-share-data
+name: klikk-financials-find-share-data
 description: Answer questions about shares, stocks, dividends, portfolios, holdings, transactions, investments, share cubes, and dimensions. Search by share code, company name, or answer broad questions like upcoming dividends, portfolio performance, share analysis, cube data, and dimension lookups. Searches local database tables and the internet for JSE and global share information.
 user-invocable: true
 argument-hint: [share-code-or-name ...]
 allowed-tools: Bash, Read, Grep, Glob, WebSearch, WebFetch
 ---
 
-# Find Share Data
+# Klikk Financials Find Share Data
 
 Research share/stock information for the given share codes or company names: **$ARGUMENTS**
 
