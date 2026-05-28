@@ -34,6 +34,12 @@ describe('Reporting - smoke', () => {
     expect(source).toContain('Line item totals');
   });
 
+  it('can deep-link to a specific report', () => {
+    expect(source).toContain('route.query.report');
+    expect(source).toContain('selectReport(routeReport, false)');
+    expect(source).toContain("report: reportId");
+  });
+
   it('has a left report library menu with grouped reports', () => {
     expect(source).toContain('class="reporting-menu"');
     expect(source).toContain('reportGroups');

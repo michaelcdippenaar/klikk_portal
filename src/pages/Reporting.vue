@@ -339,7 +339,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
@@ -349,6 +350,8 @@ import {
 } from '../api/endpoints';
 
 const selectedReportId = ref('management-pack');
+const route = useRoute();
+const router = useRouter();
 const bankAccounts = ref([]);
 const bankCostReport = ref(null);
 const bankCostLoading = ref(false);
@@ -490,12 +493,37 @@ async function loadBankCostReport() {
   }
 }
 
-async function selectReport(reportId) {
+function isKnownReport(reportId) {
+  return allReports.value.some((report) => report.id === reportId);
+}
+
+async function selectReport(reportId, updateRoute = true) {
+  if (!isKnownReport(reportId)) return;
   selectedReportId.value = reportId;
+  if (updateRoute && route.query.report !== reportId) {
+    router.replace({ query: { ...route.query, report: reportId } }).catch(() => {});
+  }
   if (reportId === 'bank-costs' && !bankCostReport.value) {
     await loadBankCostReport();
   }
 }
+
+onMounted(() => {
+  const routeReport = typeof route.query.report === 'string' ? route.query.report : '';
+  if (routeReport) {
+    selectReport(routeReport, false);
+  }
+});
+
+watch(
+  () => route.query.report,
+  (report) => {
+    const routeReport = typeof report === 'string' ? report : '';
+    if (routeReport && routeReport !== selectedReportId.value) {
+      selectReport(routeReport, false);
+    }
+  }
+);
 </script>
 
 <style scoped>
