@@ -125,7 +125,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import { useCommandPalette } from '../../composables/useCommandPalette';
 
 const { isOpen, commands, close } = useCommandPalette();

@@ -13,9 +13,9 @@
   The SVG uses currentColor for all fill values — inherit text-token from parent.
 
   USAGE:
-    <KLockup />                  <!-- md, inherits colour -->
-    <KLockup size="lg" />        <!-- 36px login variant -->
-    <KLockup size="sm" />        <!-- 20px compact variant -->
+    KLockup                  md, inherits colour
+    KLockup size="lg"        36px login variant
+    KLockup size="sm"        20px compact variant
 -->
 <template>
   <svg

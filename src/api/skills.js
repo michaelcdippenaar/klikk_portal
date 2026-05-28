@@ -1,5 +1,3 @@
-import { STORAGE_KEYS } from '../utils/constants';
-
 /**
  * Skills & Credentials API client.
  *

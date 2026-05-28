@@ -3,10 +3,17 @@
 import readline from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
 
-const SERVER_NAME = 'klikk-stock-market';
-const SERVER_VERSION = '0.1.0';
-const PROTOCOL_VERSION = '2024-11-05';
+const SERVER_NAME = 'klikk-financials';
+const SERVER_VERSION = '0.2.0';
+const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
+const SERVER_INSTRUCTIONS = [
+  'Use this server as the agent interface to the user-owned Klikk Financials database.',
+  'The Django API remains the source of truth; do not scrape the web app or bypass import/sync endpoints.',
+  'Read-only review tools are safe to call for analysis.',
+  'Refresh/import/vectorization tools mutate local data copied from Xero, Investec, yfinance, and related sources; ask for confirmation before running them unless the user explicitly requested an update.',
+  'When giving financial analysis, distinguish market price, market value, cost, income, and ROI.',
+].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
   'splits',
@@ -24,6 +31,52 @@ const apiBaseUrl = (process.env.KLIKK_API_BASE_URL || DEFAULT_API_BASE_URL).repl
 const apiToken = process.env.KLIKK_API_TOKEN || '';
 
 const tools = [
+  {
+    name: 'data_health_summary',
+    description: 'Summarize available Klikk Financials data domains: Xero, Investec banking, Investec investments, and market symbols.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'xero_connection_status',
+    description: 'Read Xero connection status, tenants, token expiry state, and credential presence.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'xero_list_tenants',
+    description: 'List Xero tenants known to the Klikk backend.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'investec_bank_sync_status',
+    description: 'Read the latest Investec banking sync timestamp/status.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'investec_bank_list_accounts',
+    description: 'List Investec bank accounts copied into the Klikk database.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum accounts to return.',
+          default: 100,
+        },
+      },
+    },
+  },
   {
     name: 'stock_market_list_symbols',
     description: 'List tracked financial investment symbols from the Klikk portal.',
@@ -43,8 +96,50 @@ const tools = [
     },
   },
   {
+    name: 'market_list_symbols',
+    description: 'Alias for stock_market_list_symbols. List tracked financial investment symbols from the Klikk portal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Optional symbol, share code, or company text filter.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of symbols to return.',
+          default: 100,
+        },
+      },
+    },
+  },
+  {
     name: 'stock_market_review_symbol',
     description: 'Review one tracked stock using prices, dividends, news, analyst data, and Investec buys.',
+    inputSchema: {
+      type: 'object',
+      required: ['symbol'],
+      properties: {
+        symbol: {
+          type: 'string',
+          description: 'Tracked symbol such as SNT.JO or share code such as SNT.',
+        },
+        days: {
+          type: 'number',
+          description: 'Number of recent calendar days of price history to review.',
+          default: 365,
+        },
+        news_limit: {
+          type: 'number',
+          description: 'Maximum news rows to include.',
+          default: 10,
+        },
+      },
+    },
+  },
+  {
+    name: 'market_review_symbol',
+    description: 'Alias for stock_market_review_symbol. Review one tracked stock using prices, dividends, news, analyst data, and Investec buys.',
     inputSchema: {
       type: 'object',
       required: ['symbol'],
@@ -86,8 +181,49 @@ const tools = [
     },
   },
   {
+    name: 'market_review_portfolio',
+    description: 'Alias for stock_market_review_portfolio. Review latest Investec portfolio holdings, market values, income, ROI, and concentration.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum Investec portfolio rows to fetch before selecting the latest date.',
+          default: 1000,
+        },
+        top: {
+          type: 'number',
+          description: 'Number of largest holdings and weakest holdings to return.',
+          default: 10,
+        },
+      },
+    },
+  },
+  {
     name: 'stock_market_refresh_symbol',
     description: 'Refresh stored price history for one tracked symbol through the Klikk backend.',
+    inputSchema: {
+      type: 'object',
+      required: ['symbol'],
+      properties: {
+        symbol: {
+          type: 'string',
+          description: 'Tracked symbol such as SNT.JO or share code such as SNT.',
+        },
+        start_date: {
+          type: 'string',
+          description: 'Optional YYYY-MM-DD start date.',
+        },
+        end_date: {
+          type: 'string',
+          description: 'Optional YYYY-MM-DD end date.',
+        },
+      },
+    },
+  },
+  {
+    name: 'market_refresh_symbol',
+    description: 'Alias for stock_market_refresh_symbol. Refresh yfinance-backed stored price history for one tracked symbol through the Klikk backend.',
     inputSchema: {
       type: 'object',
       required: ['symbol'],
@@ -137,8 +273,72 @@ const tools = [
     },
   },
   {
+    name: 'market_refresh_extra',
+    description: 'Alias for stock_market_refresh_extra. Refresh dividends, financials, earnings, analyst, ownership, news, and optionally vectorize articles.',
+    inputSchema: {
+      type: 'object',
+      required: ['symbol'],
+      properties: {
+        symbol: {
+          type: 'string',
+          description: 'Tracked symbol such as SNT.JO or share code such as SNT.',
+        },
+        types: {
+          type: 'array',
+          items: { type: 'string' },
+          description: `Optional extra-data types. Defaults to ${DEFAULT_EXTRA_TYPES.join(', ')}.`,
+        },
+        vectorize_articles: {
+          type: 'boolean',
+          description: 'When true, call the article vectorization endpoint after refreshing extras.',
+          default: false,
+        },
+        article_limit: {
+          type: 'number',
+          description: 'Maximum articles to vectorize.',
+          default: 30,
+        },
+      },
+    },
+  },
+  {
     name: 'stock_market_update_watchlist_information',
     description: 'Refresh and review multiple symbols so an agent can keep market information current.',
+    inputSchema: {
+      type: 'object',
+      required: ['symbols'],
+      properties: {
+        symbols: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Symbols or share codes to update.',
+        },
+        refresh_prices: {
+          type: 'boolean',
+          default: true,
+        },
+        refresh_extra: {
+          type: 'boolean',
+          default: true,
+        },
+        extra_types: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+        vectorize_articles: {
+          type: 'boolean',
+          default: false,
+        },
+        news_limit: {
+          type: 'number',
+          default: 5,
+        },
+      },
+    },
+  },
+  {
+    name: 'market_update_symbols',
+    description: 'Alias for stock_market_update_watchlist_information. Refresh and review multiple symbols so an agent can keep yfinance-backed market data current.',
     inputSchema: {
       type: 'object',
       required: ['symbols'],
@@ -304,6 +504,110 @@ async function safeApiRequest(path, options = {}) {
 
 async function listSymbols() {
   return apiRequest('/api/financial-investments/symbols/');
+}
+
+async function dataHealthSummary() {
+  const [
+    xeroStatus,
+    xeroTenants,
+    bankSyncStatus,
+    bankAccounts,
+    bankTransactions,
+    investecPortfolio,
+    investecTransactions,
+    symbols,
+  ] = await Promise.all([
+    safeApiRequest('/xero/auth/status/'),
+    safeApiRequest('/xero/core/tenants/'),
+    safeApiRequest('/api/investec/bank/sync-status/'),
+    safeApiRequest('/api/investec/bank/accounts/?limit=500'),
+    safeApiRequest('/api/investec/bank/transactions/?limit=1'),
+    safeApiRequest('/api/investec/portfolio/?limit=1'),
+    safeApiRequest('/api/investec/transactions/?limit=1'),
+    safeApiRequest('/api/financial-investments/symbols/'),
+  ]);
+
+  const tenantRows = xeroTenants.ok && Array.isArray(xeroTenants.data) ? xeroTenants.data : [];
+  const statusTenants = xeroStatus.ok && Array.isArray(xeroStatus.data?.tenants) ? xeroStatus.data.tenants : [];
+  const bankAccountRows = bankAccounts.ok
+    ? topArrayRows(bankAccounts.data, 500)
+    : [];
+  const symbolRows = symbols.ok && Array.isArray(symbols.data) ? symbols.data : [];
+
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    xero: {
+      connected: Boolean(xeroStatus.data?.connected),
+      has_credentials: Boolean(xeroStatus.data?.has_credentials),
+      tenant_count: tenantRows.length || statusTenants.length,
+      expired_token_count: statusTenants.filter((tenant) => tenant.token_expired).length,
+      status: xeroStatus.ok ? xeroStatus.data : null,
+      error: xeroStatus.ok ? null : xeroStatus.error,
+    },
+    investec_bank: {
+      account_count: bankAccountRows.length,
+      last_synced_at: bankSyncStatus.ok ? bankSyncStatus.data?.last_synced_at ?? null : null,
+      transaction_count: bankTransactions.ok ? bankTransactions.data?.count ?? null : null,
+      error: [bankSyncStatus, bankAccounts, bankTransactions].filter((result) => !result.ok).map((result) => result.error),
+    },
+    investec_investments: {
+      holdings_count: investecPortfolio.ok ? investecPortfolio.data?.count ?? null : null,
+      holdings_coverage: investecPortfolio.ok ? investecPortfolio.data?.coverage ?? null : null,
+      transaction_count: investecTransactions.ok ? investecTransactions.data?.count ?? null : null,
+      transaction_coverage: investecTransactions.ok ? investecTransactions.data?.coverage ?? null : null,
+      error: [investecPortfolio, investecTransactions].filter((result) => !result.ok).map((result) => result.error),
+    },
+    market_data: {
+      symbol_count: symbolRows.length,
+      stale_or_unlinked_hint: 'Use market_update_symbols to refresh selected yfinance-backed symbols and optional extra data.',
+      error: symbols.ok ? null : symbols.error,
+    },
+    agent_brief: [
+      `Xero tenants: ${tenantRows.length || statusTenants.length}; expired tokens: ${statusTenants.filter((tenant) => tenant.token_expired).length}.`,
+      `Investec bank accounts: ${bankAccountRows.length}; last bank sync: ${bankSyncStatus.ok ? bankSyncStatus.data?.last_synced_at || 'n/a' : 'error'}.`,
+      `Investec holdings rows: ${investecPortfolio.ok ? investecPortfolio.data?.count ?? 'n/a' : 'error'}.`,
+      `Market symbols tracked: ${symbolRows.length}.`,
+    ],
+  };
+}
+
+async function xeroConnectionStatus() {
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    status: await apiRequest('/xero/auth/status/'),
+  };
+}
+
+async function xeroListTenants() {
+  const tenants = await apiRequest('/xero/core/tenants/');
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: Array.isArray(tenants) ? tenants.length : 0,
+    tenants,
+  };
+}
+
+async function investecBankSyncStatus() {
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    status: await apiRequest('/api/investec/bank/sync-status/'),
+  };
+}
+
+async function investecBankListAccounts(args) {
+  const limit = clampNumber(args.limit, 100, 1, 500);
+  const data = await apiRequest(`/api/investec/bank/accounts/?limit=${limit}`);
+  const accounts = topArrayRows(data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? accounts.length,
+    accounts,
+  };
 }
 
 function filterSymbols(symbols, query, limit) {
@@ -701,6 +1005,11 @@ async function updateWatchlistInformation(args) {
 }
 
 const toolHandlers = {
+  data_health_summary: dataHealthSummary,
+  xero_connection_status: xeroConnectionStatus,
+  xero_list_tenants: xeroListTenants,
+  investec_bank_sync_status: investecBankSyncStatus,
+  investec_bank_list_accounts: investecBankListAccounts,
   stock_market_list_symbols: async (args) => {
     const symbols = await listSymbols();
     const limit = clampNumber(args.limit, 100, 1, 500);
@@ -716,6 +1025,12 @@ const toolHandlers = {
   stock_market_refresh_symbol: refreshSymbol,
   stock_market_refresh_extra: refreshExtra,
   stock_market_update_watchlist_information: updateWatchlistInformation,
+  market_list_symbols: async (args) => toolHandlers.stock_market_list_symbols(args),
+  market_review_symbol: reviewSymbol,
+  market_review_portfolio: reviewPortfolio,
+  market_refresh_symbol: refreshSymbol,
+  market_refresh_extra: refreshExtra,
+  market_update_symbols: updateWatchlistInformation,
 };
 
 async function handleRequest(request) {
@@ -734,6 +1049,7 @@ async function handleRequest(request) {
             name: SERVER_NAME,
             version: SERVER_VERSION,
           },
+          instructions: SERVER_INSTRUCTIONS,
         });
         break;
       case 'tools/list':

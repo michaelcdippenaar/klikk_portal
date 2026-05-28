@@ -29,7 +29,12 @@ let isRefreshing = false;
 let refreshSubscribers = [];
 
 function onTokenRefreshed(newToken) {
-  refreshSubscribers.forEach((cb) => cb(newToken));
+  refreshSubscribers.forEach((cb) => cb(null, newToken));
+  refreshSubscribers = [];
+}
+
+function onTokenRefreshFailed(error) {
+  refreshSubscribers.forEach((cb) => cb(error, null));
   refreshSubscribers = [];
 }
 
@@ -47,8 +52,12 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
 
       if (isRefreshing) {
-        return new Promise((resolve) => {
-          addRefreshSubscriber((newToken) => {
+        return new Promise((resolve, reject) => {
+          addRefreshSubscriber((refreshError, newToken) => {
+            if (refreshError) {
+              reject(refreshError);
+              return;
+            }
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             resolve(apiClient(originalRequest));
           });
@@ -68,7 +77,7 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
-        refreshSubscribers = [];
+        onTokenRefreshFailed(refreshError);
         try {
           const { useAuthStore } = await import('../stores/auth');
           const authStore = useAuthStore();

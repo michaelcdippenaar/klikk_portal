@@ -390,7 +390,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import {
   useVueTable,
   getCoreRowModel,
@@ -702,6 +702,10 @@ function handleOutsideClick(e) {
 }
 onMounted(() => {
   document.addEventListener('click', handleOutsideClick);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleOutsideClick);
 });
 </script>
 

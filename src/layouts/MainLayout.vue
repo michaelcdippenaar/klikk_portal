@@ -197,7 +197,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useDataStore } from '../stores/data';
@@ -431,6 +431,14 @@ onMounted(() => {
     console.warn('Failed to load tenants:', err);
   });
   refreshAllCommands();
+});
+
+onUnmounted(() => {
+  unregister([
+    ...buildStaticCommands(),
+    ...buildTenantCommands(),
+    ...buildProcessCommands(),
+  ].map((command) => command.id));
 });
 
 watch(

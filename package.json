@@ -10,7 +10,8 @@
     "test": "vitest run",
     "lint": "eslint --ext .js,.ts,.vue ./src",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\"",
-    "mcp:stock-market": "node mcp/stock-market/server.mjs"
+    "mcp:stock-market": "node mcp/stock-market/server.mjs",
+    "mcp:financials": "node mcp/stock-market/server.mjs"
   },
   "dependencies": {
     "@fontsource/geist": "^5.2.9",
@@ -27,6 +28,8 @@
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "autoprefixer": "^10.5.0",
     "eslint": "^8.57.0",

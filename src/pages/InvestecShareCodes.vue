@@ -185,10 +185,6 @@ function refreshShareCodes() {
   fetchUnmappedShareNames();
 }
 
-function onTabChange(tab) {
-  if (tab === 'unmapped') fetchUnmappedShareNames();
-}
-
 function downloadMapping() {
   const token = localStorage.getItem('auth_token');
   const url = `${API_BASE_URL}${API_ENDPOINTS.INVESTEC_EXPORT_MAPPING}`;

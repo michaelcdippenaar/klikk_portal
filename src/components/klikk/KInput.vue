@@ -79,8 +79,10 @@
         :aria-describedby="(error && errorMessage) ? `${inputId}-error` : helpText ? `${inputId}-help` : undefined"
         v-bind="$attrs"
         @input="handleInput"
-        @focus="isFocused = true"
-        @blur="isFocused = false"
+        @keydown="emit('keydown', $event)"
+        @keyup="emit('keyup', $event)"
+        @focus="handleFocus"
+        @blur="handleBlur"
       />
 
       <!-- Clear button — only shown when clearable=true and there is a value -->
@@ -228,7 +230,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue', 'keydown', 'keyup', 'focus', 'blur']);
 
 const isFocused = ref(false);
 
@@ -265,6 +267,16 @@ const debouncedEmit = computed(() => {
 
 function handleInput(event) {
   debouncedEmit.value(event.target.value);
+}
+
+function handleFocus(event) {
+  isFocused.value = true;
+  emit('focus', event);
+}
+
+function handleBlur(event) {
+  isFocused.value = false;
+  emit('blur', event);
 }
 
 function clearValue() {
