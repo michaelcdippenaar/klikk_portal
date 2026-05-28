@@ -1,4 +1,4 @@
-# Stage 1: build Quasar app
+# Stage 1: build Vite app
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -12,7 +12,7 @@ COPY . .
 ARG VITE_API_BASE_URL=/backend
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
-RUN npx quasar build
+RUN npm run build
 
 # Stage 2: serve with nginx
 FROM nginx:alpine
@@ -33,7 +33,7 @@ RUN echo 'server { \
     } \
   }' > /etc/nginx/conf.d/default.conf
 
-COPY --from=builder /app/dist/spa /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
