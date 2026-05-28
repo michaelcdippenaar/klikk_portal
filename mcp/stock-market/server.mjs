@@ -4,7 +4,7 @@ import readline from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.2.0';
+const SERVER_VERSION = '0.3.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -371,6 +371,60 @@ const tools = [
       },
     },
   },
+  {
+    name: 'market_list_dividend_calendar',
+    description: 'List declared/paid dividend calendar entries copied into Klikk Financials, including DPS, prior-year DPS, status, and TM1 workflow fields.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: {
+          type: 'string',
+          description: 'Optional symbol filter such as SNT.JO.',
+        },
+        share_code: {
+          type: 'string',
+          description: 'Optional Investec share code filter such as SNT.',
+        },
+        status: {
+          type: 'string',
+          description: 'Optional calendar status filter supported by the backend.',
+        },
+        dividend_category: {
+          type: 'string',
+          description: 'Optional category filter: regular, special, or foreign.',
+        },
+        pending_tm1: {
+          type: 'boolean',
+          description: 'When true, return entries not yet written to TM1.',
+          default: false,
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum entries to return.',
+          default: 100,
+        },
+      },
+    },
+  },
+  {
+    name: 'market_check_declared_dividends',
+    description: 'Mutating tool: check yfinance for newly declared dividends for all held shares and save entries to the dividend calendar. Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      required: ['confirm'],
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Must be true to run the backend dividend-calendar check because it mutates local data and may call yfinance for many symbols.',
+        },
+        include_calendar_preview: {
+          type: 'boolean',
+          description: 'When true, include recent dividend calendar entries after the check completes.',
+          default: true,
+        },
+      },
+    },
+  },
 ];
 
 function send(message) {
@@ -479,7 +533,8 @@ async function apiRequest(path, options = {}) {
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const detail = typeof payload === 'string' ? payload : payload?.detail || payload?.error || JSON.stringify(payload);
+    const rawDetail = typeof payload === 'string' ? payload : payload?.detail || payload?.error || JSON.stringify(payload);
+    const detail = rawDetail.length > 1200 ? `${rawDetail.slice(0, 1200)}...` : rawDetail;
     const error = new Error(`Klikk API ${response.status}: ${detail}`);
     error.status = response.status;
     error.payload = payload;
@@ -1004,6 +1059,65 @@ async function updateWatchlistInformation(args) {
   };
 }
 
+function filterDividendCalendarRows(rows, args) {
+  const symbol = normalizeLookup(args.symbol);
+  const shareCode = normalizeLookup(args.share_code);
+  const category = normalizeLookup(args.dividend_category);
+
+  return rows.filter((row) => {
+    if (symbol && normalizeLookup(row.symbol) !== symbol) return false;
+    if (shareCode && normalizeLookup(row.share_code) !== shareCode) return false;
+    if (category && normalizeLookup(row.dividend_category) !== category) return false;
+    return true;
+  });
+}
+
+async function listDividendCalendar(args) {
+  const params = new URLSearchParams();
+  if (args.status) params.set('status', String(args.status));
+  if (args.pending_tm1) params.set('pending_tm1', '1');
+
+  const path = `/api/financial-investments/dividend-calendar/${params.toString() ? `?${params}` : ''}`;
+  const data = await apiRequest(path);
+  const limit = clampNumber(args.limit, 100, 1, 500);
+  const rows = filterDividendCalendarRows(topArrayRows(data, 500), args).slice(0, limit);
+
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    returned: rows.length,
+    rows,
+    agent_brief: [
+      `${rows.length} dividend calendar row(s) returned.`,
+      args.pending_tm1 ? 'Filtered to TM1-pending entries.' : 'Includes declared/paid entries returned by the backend.',
+    ],
+  };
+}
+
+async function checkDeclaredDividends(args) {
+  if (args.confirm !== true) {
+    throw new Error('market_check_declared_dividends mutates data; call it again with confirm=true after explicit user confirmation.');
+  }
+
+  const result = await apiRequest('/api/financial-investments/dividend-calendar/check/', {
+    method: 'POST',
+    body: {},
+  });
+
+  let calendarPreview = null;
+  if (args.include_calendar_preview !== false) {
+    calendarPreview = await listDividendCalendar({ limit: 25 });
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    result,
+    calendar_preview: calendarPreview,
+  };
+}
+
 const toolHandlers = {
   data_health_summary: dataHealthSummary,
   xero_connection_status: xeroConnectionStatus,
@@ -1031,6 +1145,8 @@ const toolHandlers = {
   market_refresh_symbol: refreshSymbol,
   market_refresh_extra: refreshExtra,
   market_update_symbols: updateWatchlistInformation,
+  market_list_dividend_calendar: listDividendCalendar,
+  market_check_declared_dividends: checkDeclaredDividends,
 };
 
 async function handleRequest(request) {

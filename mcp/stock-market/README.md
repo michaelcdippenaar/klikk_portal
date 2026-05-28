@@ -59,5 +59,7 @@ KLIKK_API_BASE_URL=http://127.0.0.1:8001 KLIKK_API_TOKEN=<token> npm run mcp:fin
 - `market_refresh_extra`: alias for extra-data refresh.
 - `stock_market_update_watchlist_information`: refresh and review multiple symbols in one agent call.
 - `market_update_symbols`: alias for multi-symbol market refresh/review.
+- `market_list_dividend_calendar`: list declared/paid dividend calendar entries with DPS, prior-year DPS, status, and TM1 fields.
+- `market_check_declared_dividends`: guarded mutating tool that checks yfinance for newly declared dividends across held shares and saves new calendar entries.
 
 The server intentionally uses the existing backend as the single source of truth. It does not scrape broker pages or bypass the portal data model.
