@@ -78,6 +78,100 @@ const tools = [
     },
   },
   {
+    name: 'investec_bank_search_transactions',
+    description: 'Search Investec bank transactions across all copied accounts by description, exact amount, date range, and account number.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Description text to search for, such as LUAN SWART or 18 Dr Malan.',
+        },
+        amount: {
+          type: 'string',
+          description: 'Exact transaction amount, e.g. 2136.51.',
+        },
+        date_from: {
+          type: 'string',
+          description: 'Optional YYYY-MM-DD start date.',
+        },
+        date_to: {
+          type: 'string',
+          description: 'Optional YYYY-MM-DD end date.',
+        },
+        account: {
+          type: 'string',
+          description: 'Optional Investec account number or API account id. Comma-separated values are allowed.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum rows to return.',
+          default: 100,
+        },
+        offset: {
+          type: 'number',
+          description: 'Pagination offset.',
+          default: 0,
+        },
+      },
+    },
+  },
+  {
+    name: 'xero_search_journals',
+    description: 'Search Xero journal lines to see what account/contact/tracking a receipt, payment, invoice, overpayment, or manual journal was posted to.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Text search across description, reference, contact, account code/name, and tenant.',
+        },
+        amount: {
+          type: 'string',
+          description: 'Exact amount; matches signed amount, debit, and credit.',
+        },
+        date_from: {
+          type: 'string',
+          description: 'Optional YYYY-MM-DD start date.',
+        },
+        date_to: {
+          type: 'string',
+          description: 'Optional YYYY-MM-DD end date.',
+        },
+        tenant: {
+          type: 'string',
+          description: 'Optional tenant id or tenant name fragment.',
+        },
+        account: {
+          type: 'string',
+          description: 'Optional Xero account code or name fragment.',
+        },
+        contact: {
+          type: 'string',
+          description: 'Optional Xero contact name fragment.',
+        },
+        reference: {
+          type: 'string',
+          description: 'Optional reference fragment.',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional description fragment.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum rows to return.',
+          default: 100,
+        },
+        offset: {
+          type: 'number',
+          description: 'Pagination offset.',
+          default: 0,
+        },
+      },
+    },
+  },
+  {
     name: 'stock_market_list_symbols',
     description: 'List tracked financial investment symbols from the Klikk portal.',
     inputSchema: {
@@ -665,6 +759,89 @@ async function investecBankListAccounts(args) {
   };
 }
 
+function appendSearchParam(params, key, value) {
+  if (value === undefined || value === null || value === '') return;
+  params.set(key, String(value));
+}
+
+async function investecBankSearchTransactions(args) {
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'description', args.query);
+  appendSearchParam(params, 'amount', args.amount);
+  appendSearchParam(params, 'date_from', args.date_from);
+  appendSearchParam(params, 'date_to', args.date_to);
+  appendSearchParam(params, 'account', args.account);
+
+  const data = await apiRequest(`/api/investec/bank/transactions/?${params}`);
+  const rows = topArrayRows(data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    filters: {
+      query: args.query || null,
+      amount: args.amount || null,
+      date_from: args.date_from || null,
+      date_to: args.date_to || null,
+      account: args.account || null,
+    },
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    transactions: rows,
+    agent_brief: [
+      `${data?.count ?? rows.length} Investec bank transaction row(s) matched.`,
+      rows.length ? 'Use account_number, transaction_date, type, amount, and description to identify the bank movement.' : 'No matching Investec bank transactions found.',
+    ],
+  };
+}
+
+async function xeroSearchJournals(args) {
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'q', args.query);
+  appendSearchParam(params, 'amount', args.amount);
+  appendSearchParam(params, 'date_from', args.date_from);
+  appendSearchParam(params, 'date_to', args.date_to);
+  appendSearchParam(params, 'tenant', args.tenant);
+  appendSearchParam(params, 'account', args.account);
+  appendSearchParam(params, 'contact', args.contact);
+  appendSearchParam(params, 'reference', args.reference);
+  appendSearchParam(params, 'description', args.description);
+
+  const data = await apiRequest(`/xero/data/journals/search/?${params}`);
+  const rows = topArrayRows(data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    filters: {
+      query: args.query || null,
+      amount: args.amount || null,
+      date_from: args.date_from || null,
+      date_to: args.date_to || null,
+      tenant: args.tenant || null,
+      account: args.account || null,
+      contact: args.contact || null,
+      reference: args.reference || null,
+      description: args.description || null,
+    },
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    journals: rows,
+    agent_brief: [
+      `${data?.count ?? rows.length} Xero journal line(s) matched.`,
+      rows.length ? 'Use account_code/account_name plus debit/credit to explain where Xero posted the transaction.' : 'No matching Xero journals found.',
+    ],
+  };
+}
+
 function filterSymbols(symbols, query, limit) {
   const normalizedQuery = normalizeLookup(query);
   const rows = normalizedQuery
@@ -1124,6 +1301,8 @@ const toolHandlers = {
   xero_list_tenants: xeroListTenants,
   investec_bank_sync_status: investecBankSyncStatus,
   investec_bank_list_accounts: investecBankListAccounts,
+  investec_bank_search_transactions: investecBankSearchTransactions,
+  xero_search_journals: xeroSearchJournals,
   stock_market_list_symbols: async (args) => {
     const symbols = await listSymbols();
     const limit = clampNumber(args.limit, 100, 1, 500);

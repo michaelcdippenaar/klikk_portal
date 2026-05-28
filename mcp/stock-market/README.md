@@ -47,6 +47,8 @@ KLIKK_API_BASE_URL=http://127.0.0.1:8001 KLIKK_API_TOKEN=<token> npm run mcp:fin
 - `xero_list_tenants`: list Xero tenants copied into the backend.
 - `investec_bank_sync_status`: read the latest Investec bank sync timestamp.
 - `investec_bank_list_accounts`: list Investec bank accounts copied into the backend.
+- `investec_bank_search_transactions`: search copied Investec bank transactions by description, amount, date range, and account.
+- `xero_search_journals`: search Xero journal lines to see which account/contact/tracking a receipt, payment, invoice, overpayment, or manual journal was posted to.
 - `stock_market_list_symbols`: list tracked stocks from `/api/financial-investments/symbols/`.
 - `market_list_symbols`: alias for stock-market symbol listing.
 - `stock_market_review_symbol`: review one stock using price history, dividends, news, analyst data, and Investec buy transactions.
