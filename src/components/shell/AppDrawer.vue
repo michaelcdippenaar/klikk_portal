@@ -1,7 +1,11 @@
 <template>
   <!-- Desktop: always-visible sidebar. Mobile: slide-over panel + backdrop. -->
   <template v-if="isDesktop">
-    <aside class="app-drawer app-drawer--desktop">
+    <aside
+      class="app-drawer app-drawer--desktop"
+      :class="{ 'app-drawer--collapsed': collapsed }"
+      aria-label="Navigation"
+    >
       <slot />
     </aside>
   </template>
@@ -37,6 +41,10 @@ import { ref, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
   modelValue: {
+    type: Boolean,
+    default: false,
+  },
+  collapsed: {
     type: Boolean,
     default: false,
   },
@@ -88,6 +96,7 @@ function handleKeydown(e) {
   border-right: 1px solid var(--kdl-border-subtle);
   overflow-y: auto;
   overflow-x: hidden;
+  transition: width var(--duration-short) var(--ease-standard);
 }
 
 /* ── Desktop: sticky beside main content ───────────────────────────────────── */
@@ -96,6 +105,10 @@ function handleKeydown(e) {
   top: 44px; /* height of AppHeader */
   height: calc(100vh - 44px);
   align-self: flex-start;
+}
+
+.app-drawer--desktop.app-drawer--collapsed {
+  width: 48px;
 }
 
 /* ── Mobile: fixed overlay sliding from the left ──────────────────────────── */

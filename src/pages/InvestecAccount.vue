@@ -86,7 +86,7 @@
             :aria-controls="tableRegionId"
             @update:model-value="debouncedSearch"
           />
-          <KSelect
+          <KMultiSelect
             v-model="filters.account"
             label="Account"
             :options="accountOptions"
@@ -137,9 +137,9 @@
               <span class="investec-account-name">{{ row.account_name }}</span>
             </span>
           </template>
-          <template #cell-amount="{ value }">
+          <template #cell-amount="{ row }">
             <!-- ADR §1: accounting tables use parenthesised negatives. No colour on sign. -->
-            <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
+            <span class="kdl-numeric">{{ format(signedAmount(row), { mode: 'accounting' }) }}</span>
           </template>
           <template #cell-running_balance="{ value }">
             <span class="kdl-numeric">{{ format(value, { mode: 'accounting' }) }}</span>
@@ -206,6 +206,7 @@ import FilterBar from '../components/klikk/FilterBar.vue';
 import KAlert from '../components/klikk/KAlert.vue';
 import KChip from '../components/klikk/KChip.vue';
 import KInput from '../components/klikk/KInput.vue';
+import KMultiSelect from '../components/klikk/KMultiSelect.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
@@ -261,7 +262,7 @@ const filters = reactive({
   amount:      '',
   date_from:   '',
   date_to:     '',
-  account:     null,
+  account:     [],
 });
 
 // ── Pagination ──────────────────────────────────────────────────────────────
@@ -298,6 +299,12 @@ const accountOptions = computed(() =>
   }))
 );
 
+const selectedAccountParam = computed(() =>
+  Array.isArray(filters.account) && filters.account.length > 0
+    ? filters.account.join(',')
+    : undefined
+);
+
 // ── Active-filter chips ─────────────────────────────────────────────────────
 const activeFilterChips = computed(() => {
   const chips = [];
@@ -305,12 +312,16 @@ const activeFilterChips = computed(() => {
   if (filters.amount)      chips.push({ key: 'amount',      label: `Amount: ${filters.amount}` });
   if (filters.date_from)   chips.push({ key: 'date_from',   label: `From: ${filters.date_from}` });
   if (filters.date_to)     chips.push({ key: 'date_to',     label: `To: ${filters.date_to}` });
-  if (filters.account)     chips.push({ key: 'account',     label: `Account: ${filters.account}` });
+  if (filters.account.length === 1) {
+    chips.push({ key: 'account', label: `Account: ${accountLabelFor(filters.account[0])}` });
+  } else if (filters.account.length > 1) {
+    chips.push({ key: 'account', label: `Accounts: ${filters.account.length} selected` });
+  }
   return chips;
 });
 
 function clearFilter(key) {
-  filters[key] = key === 'account' ? null : '';
+  filters[key] = key === 'account' ? [] : '';
   pagination.offset = 0;
   fetchTransactions();
   syncRouteFromFilters();
@@ -321,10 +332,14 @@ function clearAllFilters() {
   filters.amount = '';
   filters.date_from = '';
   filters.date_to = '';
-  filters.account = null;
+  filters.account = [];
   pagination.offset = 0;
   fetchTransactions();
   syncRouteFromFilters();
+}
+
+function accountLabelFor(value) {
+  return accountOptions.value.find((opt) => String(opt.value) === String(value))?.label || String(value);
 }
 
 // ── URL sync ────────────────────────────────────────────────────────────────
@@ -335,7 +350,9 @@ function hydrateFiltersFromRoute() {
   if (q.amount)      filters.amount      = String(q.amount);
   if (q.from)        filters.date_from   = String(q.from);
   if (q.to)          filters.date_to     = String(q.to);
-  if (q.account)     filters.account     = String(q.account);
+  if (q.account) {
+    filters.account = String(q.account).split(',').map((value) => value.trim()).filter(Boolean);
+  }
   if (q.rows)        pagination.rowsPerPage = Number(q.rows) || 100;
   if (q.page)        pagination.offset   = (Number(q.page) - 1) * pagination.rowsPerPage;
 }
@@ -350,7 +367,7 @@ function syncRouteFromFilters() {
     if (filters.amount)      query.amount      = filters.amount;
     if (filters.date_from)   query.from        = filters.date_from;
     if (filters.date_to)     query.to          = filters.date_to;
-    if (filters.account)     query.account     = filters.account;
+    if (selectedAccountParam.value) query.account = selectedAccountParam.value;
     if (pagination.rowsPerPage !== 100) query.rows = String(pagination.rowsPerPage);
     if (pagination.offset > 0)          query.page = String(currentPage.value);
     router.replace({ query });
@@ -374,6 +391,12 @@ function formatDate(val) {
   return new Date(val).toLocaleDateString();
 }
 
+function signedAmount(row) {
+  const amount = Number(row?.amount ?? 0);
+  if (!Number.isFinite(amount)) return row?.amount;
+  return row?.type === 'DEBIT' ? -Math.abs(amount) : amount;
+}
+
 // ── API actions ─────────────────────────────────────────────────────────────
 async function downloadExcel() {
   loadingExport.value = true;
@@ -383,7 +406,7 @@ async function downloadExcel() {
       amount:      filters.amount      || undefined,
       date_from:   filters.date_from   || undefined,
       date_to:     filters.date_to     || undefined,
-      account:     filters.account     || undefined,
+      account:     selectedAccountParam.value,
     });
   } catch (err) {
     console.error(err);
@@ -452,7 +475,7 @@ async function fetchTransactions() {
       amount:      filters.amount      || undefined,
       date_from:   filters.date_from   || undefined,
       date_to:     filters.date_to     || undefined,
-      account:     filters.account     || undefined,
+      account:     selectedAccountParam.value,
       signal:      thisController.signal,
     });
     transactions.value = data.results || [];

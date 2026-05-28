@@ -83,6 +83,11 @@ const routes = [
             component: () => import('pages/DividendForecast.vue'),
           },
           {
+            path: 'financial-investments/strategy',
+            name: 'financial-investments-strategy',
+            component: () => import('pages/FinancialInvestmentStrategy.vue'),
+          },
+          {
             path: 'planning-analytics',
             name: 'planning-analytics',
             component: () => import('pages/PlanningAnalytics.vue'),
@@ -123,6 +128,13 @@ const routes = [
     path: '/_klikk-preview',
     name: 'klikk-preview',
     component: () => import('pages/KlikkPreview.vue'),
+  },
+  {
+    path: '/xero-connect',
+    redirect: (to) => ({
+      name: 'xero-connect',
+      query: to.query,
+    }),
   },
   {
     path: '/:catchAll(.*)*',

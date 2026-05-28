@@ -124,4 +124,11 @@ describe('InvestecTransactions — smoke', () => {
     expect(headers).toContain('Share name');
     expect(headers).toContain('Value (R)');
   });
+
+  it('shows imported month coverage and missing month count', () => {
+    expect(source).toContain('MonthCoverageStrip');
+    expect(source).toContain('transactionCoverage');
+    expect(source).toContain('label="Transaction months"');
+    expect(source).toContain('data.coverage');
+  });
 });

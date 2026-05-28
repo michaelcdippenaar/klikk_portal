@@ -66,7 +66,7 @@
 
         <!-- Lucide chevron-down -->
         <SelectIcon class="kselect-chevron" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+          <svg class="kselect-chevron-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
             fill="none" stroke="currentColor" stroke-width="1.75"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="6 9 12 15 18 9" />
@@ -361,11 +361,16 @@ function clearSelection() {
   flex-shrink: 0;
   color: var(--kdl-text-hint);
   margin-left: auto;
+  transform: none;
+}
+
+.kselect-chevron-icon {
+  display: block;
   transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* Rotate chevron when open */
-:global(.kselect-trigger[data-state="open"]) .kselect-chevron {
+.kselect-trigger[data-state="open"] .kselect-chevron-icon {
   transform: rotate(180deg);
 }
 

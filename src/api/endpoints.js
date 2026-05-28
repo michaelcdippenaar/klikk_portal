@@ -375,7 +375,7 @@ export async function getInvestecBankAccounts() {
 
 /**
  * Search Investec Private Bank transactions.
- * Params: description, amount, date_from, date_to, account (id or number), limit, offset.
+ * Params: description, amount, date_from, date_to, account (id/number or comma-separated list), limit, offset.
  * Optional signal for request cancellation (e.g. AbortController.signal).
  */
 export async function getInvestecBankTransactions(params = {}) {
@@ -463,6 +463,22 @@ export async function getFinancialInvestmentsHistory(symbol, params = {}) {
 }
 
 /**
+ * Get Investec buy transactions for a tracked financial investment symbol.
+ * Optional start_date, end_date (YYYY-MM-DD), include_sells.
+ */
+export async function getFinancialInvestmentsBuyTransactions(symbol, params = {}) {
+  const url = `/api/financial-investments/symbols/${encodeURIComponent(symbol)}/buy-transactions/`;
+  const response = await apiClient.get(url, {
+    params: {
+      start_date: params.start_date,
+      end_date: params.end_date,
+      include_sells: params.include_sells ? '1' : undefined,
+    },
+  });
+  return response.data;
+}
+
+/**
  * Refresh symbol from yfinance (fetch and store). Optional start_date, end_date in body or params.
  */
 export async function refreshFinancialInvestmentsSymbol(symbol, params = {}) {
@@ -532,6 +548,14 @@ export async function getFinancialInvestmentsOwnership(symbol) {
 
 export async function getFinancialInvestmentsNews(symbol, limit = 20) {
   const response = await apiClient.get(_fiUrl(symbol, 'news/'), { params: { limit } });
+  return response.data;
+}
+
+export async function vectorizeFinancialInvestmentsArticles(symbol, options = {}) {
+  const response = await apiClient.post(_fiUrl(symbol, 'vectorize-articles/'), {
+    vectorize: options.vectorize ?? true,
+    limit: options.limit ?? 30,
+  }, { timeout: 120000 });
   return response.data;
 }
 

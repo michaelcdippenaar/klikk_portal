@@ -1,6 +1,6 @@
 <template>
   <!-- AppPage intentionally omitted: Login is a full-screen centred page outside the app shell. -->
-  <div class="fullscreen flex flex-center login-page">
+  <div class="login-page">
     <div class="login-card-wrapper">
 
       <!-- Environment pill — hidden on production. Derives env from hostname
@@ -8,7 +8,7 @@
            Logic: localhost / 127.0.0.1 / 192.168.x → Development
                   staging.* → Staging
                   anything else → Production (pill hidden) -->
-      <div v-if="envLabel !== 'Production'" class="login-env-pill" :class="`login-env-pill--${envLabel.toLowerCase()}`" aria-label="`Environment: ${envLabel}`">
+      <div v-if="envLabel !== 'Production'" class="login-env-pill" :class="`login-env-pill--${envLabel.toLowerCase()}`" :aria-label="`Environment: ${envLabel}`">
         {{ envLabel }}
       </div>
 
@@ -119,7 +119,7 @@ const passwordError = ref('');
 const capsLockOn = ref(false);
 
 function handlePasswordKey(event) {
-  capsLockOn.value = event.getModifierState('CapsLock');
+  capsLockOn.value = Boolean(event?.getModifierState?.('CapsLock'));
 }
 
 // ── Environment detection ──────────────────────────────────────────────────
@@ -174,6 +174,15 @@ async function handleLogin() {
 
 <style scoped>
 .login-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 32px 0;
+  overflow: auto;
   background: var(--kdl-page-bg);
 }
 

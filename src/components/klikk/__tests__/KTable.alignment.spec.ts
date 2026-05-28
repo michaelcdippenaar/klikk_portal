@@ -68,14 +68,23 @@ const sampleRows: Row[] = Array.from({ length: 10 }, (_, i) => ({
 
 const columnHelper = createColumnHelper<Row>();
 
-// 5-column layout matching the InvestecAccount column defs (after the fix)
+// 6-column layout matching the InvestecAccount column defs.
 const columnsWithSize = [
   columnHelper.accessor('date',        { header: 'Date',        size: 110 }),
-  columnHelper.accessor('account',     { header: 'Account',     size: 130 }),
+  columnHelper.accessor('account',     { header: 'Account',     size: 220 }),
   columnHelper.accessor('type',        { header: 'Type',        size: 90  }),
   columnHelper.accessor('amount',      { header: 'Amount (R)',  size: 140, meta: { align: 'right' } }),
-  columnHelper.accessor('description', { header: 'Description', size: 280 }),
+  columnHelper.accessor('description', { header: 'Description', size: 340 }),
+  columnHelper.accessor('amount',      { id: 'balance', header: 'Balance (R)', size: 140, meta: { align: 'right' } }),
 ];
+
+function tablePixelWidth(columns: Array<{ columnDef: { meta?: Record<string, unknown> }; getSize?: () => number }>) {
+  return columns.reduce((total, column) => {
+    const raw = colWidth(column).width;
+    const numeric = raw.endsWith('px') ? Number.parseFloat(raw) : Number(column.getSize?.() || 150);
+    return total + (Number.isFinite(numeric) ? numeric : 150);
+  }, 0);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -112,7 +121,7 @@ describe('KTable column alignment — colgroup width strategy', () => {
     expect(colgroupWidths).toEqual(bodyWidths);
 
     // Assert the exact pixel values match the declared column sizes
-    expect(colgroupWidths).toEqual(['110px', '130px', '90px', '140px', '280px']);
+    expect(colgroupWidths).toEqual(['110px', '220px', '90px', '140px', '340px', '140px']);
   });
 
   // ── Case 2: Virtual mode ──────────────────────────────────────────────────
@@ -150,12 +159,25 @@ describe('KTable column alignment — colgroup width strategy', () => {
     // The core invariant being tested: these are equal.
     // This is what prevents the header/body misalignment MC observed in the screenshot.
     expect(colgroupWidths).toEqual(firstVirtualRowWidths);
-    expect(colgroupWidths).toHaveLength(5);
+    expect(colgroupWidths).toHaveLength(6);
 
     // Spot-check widths
     expect(colgroupWidths[0]).toBe('110px'); // date
     expect(colgroupWidths[2]).toBe('90px');  // type (narrow)
-    expect(colgroupWidths[4]).toBe('280px'); // description (widest)
+    expect(colgroupWidths[4]).toBe('340px'); // description (widest)
+  });
+
+  it('virtual mode: table width is the sum of visible column widths', () => {
+    const table = createTable<Row>({
+      data: sampleRows,
+      columns: columnsWithSize,
+      getCoreRowModel: getCoreRowModel(),
+      state: minState,
+      onStateChange: () => {},
+      renderFallbackValue: null,
+    });
+
+    expect(tablePixelWidth(table.getVisibleLeafColumns())).toBe(1040);
   });
 
   // ── Case 3: meta.width takes priority over column.getSize() ──────────────

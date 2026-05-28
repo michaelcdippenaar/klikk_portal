@@ -156,7 +156,11 @@
         <KSpinner size="md" tone="accent" />
       </div>
 
-      <table class="ktable" :class="{ 'ktable--loading': loading }">
+      <table
+        class="ktable"
+        :class="{ 'ktable--loading': loading }"
+        :style="virtual ? tableWidthStyle : undefined"
+      >
         <!-- ── <colgroup> — drives column widths for both thead and virtual tbody ── -->
         <colgroup>
           <col
@@ -386,7 +390,7 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, watch, onMounted, onScopeDispose, effectScope } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import {
   useVueTable,
   getCoreRowModel,
@@ -602,52 +606,18 @@ const rows = computed(() => {
 });
 
 // ── Virtual scroll ────────────────────────────────────────────────────────────
-// useVirtualizer() is a composable that internally calls onScopeDispose() for
-// cleanup. It MUST be called from setup() (or an effectScope) so that the
-// cleanup hook has an owning scope to attach to.
-//
-// Strategy: use effectScope so we can tear down and re-create the virtualizer
-// if virtual toggles (rare in practice — consumers do not toggle this prop
-// mid-session, but the contract must be correct regardless). The scope gives
-// the internal onScopeDispose call a valid owner.
-//
-// useVirtualizer accepts MaybeRef<options>; we pass a computed so `count` and
-// `estimateSize` stay reactive without re-creating the virtualizer instance.
-
-const _scope = effectScope();
-const _virtualizerRef = shallowRef(null); // holds Ref<Virtualizer> | null
-
-if (props.virtual) {
-  _scope.run(() => {
-    _virtualizerRef.value = useVirtualizer(
-      computed(() => ({
-        count: rows.value.length,
-        getScrollElement: () => scrollContainerRef.value,
-        estimateSize: () => (props.dense ? 32 : 44),
-        overscan: 10,
-      }))
-    );
-  });
-}
-
-// Watch for late virtual toggle (guard: only ever goes false→true in practice).
-watch(
-  () => props.virtual,
-  (v) => {
-    if (!v) {
-      _scope.stop();
-      _virtualizerRef.value = null;
-    }
-    // true→false path not expected but handled above; false→true after mount
-    // is not supported by this primitive (virtual is a one-time init prop).
-  }
+// useVirtualizer() returns a shallow ref and calls triggerRef() on scroll.
+// Keep that ref wired straight to the template; wrapping it in a computed that
+// returns the same Virtualizer object suppresses scroll rerenders.
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: rows.value.length,
+    getScrollElement: () => scrollContainerRef.value,
+    estimateSize: () => (props.dense ? 32 : 44),
+    overscan: 10,
+    enabled: props.virtual,
+  }))
 );
-
-// Dispose the scope when the component unmounts.
-onScopeDispose(() => _scope.stop());
-
-// Unwrap the inner Ref<Virtualizer> so the template receives a Virtualizer instance.
-const virtualizer = computed(() => _virtualizerRef.value?.value ?? null);
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 
@@ -698,6 +668,22 @@ function virtualCellStyle(column) {
     boxSizing: 'border-box',
   };
 }
+
+const tableWidthStyle = computed(() => {
+  const width = table
+    .getVisibleLeafColumns()
+    .reduce((total, column) => {
+      const raw = colWidth(column).width;
+      const numeric = typeof raw === 'string' && raw.endsWith('px')
+        ? Number.parseFloat(raw)
+        : Number(column.getSize?.() || 150);
+      return total + (Number.isFinite(numeric) ? numeric : 150);
+    }, 0);
+
+  return width > 0
+    ? { width: `${width}px`, minWidth: `${width}px` }
+    : undefined;
+});
 
 // ── Aria sort ─────────────────────────────────────────────────────────────────
 

@@ -30,7 +30,7 @@ describe('InvestecAccount — F6 aria-controls (filter → table region)', () =>
   });
 
   it('all five filter controls carry aria-controls (count ≥ 5)', () => {
-    // There are 4 KInput + 1 KSelect in the filter bar; each must have aria-controls
+    // There are 4 KInput + 1 KMultiSelect in the filter bar; each must have aria-controls
     const matches = source.match(/:aria-controls="tableRegionId"/g);
     expect(matches).not.toBeNull();
     expect(matches!.length).toBeGreaterThanOrEqual(5);

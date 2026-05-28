@@ -36,8 +36,24 @@
 
       <div v-if="checkResult" class="klikk-alert-strip df-alert" :class="checkResult.error ? 'tone-error' : 'tone-success'" role="alert">
         <template v-if="checkResult.error">{{ checkResult.error }}</template>
-        <template v-else>Checked {{ checkResult.checked }} symbols. {{ (checkResult.results || []).filter(r => r.new_record_saved).length }} new dividend(s) saved.</template>
+        <template v-else>
+          Checked {{ checkedSymbolCount(checkResult) }} symbols. {{ savedDividendCount(checkResult) }} new dividend(s) saved.
+          <span v-if="checkResult.message" class="df-alert__note">{{ checkResult.message }}</span>
+        </template>
         <button class="btn btn-ghost btn-sm" @click="checkResult = null">Dismiss</button>
+      </div>
+
+      <div v-if="calendarRows.length" class="df-summary-grid">
+        <div class="df-summary-stat">
+          <span>Expected dividends</span>
+          <strong>{{ formatCurrency(expectedDividendStats.total, 'ZAR') }}</strong>
+          <small>{{ expectedDividendStats.count }} row{{ expectedDividendStats.count === 1 ? '' : 's' }} with holdings</small>
+        </div>
+        <div class="df-summary-stat">
+          <span>Holding snapshot</span>
+          <strong>{{ portfolioSnapshotDate || '—' }}</strong>
+          <small>{{ portfolioLoadError || `${expectedDividendStats.missing} row${expectedDividendStats.missing === 1 ? '' : 's'} without matching shares` }}</small>
+        </div>
       </div>
 
       <KTable
@@ -59,6 +75,14 @@
         <template #cell-amount="{ row }">
           {{ row.amount != null ? row.amount.toFixed(4) : '—' }}
           <span v-if="row.currency" class="df-currency">{{ row.currency }}</span>
+        </template>
+        <template #cell-holding_quantity="{ value }">
+          <span v-if="value != null">{{ formatQuantity(value) }}</span>
+          <span v-else class="df-muted">—</span>
+        </template>
+        <template #cell-expected_dividend="{ value, row }">
+          <span v-if="value != null" class="df-bold">{{ formatCurrency(value, row.currency || 'ZAR') }}</span>
+          <span v-else class="df-muted">—</span>
         </template>
         <template #cell-prior_year_dps="{ value, row }">
           <span v-if="value != null" class="df-tooltip-host" :title="row.prior_year_date ? `Prior year: ${row.prior_year_date}` : ''">
@@ -281,10 +305,11 @@
 </template>
 
 <script>
-import { defineComponent, ref, onMounted } from 'vue';
+import { computed, defineComponent, ref, onMounted } from 'vue';
 import AppPage from '../components/shell/AppPage.vue';
 import {
   getDividendCalendar,
+  getInvestecPortfolio,
   checkDeclaredDividends,
   getDividendForecast,
   adjustDividendForecast,
@@ -313,6 +338,9 @@ export default defineComponent({
     // -- Calendar --
     const calendarRows = ref([]);
     const loadingCalendar = ref(false);
+    const portfolioSnapshotDate = ref(null);
+    const portfolioLoadError = ref('');
+    const holdingQuantityByShare = ref(new Map());
     const calendarFilter = ref('all');
     const calendarFilterOpts = [
       { label: 'All', value: 'all' },
@@ -330,6 +358,8 @@ export default defineComponent({
       { accessorKey: 'ex_dividend_date',     header: 'Ex-Date',      enableSorting: true },
       { accessorKey: 'payment_date',         header: 'Pay Date',     enableSorting: true },
       { accessorKey: 'amount',               header: 'DPS',          meta: { align: 'right' }, enableSorting: true },
+      { accessorKey: 'holding_quantity',     header: 'Shares Held',  meta: { align: 'right' }, enableSorting: true },
+      { accessorKey: 'expected_dividend',    header: 'Expected',     meta: { align: 'right' }, enableSorting: true },
       { accessorKey: 'prior_year_dps',       header: 'Prior Yr DPS', meta: { align: 'right' }, enableSorting: true },
       { accessorKey: 'pct_change',           header: '% Chg',        meta: { align: 'right' }, enableSorting: true },
       { accessorKey: 'tm1_adjustment_written', header: 'TM1 Status', id: 'tm1_status', meta: { align: 'center' } },
@@ -355,14 +385,117 @@ export default defineComponent({
     const checking = ref(false);
     const checkResult = ref(null);
 
+    function checkedSymbolCount(result) {
+      return Number.isFinite(result?.checked) ? result.checked : (result?.results || []).length;
+    }
+
+    function savedDividendCount(result) {
+      return (result?.results || []).filter(r => r.new_record_saved).length;
+    }
+
+    function toNumber(value) {
+      if (value === null || value === undefined || value === '') return null;
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function normaliseShareCode(value) {
+      return String(value || '').trim().toUpperCase();
+    }
+
+    function buildLatestHoldingMap(rows) {
+      const latestDate = rows.reduce((latest, row) => {
+        if (!row.date) return latest;
+        return !latest || row.date > latest ? row.date : latest;
+      }, null);
+      portfolioSnapshotDate.value = latestDate;
+
+      const quantities = new Map();
+      rows
+        .filter(row => row.date === latestDate)
+        .forEach(row => {
+          const shareCode = normaliseShareCode(row.share_code);
+          const quantity = toNumber(row.quantity);
+          if (!shareCode || quantity == null) return;
+          quantities.set(shareCode, (quantities.get(shareCode) || 0) + quantity);
+        });
+      return quantities;
+    }
+
+    function enrichCalendarRows(rows) {
+      return rows.map(row => {
+        const quantity = holdingQuantityByShare.value.get(normaliseShareCode(row.share_code)) ?? null;
+        const dps = toNumber(row.amount);
+        return {
+          ...row,
+          holding_quantity: quantity,
+          expected_dividend: quantity != null && dps != null ? quantity * dps : null,
+        };
+      });
+    }
+
+    const expectedDividendStats = computed(() => {
+      return calendarRows.value.reduce((acc, row) => {
+        const expected = toNumber(row.expected_dividend);
+        if (expected != null && (row.currency || 'ZAR') === 'ZAR') {
+          acc.total += expected;
+          acc.count += 1;
+        }
+        if (toNumber(row.amount) != null && row.holding_quantity == null) {
+          acc.missing += 1;
+        }
+        return acc;
+      }, { total: 0, count: 0, missing: 0 });
+    });
+
+    function formatCurrency(value, currency = 'ZAR') {
+      const numeric = toNumber(value);
+      if (numeric == null) return '—';
+      try {
+        return new Intl.NumberFormat('en-ZA', {
+          style: 'currency',
+          currency: currency || 'ZAR',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(numeric);
+      } catch (_e) {
+        return `${currency || ''} ${numeric.toLocaleString('en-ZA', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`.trim();
+      }
+    }
+
+    function formatQuantity(value) {
+      const numeric = toNumber(value);
+      if (numeric == null) return '—';
+      return numeric.toLocaleString('en-ZA', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+      });
+    }
+
+    async function loadLatestHoldings() {
+      portfolioLoadError.value = '';
+      try {
+        const data = await getInvestecPortfolio({ limit: 1000 });
+        holdingQuantityByShare.value = buildLatestHoldingMap(data.results || []);
+      } catch (e) {
+        holdingQuantityByShare.value = new Map();
+        portfolioSnapshotDate.value = null;
+        portfolioLoadError.value = e.response?.data?.error || e.message || 'Holdings unavailable';
+      }
+    }
+
     async function loadCalendar() {
       loadingCalendar.value = true;
       try {
         const params = {};
         if (calendarFilter.value === 'pending') params.pending_tm1 = '1';
         else if (calendarFilter.value !== 'all') params.status = calendarFilter.value;
+        await loadLatestHoldings();
         const data = await getDividendCalendar(params);
-        calendarRows.value = data.results || [];
+        calendarRows.value = enrichCalendarRows(data.results || []);
       } catch (e) {
         console.error('loadCalendar', e);
       }
@@ -538,8 +671,8 @@ export default defineComponent({
         let res;
         if (s.key === 'check') {
           res = await checkDeclaredDividends('');
-          const saved = (res.results || []).filter(r => r.new_record_saved).length;
-          workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: 'done', message: `Checked ${res.checked || 0} symbols, ${saved} new dividend(s) saved`, elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
+          const saved = savedDividendCount(res);
+          workflowSteps.value[idx] = { ...workflowSteps.value[idx], status: 'done', message: `Checked ${checkedSymbolCount(res)} symbols, ${saved} new dividend(s) saved`, elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
           await loadCalendar();
           return;
         }
@@ -615,7 +748,10 @@ export default defineComponent({
       tab,
       // Calendar
       calendarRows, loadingCalendar, calendarFilter, calendarFilterOpts, calendarCols, categoryOpts,
+      portfolioSnapshotDate, portfolioLoadError, expectedDividendStats,
       checking, checkResult,
+      checkedSymbolCount, savedDividendCount,
+      formatCurrency, formatQuantity,
       loadCalendar, handleCheckDividends, handleCategoryChange, handlePaymentDateChange,
       // Forecast
       monthOpts, forecastShare, forecastYear, forecastMonth, readingForecast, forecastResult,
@@ -664,6 +800,47 @@ export default defineComponent({
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.df-alert__note {
+  color: var(--kdl-text-secondary);
+}
+
+.df-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.df-summary-stat {
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  background: var(--kdl-card-bg);
+  padding: 12px 14px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.df-summary-stat span {
+  font-size: 12px;
+  color: var(--kdl-text-secondary);
+  font-weight: 600;
+}
+
+.df-summary-stat strong {
+  font-size: 20px;
+  color: var(--kdl-text-primary);
+  line-height: 1.2;
+}
+
+.df-summary-stat small {
+  color: var(--kdl-text-hint);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .df-summary-grid { grid-template-columns: 1fr; }
 }
 
 /* Cards */

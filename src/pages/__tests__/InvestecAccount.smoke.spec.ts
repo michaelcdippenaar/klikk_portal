@@ -119,6 +119,11 @@ describe('InvestecAccount — smoke', () => {
     expect(source).toContain('KTable');
   });
 
+  it('source uses KMultiSelect for selecting multiple accounts', () => {
+    expect(source).toContain('<KMultiSelect');
+    expect(source).toContain('selectedAccountParam');
+  });
+
   it('source carries :aria-controls linking filter inputs to table region (Dispatch B contract)', () => {
     expect(source).toContain(':aria-controls="tableRegionId"');
   });

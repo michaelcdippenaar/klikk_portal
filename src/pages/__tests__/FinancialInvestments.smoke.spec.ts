@@ -25,6 +25,7 @@ import {
 vi.mock('@/api/endpoints.js', () => ({
   getFinancialInvestmentsSymbols: vi.fn().mockResolvedValue({ results: [] }),
   getFinancialInvestmentsHistory: vi.fn().mockResolvedValue([]),
+  getFinancialInvestmentsBuyTransactions: vi.fn().mockResolvedValue({ results: [] }),
   refreshFinancialInvestmentsSymbol: vi.fn(),
   refreshFinancialInvestmentsExtra: vi.fn(),
   getFinancialInvestmentsDividends: vi.fn().mockResolvedValue([]),
@@ -39,6 +40,7 @@ vi.mock('@/api/endpoints.js', () => ({
   getFinancialInvestmentsNews: vi.fn().mockResolvedValue([]),
   getFinancialInvestmentsWatchlistPreference: vi.fn().mockResolvedValue({}),
   saveFinancialInvestmentsWatchlistPreference: vi.fn(),
+  getDividendCalendar: vi.fn().mockResolvedValue({ results: [] }),
   addFinancialInvestmentsSymbol: vi.fn(),
 }));
 
@@ -129,5 +131,97 @@ describe('FinancialInvestments — smoke (watchlist KTable)', () => {
 
   it('source defines historyColumns (detail-panel KTable is also declared)', () => {
     expect(source).toContain('historyColumns');
+  });
+
+  it('keeps overview separate from the raw prices table', () => {
+    expect(source).toContain("{ name: 'overview', label: 'Overview' }");
+    expect(source).toContain("{ name: 'prices', label: 'Prices' }");
+    expect(source).toContain("detailTab === 'overview'");
+    expect(source).toContain("detailTab === 'prices'");
+    expect(source).toContain('Open prices');
+    expect(source).toContain('fi-overview__metrics');
+  });
+
+  it('loads Investec buy transactions and passes markers to the chart', () => {
+    expect(source).toContain('getFinancialInvestmentsBuyTransactions');
+    expect(source).toContain('loadBuyTransactions');
+    expect(source).toContain('include_sells: true');
+    expect(source).toContain('loadGraphEvents');
+    expect(source).toContain('visibleBuyTransactions');
+    expect(source).toContain('tradeMarkerType');
+    expect(source).toContain('chartBuyMarkers');
+    expect(source).toContain('chartDividendMarkers');
+    expect(source).toContain('yield_pct: dividend.yield_pct');
+    expect(source).toContain('price_on_date: dividend.price_on_date');
+    expect(source).toContain('chartResultMarkers');
+    expect(source).toContain('chartNewsMarkers');
+    expect(source).toContain('chartMarketMarkers');
+    expect(source).toContain('MAJOR_MARKET_EVENTS');
+    expect(source).toContain("{ type: 'sell', label: 'sell marker'");
+    expect(source).toContain('fi-chart-legend__marker--sell');
+    expect(source).toContain(':markers="chartMarkers"');
+    expect(source).toContain(':highlighted-marker-key="highlightedChartMarkerKey"');
+    expect(source).toContain("{ name: 'trends', label: 'Trends' }");
+    expect(source).toContain("detailTab === 'trends'");
+    expect(source).toContain('newsImpactRows');
+    expect(source).toContain('marketEventRows');
+    expect(source).toContain('fi-news-impact__row--active');
+    expect(source).toContain('buildNewsTrendAnalysis');
+    expect(source).toContain('Vectorise articles');
+  });
+
+  it('lazily refreshes empty extra-data tabs', () => {
+    expect(source).toContain('AUTO_REFRESH_TYPES_BY_TAB');
+    expect(source).toContain('refreshEmptyExtraTab');
+    expect(source).toContain('FULL_EXTRA_REFRESH_TYPES');
+  });
+
+  it('shows amount and yield for each dividend row', () => {
+    expect(source).toContain("header: 'Dividend date'");
+    expect(source).toContain("header: 'Amount'");
+    expect(source).toContain("header: 'Yield'");
+    expect(source).toContain("header: 'Price on date'");
+    expect(source).toContain('formatDividendAmount');
+    expect(source).toContain('formatDividendYield');
+  });
+
+  it('offers long-range chart period buttons', () => {
+    expect(source).toContain("label: '5Y'");
+    expect(source).toContain("label: 'All'");
+    expect(source).toContain('all: true');
+  });
+
+  it('allows the share/watchlist panel to collapse', () => {
+    expect(source).toContain('shareMenuCollapsed');
+    expect(source).toContain('fi-layout--shares-collapsed');
+    expect(source).toContain('Expand share menu');
+    expect(source).toContain('Collapse share menu');
+  });
+
+  it('adds major market event markers to the chart', () => {
+    expect(source).toContain('WHO characterises COVID-19 as a pandemic');
+    expect(source).toContain('South Africa nationwide lockdown announced');
+    expect(source).toContain('Trump reciprocal tariffs announced');
+    expect(source).toContain('major market event');
+    expect(source).toContain('fi-chart-legend__marker--market');
+    expect(source).toContain('Major market events tracked');
+  });
+
+  it('can request article vectorisation for stock and market news', () => {
+    expect(source).toContain('vectorizeFinancialInvestmentsArticles');
+    expect(source).toContain('vectorizeSelectedArticles');
+    expect(source).toContain('articleVectorResult.corpus_slug');
+  });
+
+  it('parses company info, financials, and earnings JSON into readable tables', () => {
+    expect(source).toContain('companyProfile');
+    expect(source).toContain('buildCompanyProfile');
+    expect(source).toContain('parsedFinancialStatements');
+    expect(source).toContain('parsedEarningsReports');
+    expect(source).toContain('parsedEarningsEstimate');
+    expect(source).toContain('normaliseSplitMatrix');
+    expect(source).toContain('normaliseTabularData');
+    expect(source).toContain('fi-data-table');
+    expect(source).toContain('fi-fact-grid');
   });
 });

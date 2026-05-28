@@ -8,7 +8,7 @@
  * pnlPeriodKColumns shape (the primary table), plus source checks for the
  * account exception column shape.
  *
- * Vitest gate: ~7 cases — contributes to the ≥50 floor.
+ * Vitest gate: ~9 cases — contributes to the ≥50 floor.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -106,5 +106,14 @@ describe('Comparison — smoke (pnlPeriodKColumns primary table)', () => {
 
   it('source defines pnlPeriodKColumns (column definitions present)', () => {
     expect(source).toContain('pnlPeriodKColumns');
+  });
+
+  it('labels the reconciliation year as an FY end year', () => {
+    expect(source).toContain('label="FY End Year"');
+  });
+
+  it('converts FY end year to backend start-year semantics before reconciling', () => {
+    expect(source).toContain('financialYearForReconciliationApi');
+    expect(source).toContain('financial_year: apiFinancialYear');
   });
 });

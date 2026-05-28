@@ -107,6 +107,13 @@ describe('InvestecHoldings — smoke', () => {
     expect(source).toContain('EmptyState');
   });
 
+  it('shows imported month coverage and missing month count', () => {
+    expect(source).toContain('MonthCoverageStrip');
+    expect(source).toContain('portfolioCoverage');
+    expect(source).toContain('label="Holding months"');
+    expect(source).toContain('data.coverage');
+  });
+
   it('source does NOT use row.original in cell templates (SLOT CONTRACT compliance)', () => {
     // Ensure no consumer is referencing row.original — the docstring bug we are guarding
     const templateBlock = source.slice(source.indexOf('<template>'), source.indexOf('<script'));

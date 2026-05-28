@@ -544,7 +544,7 @@
             <div class="comp-form-row">
               <KInput
                 v-model.number="reconcileForm.financialYear"
-                label="Financial Year"
+                label="FY End Year"
                 type="number"
                 class="comp-input--sm"
               />
@@ -679,10 +679,50 @@ const showErrorDetails = ref(false);
 const advancedOpen = ref(null); // null = closed; 'advanced' = open
 
 // ── localStorage persistence ────────────────────────────────────────────────
-// Key: `klikk_recon_${tenantId}_${financialYear}`
+// Key: `klikk_recon_${tenantId}_${financialYearEnd}`
 // Shape: { status, completedAt, summary, exception_count, match_rate, financial_year, _result }
 
 const STORAGE_PREFIX = 'klikk_recon_';
+
+function currentFinancialYearEnd(fiscalYearStartMonth = 7, today = new Date()) {
+  const startMonth = Number(fiscalYearStartMonth) || 7;
+  const month = today.getMonth() + 1;
+  const year = today.getFullYear();
+  return startMonth === 1 || month < startMonth ? year : year + 1;
+}
+
+function financialYearForReconciliationApi(financialYearEnd, fiscalYearStartMonth) {
+  const fyEnd = Number(financialYearEnd);
+  const startMonth = Number(fiscalYearStartMonth);
+  if (!Number.isFinite(fyEnd)) return financialYearEnd;
+  return startMonth === 1 ? fyEnd : fyEnd - 1;
+}
+
+function financialYearEndFromApiYear(financialYear, fiscalYearStartMonth) {
+  const apiYear = Number(financialYear);
+  const startMonth = Number(fiscalYearStartMonth);
+  if (!Number.isFinite(apiYear)) return financialYear;
+  return startMonth === 1 ? apiYear : apiYear + 1;
+}
+
+function displayFinancialYear(recon) {
+  if (Number.isFinite(Number(recon?.display_financial_year))) {
+    return Number(recon.display_financial_year);
+  }
+  return financialYearEndFromApiYear(
+    recon?.financial_year ?? reconcileForm.financialYear,
+    recon?.fiscal_year_start_month ?? reconcileForm.fiscalYearStartMonth,
+  );
+}
+
+function withDisplayFinancialYear(recon, financialYearEnd, apiFinancialYear) {
+  return {
+    ...recon,
+    api_financial_year: apiFinancialYear,
+    display_financial_year: financialYearEnd,
+    fiscal_year_start_month: reconcileForm.fiscalYearStartMonth,
+  };
+}
 
 function storageKey() {
   return `${STORAGE_PREFIX}${dataStore.selectedTenant}_${reconcileForm.financialYear}`;
@@ -709,16 +749,18 @@ function savePersistedResult(recon) {
   const bsMatchRate = recon.balance_sheet?.validation?.match_percentage ?? null;
   const pnlMatchRate = recon.profit_loss?.comparison?.overall_statistics?.overall_match_percentage ?? null;
   const matchRate = bsMatchRate ?? pnlMatchRate;
+  const fy = displayFinancialYear(recon);
 
   const record = {
     status: recon.success ? 'success' : 'error',
     completedAt: new Date().toISOString(),
     summary: recon.success
-      ? `FY ${recon.financial_year} · **${exCount} exception${exCount !== 1 ? 's' : ''}** · ${matchRate != null ? matchRate.toFixed(1) + '% match' : ''}`
-      : `FY ${recon.financial_year} · Failed`,
+      ? `FY ${fy} · **${exCount} exception${exCount !== 1 ? 's' : ''}** · ${matchRate != null ? matchRate.toFixed(1) + '% match' : ''}`
+      : `FY ${fy} · Failed`,
     exception_count: exCount,
     match_rate: matchRate,
-    financial_year: recon.financial_year,
+    financial_year: fy,
+    api_financial_year: recon.api_financial_year ?? recon.financial_year,
     error: recon.success ? undefined : (recon.errors && recon.errors.length ? recon.errors[0] : 'Unknown error'),
     _result: recon,
   };
@@ -788,7 +830,7 @@ const resultTabs = computed(() => [
 ]);
 
 const reconcileForm = reactive({
-  financialYear: new Date().getFullYear(),
+  financialYear: currentFinancialYearEnd(7),
   fiscalYearStartMonth: 7,
   tolerance: 0.01,
 });
@@ -921,7 +963,7 @@ const currentPeriod = computed(() => {
   const fy = reconcileForm.financialYear;
   const startMonth = reconcileForm.fiscalYearStartMonth;
   // Best-effort: produce "YYYY-MM" from the fiscal year end date.
-  // If start month is 7 (July), FY 2025 ends June 2025 → "2025-06"
+  // If start month is 7 (July), FY 2026 ends June 2026 -> "2026-06"
   const endMonth = startMonth === 1 ? 12 : startMonth - 1;
   const endYear = startMonth === 1 ? fy : fy;
   return `${endYear}-${String(endMonth).padStart(2, '0')}`;
@@ -991,16 +1033,22 @@ async function runReconciliation() {
   rotateToPrevious();
   startStageProgress();
   try {
+    const financialYearEnd = Number(reconcileForm.financialYear);
+    const apiFinancialYear = financialYearForReconciliationApi(
+      financialYearEnd,
+      reconcileForm.fiscalYearStartMonth,
+    );
     const result = await processStore.runProcess('reconcile', {
       tenantId: dataStore.selectedTenant,
-      financial_year: reconcileForm.financialYear,
+      financial_year: apiFinancialYear,
       fiscal_year_start_month: reconcileForm.fiscalYearStartMonth,
       tolerance: reconcileForm.tolerance,
     });
     stopStageProgress(true);
     if (result.success) {
-      reconciliationResult.value = result.result;
-      savePersistedResult(result.result);
+      const recon = withDisplayFinancialYear(result.result, financialYearEnd, apiFinancialYear);
+      reconciliationResult.value = recon;
+      savePersistedResult(recon);
       // Collapse advanced options after a successful run.
       advancedOpen.value = null;
       if (exceptionCount.value > 0) {
@@ -1033,7 +1081,7 @@ function exportCsv() {
   if (!result) return;
 
   const rows = [];
-  const fy = result.financial_year || reconcileForm.financialYear;
+  const fy = displayFinancialYear(result);
 
   rows.push(['# Klikk Reconciliation Export']);
   rows.push([`# Financial Year: ${fy}`]);

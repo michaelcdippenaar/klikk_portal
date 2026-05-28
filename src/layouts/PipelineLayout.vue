@@ -1,13 +1,39 @@
 <template>
   <div class="kdl-pipeline-shell">
-    <AppDrawer v-model="drawerOpen">
-      <div class="kdl-drawer__inner">
+    <AppDrawer v-model="drawerOpen" :collapsed="sideMenuCollapsed">
+      <div class="kdl-drawer__inner" :class="{ 'kdl-drawer__inner--collapsed': sideMenuCollapsed }">
+        <div class="kdl-drawer__top">
+          <button
+            class="kdl-side-collapse"
+            :aria-label="sideMenuCollapsed ? 'Expand side menu' : 'Collapse side menu'"
+            :title="sideMenuCollapsed ? 'Expand side menu' : 'Collapse side menu'"
+            @click="toggleSideMenu"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline v-if="sideMenuCollapsed" points="9 18 15 12 9 6" />
+              <polyline v-else points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+        </div>
+
         <!-- Nav groups -->
-        <div
-          v-for="(group, groupIndex) in navGroups"
-          :key="group.key"
-          class="kdl-nav-group"
-        >
+        <div v-show="!sideMenuCollapsed" class="kdl-nav-groups">
+          <div
+            v-for="(group, groupIndex) in navGroups"
+            :key="group.key"
+            class="kdl-nav-group"
+          >
           <!--
             Hairline divider above each section — skip the very first.
             1px, var(--kdl-border-subtle). 4px space above the divider (margin-top on group).
@@ -135,6 +161,17 @@
                     <line x1="12" y1="1" x2="12" y2="23" />
                     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                   </template>
+                  <template v-else-if="item.lucide === 'layout-dashboard'">
+                    <rect x="3" y="3" width="7" height="9" rx="1" />
+                    <rect x="14" y="3" width="7" height="5" rx="1" />
+                    <rect x="14" y="12" width="7" height="9" rx="1" />
+                    <rect x="3" y="16" width="7" height="5" rx="1" />
+                  </template>
+                  <template v-else-if="item.lucide === 'target'">
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="6" />
+                    <circle cx="12" cy="12" r="2" />
+                  </template>
                   <template v-else-if="item.lucide === 'bar-chart-2'">
                     <line x1="18" y1="20" x2="18" y2="10" />
                     <line x1="12" y1="20" x2="12" y2="4" />
@@ -149,6 +186,7 @@
               </router-link>
             </div>
           </transition>
+          </div>
         </div>
       </div>
     </AppDrawer>
@@ -167,6 +205,7 @@ import AppDrawer from '../components/shell/AppDrawer.vue';
 const route = useRoute();
 
 const NAV_PERSIST_KEY = 'klikk:portal:nav';
+const NAV_COLLAPSED_KEY = 'klikk:portal:side-menu-collapsed';
 
 // Nav group definitions — lucide field replaces q-icon name (Material → Lucide)
 const navGroups = [
@@ -194,8 +233,9 @@ const navGroups = [
     key: 'investments',
     label: 'Financial Investments',
     items: [
-      { name: 'financial-investments', label: 'Stocks',            lucide: 'trending-up' },
-      { name: 'dividend-forecast',     label: 'Dividend Forecast', lucide: 'dollar-sign' },
+      { name: 'financial-investments-strategy', label: 'Dashboard',         lucide: 'layout-dashboard' },
+      { name: 'financial-investments',          label: 'Stocks',            lucide: 'trending-up' },
+      { name: 'dividend-forecast',              label: 'Dividend Forecast', lucide: 'dollar-sign' },
     ],
   },
   {
@@ -219,10 +259,32 @@ function loadExpanded() {
 }
 
 const expandedGroups = reactive(loadExpanded());
+const sideMenuCollapsed = ref(loadSideMenuCollapsed());
 
 function toggleGroup(key) {
   expandedGroups[key] = !expandedGroups[key];
   persistExpanded();
+}
+
+function loadSideMenuCollapsed() {
+  try {
+    return localStorage.getItem(NAV_COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function toggleSideMenu() {
+  sideMenuCollapsed.value = !sideMenuCollapsed.value;
+  persistSideMenuCollapsed();
+}
+
+function persistSideMenuCollapsed() {
+  try {
+    localStorage.setItem(NAV_COLLAPSED_KEY, String(sideMenuCollapsed.value));
+  } catch {
+    // ignore
+  }
 }
 
 function persistExpanded() {
@@ -285,6 +347,49 @@ const drawerOpen = ref(false);
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+.kdl-drawer__inner--collapsed {
+  align-items: center;
+  padding-inline: 4px;
+}
+
+.kdl-drawer__top {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 2px 6px;
+}
+
+.kdl-drawer__inner--collapsed .kdl-drawer__top {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.kdl-side-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
+  color: var(--kdl-text-secondary);
+  background: var(--kdl-card-bg);
+  cursor: pointer;
+  transition: background var(--duration-short) var(--ease-standard),
+              color var(--duration-short) var(--ease-standard),
+              border-color var(--duration-short) var(--ease-standard);
+}
+
+.kdl-side-collapse:hover {
+  color: var(--kdl-text-primary);
+  background: var(--kdl-hover-bg);
+  border-color: var(--kdl-border-strong);
+}
+
+.kdl-nav-groups {
+  width: 100%;
 }
 
 /* ── Nav group ──────────────────────────────────────────── */

@@ -25,7 +25,7 @@ interface FilterState {
   amount: string;
   date_from: string;
   date_to: string;
-  account: string | null;
+  account: string[];
 }
 
 interface PaginationState {
@@ -53,7 +53,7 @@ function hydrateFromQuery(
       amount:      q.amount      ? String(q.amount)      : '',
       date_from:   q.from        ? String(q.from)        : '',
       date_to:     q.to          ? String(q.to)          : '',
-      account:     q.account     ? String(q.account)     : null,
+      account:     q.account     ? String(q.account).split(',').map((value) => value.trim()).filter(Boolean) : [],
     },
     pagination: { offset, rowsPerPage },
   };
@@ -73,7 +73,7 @@ function buildRouteQuery(
   if (filters.amount)      query.amount      = filters.amount;
   if (filters.date_from)   query.from        = filters.date_from;
   if (filters.date_to)     query.to          = filters.date_to;
-  if (filters.account)     query.account     = filters.account;
+  if (filters.account.length > 0) query.account = filters.account.join(',');
   if (pagination.rowsPerPage !== 100) query.rows = String(pagination.rowsPerPage);
   if (pagination.offset > 0)          query.page = String(currentPage);
   return query;
@@ -90,7 +90,12 @@ describe('InvestecAccount — URL sync', () => {
 
     it('populates account filter from query param', () => {
       const { filters } = hydrateFromQuery({ account: '10011924075' }, { rowsPerPage: 100 });
-      expect(filters.account).toBe('10011924075');
+      expect(filters.account).toEqual(['10011924075']);
+    });
+
+    it('populates multiple account filters from comma-separated query param', () => {
+      const { filters } = hydrateFromQuery({ account: '10011924075,10011910139' }, { rowsPerPage: 100 });
+      expect(filters.account).toEqual(['10011924075', '10011910139']);
     });
 
     it('populates date_from from `from` query param', () => {
@@ -112,12 +117,12 @@ describe('InvestecAccount — URL sync', () => {
       const q: RouteQuery = {
         description: 'interest',
         from:        '2026-01-01',
-        account:     '10011924075',
+        account:     '10011924075,10011910139',
       };
       const { filters } = hydrateFromQuery(q, { rowsPerPage: 100 });
       expect(filters.description).toBe('interest');
       expect(filters.date_from).toBe('2026-01-01');
-      expect(filters.account).toBe('10011924075');
+      expect(filters.account).toEqual(['10011924075', '10011910139']);
       expect(filters.amount).toBe('');
       expect(filters.date_to).toBe('');
     });
@@ -137,13 +142,13 @@ describe('InvestecAccount — URL sync', () => {
     it('leaves filters empty when query is empty', () => {
       const { filters } = hydrateFromQuery({}, { rowsPerPage: 100 });
       expect(filters.description).toBe('');
-      expect(filters.account).toBeNull();
+      expect(filters.account).toEqual([]);
     });
   });
 
   describe('buildRouteQuery — serialising filter state back to query params', () => {
     const emptyFilters: FilterState = {
-      description: '', amount: '', date_from: '', date_to: '', account: null,
+      description: '', amount: '', date_from: '', date_to: '', account: [],
     };
     const defaultPagination: PaginationState = { offset: 0, rowsPerPage: 100 };
 
@@ -153,8 +158,13 @@ describe('InvestecAccount — URL sync', () => {
     });
 
     it('includes account in query when set', () => {
-      const q = buildRouteQuery({ ...emptyFilters, account: '10011924075' }, defaultPagination, 1);
+      const q = buildRouteQuery({ ...emptyFilters, account: ['10011924075'] }, defaultPagination, 1);
       expect(q.account).toBe('10011924075');
+    });
+
+    it('serialises multiple selected accounts as a comma-separated query param', () => {
+      const q = buildRouteQuery({ ...emptyFilters, account: ['10011924075', '10011910139'] }, defaultPagination, 1);
+      expect(q.account).toBe('10011924075,10011910139');
     });
 
     it('uses `from` key (not `date_from`) for date_from', () => {

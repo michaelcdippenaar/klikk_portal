@@ -51,6 +51,11 @@
         />
       </FilterBar>
 
+      <MonthCoverageStrip
+        :coverage="transactionCoverage"
+        label="Transaction months"
+      />
+
       <KTable
         :columns="transactionKColumns"
         :data="transactions"
@@ -192,6 +197,7 @@ import KFile from '../components/klikk/KFile.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
+import MonthCoverageStrip from '../components/klikk/MonthCoverageStrip.vue';
 
 const { format } = useFormatCurrency();
 
@@ -207,6 +213,7 @@ const transactionKColumns = [
 
 const transactions = ref([]);
 const transactionCount = ref(0);
+const transactionCoverage = ref(null);
 const uploadFile = ref(null);
 const uploadResult = ref(null);
 const loadingUpload = ref(false);
@@ -253,9 +260,11 @@ async function fetchTransactions() {
     });
     transactions.value = data.results || [];
     transactionCount.value = data.count ?? 0;
+    transactionCoverage.value = data.coverage || null;
   } catch (err) {
     transactions.value = [];
     transactionCount.value = 0;
+    transactionCoverage.value = null;
     console.error(err);
   } finally {
     loadingTable.value = false;

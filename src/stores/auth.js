@@ -21,6 +21,11 @@ function clearAuthCookie(name) {
   document.cookie = `${name}=${getCookieDomain()}; path=/; max-age=0`;
 }
 
+function getAuthErrorMessage(error) {
+  const data = error.response?.data;
+  return data?.detail || data?.error || error.message || 'Login failed';
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null);
   const token = ref(localStorage.getItem(STORAGE_KEYS.TOKEN) || null);
@@ -58,7 +63,7 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error) {
       return {
         success: false,
-        error: error.response?.data?.detail || error.message || 'Login failed',
+        error: getAuthErrorMessage(error),
       };
     }
   }

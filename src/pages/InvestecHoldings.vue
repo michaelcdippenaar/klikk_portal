@@ -56,6 +56,11 @@
         </div>
       </template>
 
+      <MonthCoverageStrip
+        :coverage="portfolioCoverage"
+        label="Holding months"
+      />
+
       <EmptyState
         v-if="!loadingPortfolio && !portfolioError && holdings.length === 0"
         title="No holdings"
@@ -89,6 +94,7 @@ import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
 import FreshnessChip from '../components/klikk/FreshnessChip.vue';
 import EmptyState from '../components/klikk/EmptyState.vue';
+import MonthCoverageStrip from '../components/klikk/MonthCoverageStrip.vue';
 
 // ── Upload state ────────────────────────────────────────────────────────────
 
@@ -143,6 +149,7 @@ const holdings = ref([]);
 const loadingPortfolio = ref(false);
 const portfolioError = ref(null);
 const lastLoadedAt = ref(null);
+const portfolioCoverage = ref(null);
 
 const holdingsColumns = [
   { accessorKey: 'date', header: 'Date', enableSorting: true },
@@ -162,11 +169,13 @@ async function fetchPortfolio() {
   try {
     const data = await getInvestecPortfolio({ limit: 200 });
     holdings.value = data.results || [];
+    portfolioCoverage.value = data.coverage || null;
     lastLoadedAt.value = new Date().toISOString();
   } catch (err) {
     portfolioError.value =
       err.response?.data?.error || err.message || 'Failed to load portfolio holdings.';
     holdings.value = [];
+    portfolioCoverage.value = null;
   } finally {
     loadingPortfolio.value = false;
   }

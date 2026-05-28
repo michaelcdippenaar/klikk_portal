@@ -9,7 +9,8 @@
     "build": "vite build",
     "test": "vitest run",
     "lint": "eslint --ext .js,.ts,.vue ./src",
-    "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\""
+    "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\"",
+    "mcp:stock-market": "node mcp/stock-market/server.mjs"
   },
   "dependencies": {
     "@fontsource/geist": "^5.2.9",
