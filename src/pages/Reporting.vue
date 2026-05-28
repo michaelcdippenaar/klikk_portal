@@ -126,6 +126,37 @@
                 <table class="reporting-table">
                   <thead>
                     <tr>
+                      <th>Month</th>
+                      <th>Top line items</th>
+                      <th class="text-right">Count</th>
+                      <th class="text-right">Gross fees</th>
+                      <th class="text-right">Credits</th>
+                      <th class="text-right">Net cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="month in bankCostReport.months" :key="month.month">
+                      <td>
+                        <strong>{{ month.label }}</strong>
+                      </td>
+                      <td>
+                        <span class="reporting-line-list">
+                          {{ topLineItems(month.line_items) }}
+                        </span>
+                      </td>
+                      <td class="text-right">{{ month.transaction_count }}</td>
+                      <td class="text-right">{{ formatCurrency(month.debit_total) }}</td>
+                      <td class="text-right">{{ formatCurrency(month.credit_total) }}</td>
+                      <td class="text-right">{{ formatCurrency(month.net_cost) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="bank-cost-report__table-wrap">
+                <table class="reporting-table">
+                  <thead>
+                    <tr>
                       <th>Account</th>
                       <th>Line item</th>
                       <th class="text-right">Count</th>
@@ -431,6 +462,13 @@ const currencyFormatter = new Intl.NumberFormat('en-ZA', {
 function formatCurrency(value) {
   const number = Number(value || 0);
   return currencyFormatter.format(Number.isFinite(number) ? number : 0);
+}
+
+function topLineItems(lineItems = []) {
+  return lineItems
+    .slice(0, 3)
+    .map((line) => `${line.line_item}: ${formatCurrency(line.net_cost)}`)
+    .join(' · ');
 }
 
 async function loadBankAccounts() {
@@ -820,6 +858,13 @@ async function selectReport(reportId) {
 .reporting-table__account-row td {
   background: var(--kdl-page-bg);
   font-weight: 600;
+}
+
+.reporting-line-list {
+  display: block;
+  max-width: 520px;
+  color: var(--kdl-text-secondary);
+  line-height: 1.4;
 }
 
 .reporting-table__compact {
