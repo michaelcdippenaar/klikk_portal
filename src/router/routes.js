@@ -24,6 +24,11 @@ const routes = [
         component: () => import('pages/AiAgent.vue'),
       },
       {
+        path: 'reporting',
+        name: 'reporting',
+        component: () => import('pages/Reporting.vue'),
+      },
+      {
         path: 'pipeline',
         component: () => import('layouts/PipelineLayout.vue'),
         children: [

@@ -40,6 +40,16 @@
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
             </svg>
             <svg
+              v-else-if="item.name === 'reporting'"
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              class="kdl-nav__icon" aria-hidden="true"
+            >
+              <path d="M3 3v18h18" />
+              <path d="m19 9-5 5-4-4-3 3" />
+            </svg>
+            <svg
               v-else-if="item.name === 'setup'"
               xmlns="http://www.w3.org/2000/svg" width="16" height="16"
               viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -246,6 +256,7 @@ const userEmail = computed(() => authStore.user?.email || authStore.user?.userna
 const navItems = [
   { name: 'portal',   label: 'Home',       to: { name: 'portal' } },
   { name: 'pipeline', label: 'Operations', to: { name: 'pipeline' } },
+  { name: 'reporting', label: 'Reporting', to: { name: 'reporting' } },
   { name: 'setup',    label: 'Setup',      to: { name: 'setup' } },
 ];
 
@@ -291,6 +302,14 @@ function buildStaticCommands() {
       icon: 'bar-chart-2',
       keywords: ['compare', 'comparison', 'reports'],
       perform: () => router.push({ name: 'compare' }),
+    },
+    {
+      id: 'nav-reporting',
+      label: 'Go to Reporting',
+      category: 'Navigate',
+      icon: 'line-chart',
+      keywords: ['reporting', 'reports', 'dashboard', 'business reports'],
+      perform: () => router.push({ name: 'reporting' }),
     },
     {
       id: 'nav-setup',
