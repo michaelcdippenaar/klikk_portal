@@ -97,6 +97,7 @@ export const API_ENDPOINTS = {
   INVESTEC_BANK_ACCOUNTS: '/api/investec/bank/accounts/',
   INVESTEC_BANK_TRANSACTIONS: '/api/investec/bank/transactions/',
   INVESTEC_BANK_TRANSACTIONS_EXPORT: '/api/investec/bank/transactions/export/',
+  INVESTEC_BANK_COST_REPORT: '/api/investec/bank/reports/costs/',
   INVESTEC_BANK_SYNC_STATUS: '/api/investec/bank/sync-status/',
   INVESTEC_BANK_SYNC: '/api/investec/bank/sync/',
 

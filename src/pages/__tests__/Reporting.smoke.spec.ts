@@ -26,6 +26,13 @@ describe('Reporting - smoke', () => {
     expect(source).toContain('Data freshness and gaps');
   });
 
+  it('includes the Investec bank cost report', () => {
+    expect(source).toContain('Bank cost by account');
+    expect(source).toContain('getInvestecBankCostReport');
+    expect(source).toContain('Gross fees and interest');
+    expect(source).toContain('Line item totals');
+  });
+
   it('has a left report library menu with grouped reports', () => {
     expect(source).toContain('class="reporting-menu"');
     expect(source).toContain('reportGroups');

@@ -395,6 +395,22 @@ export async function getInvestecBankTransactions(params = {}) {
 }
 
 /**
+ * Get Investec bank cost report grouped by account and fee line item.
+ * Params: date_from, date_to, account (id/number or comma-separated list).
+ */
+export async function getInvestecBankCostReport(params = {}) {
+  const response = await apiClient.get(API_ENDPOINTS.INVESTEC_BANK_COST_REPORT, {
+    params: {
+      date_from: params.date_from || undefined,
+      date_to: params.date_to || undefined,
+      account: params.account || undefined,
+    },
+    signal: params.signal ?? undefined,
+  });
+  return response.data;
+}
+
+/**
  * Download Investec bank transaction search results as Excel.
  * Pass same params as getInvestecBankTransactions (description, amount, date_from, date_to, account).
  * Triggers browser download of .xlsx file.

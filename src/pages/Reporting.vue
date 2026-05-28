@@ -45,7 +45,7 @@
             class="reporting-menu__item"
             :class="{ 'reporting-menu__item--active': selectedReportId === report.id }"
             type="button"
-            @click="selectedReportId = report.id"
+            @click="selectReport(report.id)"
           >
             <span class="reporting-menu__item-text">
               <strong>{{ report.title }}</strong>
@@ -65,7 +65,118 @@
           <button class="btn btn-ghost btn-sm" type="button">Configure</button>
         </div>
 
-        <div class="reporting-grid">
+        <SectionCard
+          v-if="activeReport.id === 'bank-costs'"
+          title="Bank cost by account"
+          description="Investec FeesAndInterest transactions grouped by account and fee line item."
+        >
+          <div class="bank-cost-report">
+            <div class="bank-cost-report__filters">
+              <label>
+                <span>From</span>
+                <input v-model="bankCostFilters.date_from" class="reporting-input" type="date">
+              </label>
+              <label>
+                <span>To</span>
+                <input v-model="bankCostFilters.date_to" class="reporting-input" type="date">
+              </label>
+              <label>
+                <span>Account</span>
+                <select v-model="bankCostFilters.account" class="reporting-input">
+                  <option value="">All accounts</option>
+                  <option
+                    v-for="account in bankAccounts"
+                    :key="account.account_number"
+                    :value="account.account_number"
+                  >
+                    {{ account.account_number }} · {{ account.account_name }}
+                  </option>
+                </select>
+              </label>
+              <button class="btn btn-primary btn-sm" type="button" @click="loadBankCostReport">
+                Load
+              </button>
+            </div>
+
+            <div v-if="bankCostLoading" class="reporting-status">Loading bank cost report...</div>
+            <div v-else-if="bankCostError" class="reporting-status reporting-status--error">
+              {{ bankCostError }}
+            </div>
+            <template v-else-if="bankCostReport">
+              <div class="bank-cost-report__summary">
+                <div>
+                  <span>Total bank cost</span>
+                  <strong>{{ formatCurrency(bankCostReport.summary.net_cost) }}</strong>
+                </div>
+                <div>
+                  <span>Gross fees and interest</span>
+                  <strong>{{ formatCurrency(bankCostReport.summary.debit_total) }}</strong>
+                </div>
+                <div>
+                  <span>Credits and reversals</span>
+                  <strong>{{ formatCurrency(bankCostReport.summary.credit_total) }}</strong>
+                </div>
+                <div>
+                  <span>Transactions</span>
+                  <strong>{{ bankCostReport.summary.transaction_count }}</strong>
+                </div>
+              </div>
+
+              <div class="bank-cost-report__table-wrap">
+                <table class="reporting-table">
+                  <thead>
+                    <tr>
+                      <th>Account</th>
+                      <th>Line item</th>
+                      <th class="text-right">Count</th>
+                      <th class="text-right">Gross fees</th>
+                      <th class="text-right">Credits</th>
+                      <th class="text-right">Net cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="account in bankCostReport.accounts" :key="account.account_number">
+                      <tr class="reporting-table__account-row">
+                        <td>
+                          <strong>{{ account.account_name || 'Unnamed account' }}</strong>
+                          <small>{{ account.account_number }} · {{ account.product_name }}</small>
+                        </td>
+                        <td>Total</td>
+                        <td class="text-right">{{ account.transaction_count }}</td>
+                        <td class="text-right">{{ formatCurrency(account.debit_total) }}</td>
+                        <td class="text-right">{{ formatCurrency(account.credit_total) }}</td>
+                        <td class="text-right">{{ formatCurrency(account.net_cost) }}</td>
+                      </tr>
+                      <tr
+                        v-for="line in account.line_items"
+                        :key="`${account.account_number}:${line.line_item}`"
+                      >
+                        <td></td>
+                        <td>{{ line.line_item }}</td>
+                        <td class="text-right">{{ line.transaction_count }}</td>
+                        <td class="text-right">{{ formatCurrency(line.debit_total) }}</td>
+                        <td class="text-right">{{ formatCurrency(line.credit_total) }}</td>
+                        <td class="text-right">{{ formatCurrency(line.net_cost) }}</td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="bank-cost-report__line-items">
+                <h3 class="reporting-builder__heading">Line item totals</h3>
+                <div class="reporting-table__compact">
+                  <div v-for="line in bankCostReport.line_items" :key="line.line_item">
+                    <span>{{ line.line_item }}</span>
+                    <strong>{{ formatCurrency(line.net_cost) }}</strong>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </SectionCard>
+
+        <div v-else class="reporting-grid">
           <section
             v-for="card in reportCards"
             :key="card.title"
@@ -157,7 +268,7 @@
               :key="item.title"
               class="reporting-list__item"
               type="button"
-              @click="selectedReportId = item.id"
+              @click="selectReport(item.id)"
             >
               <span>
                 <strong>{{ item.title }}</strong>
@@ -201,8 +312,21 @@ import { computed, ref } from 'vue';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
+import {
+  getInvestecBankAccounts,
+  getInvestecBankCostReport,
+} from '../api/endpoints';
 
 const selectedReportId = ref('management-pack');
+const bankAccounts = ref([]);
+const bankCostReport = ref(null);
+const bankCostLoading = ref(false);
+const bankCostError = ref('');
+const bankCostFilters = ref({
+  date_from: '',
+  date_to: '',
+  account: '',
+});
 
 const reportCards = [
   {
@@ -256,6 +380,7 @@ const reportGroups = [
     items: [
       { id: 'bank-reconciliation', title: 'Bank reconciliation summary', source: 'Investec banking + Xero', body: 'Bank account movement, reconciliation status, unmatched items, and month coverage.' },
       { id: 'bank-transactions', title: 'Bank transactions', source: 'Investec banking', body: 'Transaction-level banking report with account filters and export-ready detail.' },
+      { id: 'bank-costs', title: 'Bank cost by account', source: 'Investec banking', body: 'Total Investec bank cost by account, line item, gross fee, credit, and net cost.' },
     ],
   },
   {
@@ -297,6 +422,42 @@ const dataDomains = [
   'AI analysis',
   'Data quality',
 ];
+
+const currencyFormatter = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+});
+
+function formatCurrency(value) {
+  const number = Number(value || 0);
+  return currencyFormatter.format(Number.isFinite(number) ? number : 0);
+}
+
+async function loadBankAccounts() {
+  if (bankAccounts.value.length) return;
+  const data = await getInvestecBankAccounts();
+  bankAccounts.value = Array.isArray(data?.results) ? data.results : [];
+}
+
+async function loadBankCostReport() {
+  bankCostLoading.value = true;
+  bankCostError.value = '';
+  try {
+    await loadBankAccounts();
+    bankCostReport.value = await getInvestecBankCostReport(bankCostFilters.value);
+  } catch (error) {
+    bankCostError.value = error?.response?.data?.error || error?.message || 'Could not load bank cost report.';
+  } finally {
+    bankCostLoading.value = false;
+  }
+}
+
+async function selectReport(reportId) {
+  selectedReportId.value = reportId;
+  if (reportId === 'bank-costs' && !bankCostReport.value) {
+    await loadBankCostReport();
+  }
+}
 </script>
 
 <style scoped>
@@ -557,6 +718,142 @@ const dataDomains = [
   font-weight: 500;
 }
 
+.bank-cost-report {
+  display: grid;
+  gap: 16px;
+}
+
+.bank-cost-report__filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.bank-cost-report__filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kdl-text-secondary);
+}
+
+.reporting-input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: var(--kdl-surface);
+  color: var(--kdl-text-primary);
+  font: inherit;
+}
+
+.bank-cost-report__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.bank-cost-report__summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  background: var(--kdl-page-bg);
+}
+
+.bank-cost-report__summary span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--kdl-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.bank-cost-report__summary strong {
+  font-size: 20px;
+  color: var(--kdl-text-primary);
+}
+
+.bank-cost-report__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+}
+
+.reporting-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.reporting-table th,
+.reporting-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--kdl-border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.reporting-table th {
+  background: var(--kdl-page-bg);
+  color: var(--kdl-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reporting-table td {
+  color: var(--kdl-text-primary);
+  font-size: 13px;
+}
+
+.reporting-table td small {
+  display: block;
+  margin-top: 2px;
+  color: var(--kdl-text-muted);
+}
+
+.reporting-table__account-row td {
+  background: var(--kdl-page-bg);
+  font-weight: 600;
+}
+
+.reporting-table__compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.reporting-table__compact > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  color: var(--kdl-text-secondary);
+}
+
+.reporting-status {
+  padding: 12px;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  background: var(--kdl-page-bg);
+  color: var(--kdl-text-secondary);
+}
+
+.reporting-status--error {
+  color: var(--kdl-danger, #b42318);
+}
+
+.text-right {
+  text-align: right !important;
+}
+
 @media (max-width: 1180px) {
   .reporting-workspace {
     grid-template-columns: 240px minmax(0, 1fr);
@@ -583,6 +880,11 @@ const dataDomains = [
 
   .reporting-grid,
   .reporting-builder {
+    grid-template-columns: 1fr;
+  }
+
+  .bank-cost-report__filters,
+  .bank-cost-report__summary {
     grid-template-columns: 1fr;
   }
 }
