@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Klikk Financials"
+  short_description: "Rebuild and verify Klikk staging"
+  default_prompt: "Use $deploy-klikk-financials to rebuild staging after the latest portal or backend changes."
