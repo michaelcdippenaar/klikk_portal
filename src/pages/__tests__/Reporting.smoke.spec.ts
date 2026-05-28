@@ -26,6 +26,17 @@ describe('Reporting - smoke', () => {
     expect(source).toContain('Data freshness and gaps');
   });
 
+  it('has a left report library menu with grouped reports', () => {
+    expect(source).toContain('class="reporting-menu"');
+    expect(source).toContain('reportGroups');
+    expect(source).toContain('Executive');
+    expect(source).toContain('Financials');
+    expect(source).toContain('Debtors and Creditors');
+    expect(source).toContain('Banking');
+    expect(source).toContain('Investments');
+    expect(source).toContain('Operations');
+  });
+
   it('keeps the page responsive', () => {
     expect(source).toContain('@media (max-width: 1180px)');
     expect(source).toContain('@media (max-width: 760px)');
