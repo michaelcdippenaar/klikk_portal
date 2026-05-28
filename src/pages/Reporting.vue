@@ -38,20 +38,52 @@
           :key="group.label"
           class="reporting-menu__group"
         >
-          <div class="reporting-menu__group-label">{{ group.label }}</div>
           <button
-            v-for="report in group.items"
-            :key="report.id"
-            class="reporting-menu__item"
-            :class="{ 'reporting-menu__item--active': selectedReportId === report.id }"
+            class="reporting-menu__group-toggle"
+            :class="{ 'reporting-menu__group-toggle--active': isReportGroupActive(group) }"
+            :aria-expanded="expandedReportGroups[group.label]"
             type="button"
-            @click="selectReport(report.id)"
+            @click="toggleReportGroup(group.label)"
           >
-            <span class="reporting-menu__item-text">
-              <strong>{{ report.title }}</strong>
-              <small>{{ report.source }}</small>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="reporting-menu__caret"
+              :class="{ 'reporting-menu__caret--collapsed': !expandedReportGroups[group.label] }"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+            <span class="reporting-menu__group-label">{{ group.label }}</span>
+            <span class="reporting-menu__count" :aria-label="`${group.items.length} reports`">
+              {{ group.items.length }}
             </span>
           </button>
+
+          <transition name="reporting-collapse">
+            <div v-show="expandedReportGroups[group.label]" class="reporting-menu__items">
+              <button
+                v-for="report in group.items"
+                :key="report.id"
+                class="reporting-menu__item"
+                :class="{ 'reporting-menu__item--active': selectedReportId === report.id }"
+                :title="`${report.title} · ${report.source}`"
+                type="button"
+                @click="selectReport(report.id)"
+              >
+                <span class="reporting-menu__item-text">
+                  <strong>{{ report.title }}</strong>
+                </span>
+              </button>
+            </div>
+          </transition>
         </div>
       </aside>
 
@@ -339,7 +371,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
@@ -435,6 +467,9 @@ const reportGroups = [
 ];
 
 const allReports = computed(() => reportGroups.flatMap((group) => group.items));
+const expandedReportGroups = reactive(
+  Object.fromEntries(reportGroups.map((group) => [group.label, true]))
+);
 
 const activeReport = computed(() =>
   allReports.value.find((report) => report.id === selectedReportId.value) || allReports.value[0]
@@ -497,6 +532,14 @@ function isKnownReport(reportId) {
   return allReports.value.some((report) => report.id === reportId);
 }
 
+function isReportGroupActive(group) {
+  return group.items.some((report) => report.id === selectedReportId.value);
+}
+
+function toggleReportGroup(label) {
+  expandedReportGroups[label] = !expandedReportGroups[label];
+}
+
 async function selectReport(reportId, updateRoute = true) {
   if (!isKnownReport(reportId)) return;
   selectedReportId.value = reportId;
@@ -539,18 +582,14 @@ watch(
   top: 0;
   max-height: calc(100vh - 160px);
   overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 8px;
-  background: var(--kdl-surface);
+  padding: 10px 8px;
+  background: transparent;
 }
 
 .reporting-menu__header {
   display: grid;
   gap: 2px;
-  padding: 2px 4px 10px;
-  border-bottom: 1px solid var(--kdl-border-subtle);
-  margin-bottom: 10px;
+  padding: 2px 10px 8px;
 }
 
 .reporting-menu__header strong {
@@ -560,38 +599,99 @@ watch(
 
 .reporting-menu__eyebrow,
 .reporting-menu__group-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--kdl-text-muted);
 }
 
 .reporting-menu__group {
-  display: grid;
-  gap: 4px;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .reporting-menu__group + .reporting-menu__group {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 4px;
   border-top: 1px solid var(--kdl-border-subtle);
 }
 
+.reporting-menu__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kdl-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-short) var(--ease-standard),
+              color var(--duration-short) var(--ease-standard);
+}
+
+.reporting-menu__group-toggle:hover {
+  background: var(--kdl-hover-bg);
+}
+
+.reporting-menu__group-toggle--active .reporting-menu__group-label {
+  font-weight: 700;
+  color: var(--kdl-text-secondary);
+}
+
+.reporting-menu__caret {
+  flex-shrink: 0;
+  color: var(--kdl-text-hint);
+  transition: transform var(--duration-short) var(--ease-standard);
+}
+
+.reporting-menu__caret--collapsed {
+  transform: rotate(-90deg);
+}
+
 .reporting-menu__group-label {
-  padding: 0 4px 2px;
+  flex: 1;
+  min-width: 0;
+  transition: color var(--duration-short) var(--ease-standard),
+              font-weight var(--duration-short) var(--ease-standard);
+}
+
+.reporting-menu__count {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--kdl-border-subtle);
+  color: var(--kdl-text-hint);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.reporting-menu__items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: 4px;
 }
 
 .reporting-menu__item {
   display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
-  padding: 8px 9px;
+  min-height: 26px;
+  padding: 5px 8px 5px 22px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--kdl-text-secondary);
   text-align: left;
   cursor: pointer;
+  transition: background var(--duration-short) var(--ease-standard),
+              color var(--duration-short) var(--ease-standard);
 }
 
 .reporting-menu__item:hover {
@@ -602,6 +702,11 @@ watch(
 .reporting-menu__item--active {
   background: color-mix(in srgb, var(--kdl-accent) 12%, transparent);
   color: var(--kdl-accent);
+  font-weight: 600;
+}
+
+.reporting-menu__item--active:hover {
+  background: color-mix(in srgb, var(--kdl-accent) 16%, transparent);
 }
 
 .reporting-menu__item-text {
@@ -613,17 +718,22 @@ watch(
 .reporting-menu__item strong {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.reporting-menu__item small {
-  overflow: hidden;
-  font-size: 11px;
-  color: var(--kdl-text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.reporting-collapse-enter-active,
+.reporting-collapse-leave-active {
+  transition: opacity var(--duration-short) var(--ease-standard),
+              transform var(--duration-short) var(--ease-standard);
+  transform-origin: top;
+}
+
+.reporting-collapse-enter-from,
+.reporting-collapse-leave-to {
+  opacity: 0;
+  transform: scaleY(0.95);
 }
 
 .reporting-main {
