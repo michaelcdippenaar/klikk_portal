@@ -11,7 +11,8 @@
     "lint": "eslint --ext .js,.ts,.vue ./src",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\"",
     "mcp:stock-market": "node mcp/stock-market/server.mjs",
-    "mcp:financials": "node mcp/stock-market/server.mjs"
+    "mcp:financials": "node mcp/stock-market/server.mjs",
+    "mcp:financials:http": "KLIKK_MCP_TRANSPORT=http node mcp/stock-market/server.mjs"
   },
   "dependencies": {
     "@fontsource/geist": "^5.2.9",

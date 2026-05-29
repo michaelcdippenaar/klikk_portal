@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import readline from 'node:readline';
+import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
@@ -29,6 +30,11 @@ const DEFAULT_EXTRA_TYPES = [
 
 const apiBaseUrl = (process.env.KLIKK_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
 const apiToken = process.env.KLIKK_API_TOKEN || '';
+const transport = (process.env.KLIKK_MCP_TRANSPORT || 'stdio').toLowerCase();
+const httpHost = process.env.KLIKK_MCP_HTTP_HOST || '127.0.0.1';
+const httpPort = Number(process.env.KLIKK_MCP_HTTP_PORT || 8787);
+const httpAuthToken = process.env.KLIKK_MCP_AUTH_TOKEN || '';
+const allowUnauthenticatedHttp = process.env.KLIKK_MCP_ALLOW_UNAUTHENTICATED_HTTP === 'true';
 
 const tools = [
   {
@@ -525,13 +531,21 @@ function send(message) {
   output.write(`${JSON.stringify(message)}\n`);
 }
 
+function jsonRpcResult(id, result) {
+  return { jsonrpc: '2.0', id, result };
+}
+
+function jsonRpcError(id, code, message, data = undefined) {
+  const error = data === undefined ? { code, message } : { code, message, data };
+  return { jsonrpc: '2.0', id, error };
+}
+
 function sendResult(id, result) {
-  send({ jsonrpc: '2.0', id, result });
+  send(jsonRpcResult(id, result));
 }
 
 function sendError(id, code, message, data = undefined) {
-  const error = data === undefined ? { code, message } : { code, message, data };
-  send({ jsonrpc: '2.0', id, error });
+  send(jsonRpcError(id, code, message, data));
 }
 
 function textResult(value, isError = false) {
@@ -1328,14 +1342,14 @@ const toolHandlers = {
   market_check_declared_dividends: checkDeclaredDividends,
 };
 
-async function handleRequest(request) {
-  if (!request || request.jsonrpc !== '2.0') return;
-  if (request.method?.startsWith('notifications/')) return;
+async function handleRequest(request, respond = send) {
+  if (!request || request.jsonrpc !== '2.0') return null;
+  if (request.method?.startsWith('notifications/')) return null;
 
   try {
     switch (request.method) {
       case 'initialize':
-        sendResult(request.id, {
+        return respond(jsonRpcResult(request.id, {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {
             tools: {},
@@ -1345,52 +1359,164 @@ async function handleRequest(request) {
             version: SERVER_VERSION,
           },
           instructions: SERVER_INSTRUCTIONS,
-        });
+        }));
         break;
       case 'tools/list':
-        sendResult(request.id, { tools });
+        return respond(jsonRpcResult(request.id, { tools }));
         break;
       case 'tools/call': {
         const name = request.params?.name;
         const args = request.params?.arguments || {};
         const handler = toolHandlers[name];
         if (!handler) {
-          sendResult(request.id, textResult(`Unknown tool: ${name}`, true));
-          return;
+          return respond(jsonRpcResult(request.id, textResult(`Unknown tool: ${name}`, true)));
         }
         const result = await handler(args);
-        sendResult(request.id, textResult(result));
-        break;
+        return respond(jsonRpcResult(request.id, textResult(result)));
       }
       case 'ping':
-        sendResult(request.id, {});
+        return respond(jsonRpcResult(request.id, {}));
         break;
       default:
-        sendError(request.id, -32601, `Method not found: ${request.method}`);
-        break;
+        return respond(jsonRpcError(request.id, -32601, `Method not found: ${request.method}`));
     }
   } catch (error) {
-    sendResult(request.id, textResult({
+    return respond(jsonRpcResult(request.id, textResult({
       error: error.message,
       api_base_url: apiBaseUrl,
       generated_at: todayIso(),
-    }, true));
+    }, true)));
   }
+
+  return null;
 }
 
-const rl = readline.createInterface({ input, crlfDelay: Infinity });
+function startStdioTransport() {
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
 
-rl.on('line', (line) => {
-  const trimmed = line.trim();
-  if (!trimmed) return;
+  rl.on('line', (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
 
-  let request;
-  try {
-    request = JSON.parse(trimmed);
-  } catch (error) {
-    sendError(null, -32700, `Parse error: ${error.message}`);
-    return;
+    let request;
+    try {
+      request = JSON.parse(trimmed);
+    } catch (error) {
+      sendError(null, -32700, `Parse error: ${error.message}`);
+      return;
+    }
+
+    handleRequest(request);
+  });
+}
+
+function hasValidHttpAuth(req) {
+  if (allowUnauthenticatedHttp) return true;
+  if (!httpAuthToken) return false;
+  const authorization = req.headers.authorization || '';
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  const headerToken = req.headers['x-mcp-token'];
+  return bearer === httpAuthToken || headerToken === httpAuthToken;
+}
+
+function writeJson(res, statusCode, payload, extraHeaders = {}) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    ...extraHeaders,
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 2_000_000) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
+function startHttpTransport() {
+  if (!httpAuthToken && !allowUnauthenticatedHttp) {
+    throw new Error('Refusing to start HTTP MCP without KLIKK_MCP_AUTH_TOKEN. Set KLIKK_MCP_ALLOW_UNAUTHENTICATED_HTTP=true only for local testing.');
   }
 
-  handleRequest(request);
-});
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': process.env.KLIKK_MCP_CORS_ORIGIN || '*',
+      'Access-Control-Allow-Headers': 'authorization, content-type, mcp-session-id, x-mcp-token',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    };
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, corsHeaders);
+      res.end();
+      return;
+    }
+
+    if (url.pathname === '/health') {
+      writeJson(res, 200, {
+        ok: true,
+        server: SERVER_NAME,
+        version: SERVER_VERSION,
+        transport: 'http',
+        api_base_url: apiBaseUrl,
+      }, corsHeaders);
+      return;
+    }
+
+    if (url.pathname !== '/mcp' || req.method !== 'POST') {
+      writeJson(res, 404, { error: 'Use POST /mcp for JSON-RPC MCP requests.' }, corsHeaders);
+      return;
+    }
+
+    if (!hasValidHttpAuth(req)) {
+      writeJson(res, 401, { error: 'Missing or invalid MCP bearer token.' }, {
+        ...corsHeaders,
+        'WWW-Authenticate': 'Bearer',
+      });
+      return;
+    }
+
+    try {
+      const rawBody = await readBody(req);
+      const parsed = JSON.parse(rawBody || 'null');
+      const requests = Array.isArray(parsed) ? parsed : [parsed];
+      const responses = [];
+      for (const request of requests) {
+        const response = await handleRequest(request, (message) => message);
+        if (response) responses.push(response);
+      }
+
+      if (Array.isArray(parsed)) {
+        writeJson(res, 200, responses, corsHeaders);
+      } else if (responses.length) {
+        writeJson(res, 200, responses[0], corsHeaders);
+      } else {
+        res.writeHead(202, corsHeaders);
+        res.end();
+      }
+    } catch (error) {
+      writeJson(res, 400, jsonRpcError(null, -32700, `Parse error: ${error.message}`), corsHeaders);
+    }
+  });
+
+  server.listen(httpPort, httpHost, () => {
+    console.error(`${SERVER_NAME} MCP HTTP transport listening on http://${httpHost}:${httpPort}/mcp`);
+  });
+}
+
+if (transport === 'http') {
+  startHttpTransport();
+} else {
+  startStdioTransport();
+}

@@ -6,6 +6,8 @@ It started as the stock-market MCP, but now also exposes read-only health/status
 
 ## Run
 
+Local stdio transport for Claude Desktop/Codex:
+
 ```bash
 npm run mcp:financials
 ```
@@ -20,6 +22,42 @@ Override the backend or pass a bearer token if needed:
 
 ```bash
 KLIKK_API_BASE_URL=http://127.0.0.1:8001 KLIKK_API_TOKEN=<token> npm run mcp:financials
+```
+
+Authenticated HTTP transport for remote/weekend access:
+
+```bash
+KLIKK_MCP_TRANSPORT=http \
+KLIKK_MCP_HTTP_HOST=0.0.0.0 \
+KLIKK_MCP_HTTP_PORT=8787 \
+KLIKK_MCP_AUTH_TOKEN=<long-random-token> \
+KLIKK_API_BASE_URL=https://console.8-bit.space/backend \
+node mcp/stock-market/server.mjs
+```
+
+The HTTP endpoint is:
+
+```text
+POST /mcp
+Authorization: Bearer <long-random-token>
+```
+
+Health check:
+
+```text
+GET /health
+```
+
+The server refuses to start HTTP transport without `KLIKK_MCP_AUTH_TOKEN` unless `KLIKK_MCP_ALLOW_UNAUTHENTICATED_HTTP=true` is set for local testing. Do not expose an unauthenticated financial MCP endpoint.
+
+Docker image for staging:
+
+```bash
+docker build -f Dockerfile.mcp -t klikk-financials-mcp .
+docker run --rm -p 8787:8787 \
+  -e KLIKK_MCP_AUTH_TOKEN=<long-random-token> \
+  -e KLIKK_API_BASE_URL=https://console.8-bit.space/backend \
+  klikk-financials-mcp
 ```
 
 ## Codex or Claude MCP Config
