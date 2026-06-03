@@ -332,6 +332,8 @@
 
         <CostCutReport v-else-if="activeReport.id === 'cost-cut'" />
 
+        <PivotExplorer v-else-if="activeReport.id === 'tm1-explorer'" />
+
         <div v-else class="reporting-grid">
           <section
             v-for="card in reportCards"
@@ -470,6 +472,7 @@ import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import CostCutReport from '../components/reporting/CostCutReport.vue';
+import PivotExplorer from '../components/reporting/PivotExplorer.vue';
 import {
   getInvestecBankAccounts,
   getInvestecBankCostReport,
@@ -522,6 +525,12 @@ const reportGroups = [
     ],
   },
   {
+    label: 'Planning Analytics',
+    items: [
+      { id: 'tm1-explorer', title: 'Slice & Dice (TM1)', source: 'Planning Analytics', body: 'Pivot any TM1 cube — rows, columns, filters — live.' },
+    ],
+  },
+  {
     label: 'Banking',
     items: [
       { id: 'bank-costs', title: 'Bank cost by account', source: 'Investec banking', body: 'Total Investec bank cost by account, line item, gross fee, credit, and net cost.' },
@@ -540,7 +549,7 @@ const activeReport = computed(() =>
 
 const coreReports = computed(() =>
   allReports.value.filter((report) =>
-    ['cost-cut', 'bank-costs'].includes(report.id)
+    ['cost-cut', 'tm1-explorer', 'bank-costs'].includes(report.id)
   )
 );
 
@@ -604,7 +613,7 @@ function toggleReportGroup(label) {
 }
 
 function reportIcon(report) {
-  if (['management-pack', 'dashboard-pack'].includes(report.id)) return 'layout-dashboard';
+  if (['management-pack', 'dashboard-pack', 'tm1-explorer'].includes(report.id)) return 'layout-dashboard';
   if (['profit-loss', 'balance-sheet', 'trial-balance', 'cash-flow'].includes(report.id)) return 'bar-chart-2';
   if (['bank-reconciliation', 'bank-transactions', 'bank-costs'].includes(report.id)) return 'landmark';
   if (['cost-cut'].includes(report.id)) return 'trending-up';

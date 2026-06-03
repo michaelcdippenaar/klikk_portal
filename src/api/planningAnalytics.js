@@ -101,6 +101,46 @@ export async function addTrackingElement(payload) {
   return resp.data;
 }
 
+// ── TM1 slice-and-dice / pivot explorer ─────────────────────────────────────
+// Backed by the verified DRF pivot engine. The Django backend lives in a
+// separate repo; shapes are normalised defensively in PivotExplorer.vue.
+
+// GET /tm1/cubes/ -> { cubes: [name, ...] }
+export async function getTm1Cubes() {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_CUBES);
+  return resp.data;
+}
+
+// GET /tm1/cube-dimensions/?cube=NAME -> the cube's dimension names
+export async function getTm1CubeDimensions(cube) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_CUBE_DIMENSIONS, {
+    params: { cube },
+  });
+  return resp.data;
+}
+
+// GET /tm1/dimension-elements/?dimension=NAME -> elements of a dimension.
+// Members can be large (hundreds); callers lazy-load only when a picker opens.
+export async function getTm1DimensionElements(dimension) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_ELEMENTS, {
+    params: { dimension },
+  });
+  return resp.data;
+}
+
+// POST /tm1/query/ — body { cube, rows, cols, filters, suppress } -> pivot cellset.
+// A TM1 query can be slow on a wide slice; give it a generous timeout.
+export async function runTm1Query(payload) {
+  const client = await getClient();
+  const resp = await client.post(API_ENDPOINTS.PA_TM1_QUERY, payload, {
+    timeout: 120000,
+  });
+  return resp.data;
+}
+
 // ── Cost & Sustainability Cockpit — Recurring-Cash Cost-Cut Finder ──────────
 
 export async function getCostCutReport(entity, year) {
