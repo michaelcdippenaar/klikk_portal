@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.3.0';
+const SERVER_VERSION = '0.4.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -522,6 +522,193 @@ const tools = [
           description: 'When true, include recent dividend calendar entries after the check completes.',
           default: true,
         },
+      },
+    },
+  },
+  {
+    name: 'xero_list_quotes',
+    description: 'List Xero quotes (sales pipeline) for a tenant. Filter by status (DRAFT/SENT/DECLINED/ACCEPTED/INVOICED), contact, date range, or text. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID (use xero_list_tenants to find it).' },
+        status: { type: 'string', description: 'Optional: DRAFT, SENT, DECLINED, ACCEPTED, INVOICED, DELETED.' },
+        contact_id: { type: 'string', description: 'Optional Xero ContactID (UUID) to filter by.' },
+        date_from: { type: 'string', description: 'Optional YYYY-MM-DD quote-date lower bound.' },
+        date_to: { type: 'string', description: 'Optional YYYY-MM-DD quote-date upper bound.' },
+        query: { type: 'string', description: 'Optional text across quote number, reference, title, contact name.' },
+        limit: { type: 'number', description: 'Max rows.', default: 100 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'xero_get_quote',
+    description: 'Get a single Xero quote with full line items (account code, tracking, tax, discount per line). Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id', 'quote_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        quote_id: { type: 'string', description: 'Xero QuoteID (UUID).' },
+      },
+    },
+  },
+  {
+    name: 'xero_sync_quotes',
+    description: 'Mutating tool: pull quotes from Xero into the Klikk database for a tenant. Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id', 'confirm'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        confirm: { type: 'boolean', description: 'Must be true — this calls the Xero API and writes local rows.' },
+        modified_since: { type: 'string', description: 'Optional YYYY-MM-DD — only quotes updated since.' },
+        full: { type: 'boolean', description: 'When true, ignore modified_since and pull everything.', default: false },
+      },
+    },
+  },
+  {
+    name: 'xero_list_invoices',
+    description: 'List Xero invoices (ACCREC sales / ACCPAY bills) for a tenant. Filter by type, status, contact, date, due date, minimum amount due (e.g. open AR/AP), or text. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        type: { type: 'string', description: 'Optional: ACCREC (sales invoice) or ACCPAY (bill).' },
+        status: { type: 'string', description: 'Optional: DRAFT, SUBMITTED, AUTHORISED, PAID, VOIDED, DELETED.' },
+        contact_id: { type: 'string', description: 'Optional Xero ContactID (UUID).' },
+        date_from: { type: 'string', description: 'Optional YYYY-MM-DD invoice-date lower bound.' },
+        date_to: { type: 'string', description: 'Optional YYYY-MM-DD invoice-date upper bound.' },
+        due_date_from: { type: 'string', description: 'Optional YYYY-MM-DD due-date lower bound.' },
+        due_date_to: { type: 'string', description: 'Optional YYYY-MM-DD due-date upper bound.' },
+        min_amount_due: { type: 'string', description: 'Optional: only invoices with amount_due >= this (e.g. "0.01" for outstanding).' },
+        query: { type: 'string', description: 'Optional text across invoice number, reference, contact name.' },
+        limit: { type: 'number', description: 'Max rows.', default: 100 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'xero_get_invoice',
+    description: 'Get a single Xero invoice with full line items. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id', 'invoice_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        invoice_id: { type: 'string', description: 'Xero InvoiceID (UUID).' },
+      },
+    },
+  },
+  {
+    name: 'xero_sync_invoices',
+    description: 'Mutating tool: pull invoices (sales + bills) from Xero into the Klikk database for a tenant. Does NOT affect the trial balance (parallel tables). Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id', 'confirm'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        confirm: { type: 'boolean', description: 'Must be true — calls the Xero API and writes local rows.' },
+        type: { type: 'string', description: 'Optional ACCREC or ACCPAY to limit the pull.' },
+        statuses: { type: 'array', items: { type: 'string' }, description: 'Optional list e.g. ["AUTHORISED","PAID"].' },
+        modified_since: { type: 'string', description: 'Optional YYYY-MM-DD — only invoices updated since.' },
+        full: { type: 'boolean', description: 'When true, ignore modified_since and pull everything.', default: false },
+      },
+    },
+  },
+  {
+    name: 'xero_list_contacts',
+    description: 'List Xero contacts for a tenant. Filter by supplier/customer flag or text. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        query: { type: 'string', description: 'Optional text across name and contact id.' },
+        is_supplier: { type: 'boolean', description: 'Optional: only suppliers when true.' },
+        is_customer: { type: 'boolean', description: 'Optional: only customers when true.' },
+        limit: { type: 'number', description: 'Max rows.', default: 100 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'xero_list_tracking',
+    description: 'List Xero tracking categories/options for a tenant (e.g. cost centres, properties). Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        active: { type: 'boolean', description: 'Optional: only ACTIVE options when true.' },
+        limit: { type: 'number', description: 'Max rows.', default: 200 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'xero_list_accounts',
+    description: 'List the Xero chart of accounts for a tenant. Filter by account type or text. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        query: { type: 'string', description: 'Optional text across account code and name.' },
+        type: { type: 'string', description: 'Optional Xero account type (e.g. REVENUE, EXPENSE, CURRENT).' },
+        limit: { type: 'number', description: 'Max rows.', default: 200 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'xero_list_aged_payables',
+    description: 'List aged payables (what the business owes suppliers) by contact for a tenant, bucketed Current/1/2/3-month/Older. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        limit: { type: 'number', description: 'Max rows.', default: 500 },
+      },
+    },
+  },
+  {
+    name: 'xero_list_aged_receivables',
+    description: 'List aged receivables (what customers owe the business) by contact for a tenant, bucketed Current/1/2/3-month/Older. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        limit: { type: 'number', description: 'Max rows.', default: 500 },
+      },
+    },
+  },
+  {
+    name: 'xero_sync_aged_payables',
+    description: 'Mutating tool: refresh aged payables by contact from Xero for a tenant (iterates suppliers — can take ~30-60s). Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id', 'confirm'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        confirm: { type: 'boolean', description: 'Must be true — calls the Xero API per supplier contact.' },
+      },
+    },
+  },
+  {
+    name: 'xero_sync_aged_receivables',
+    description: 'Mutating tool: refresh aged receivables by contact from Xero for a tenant (iterates customers — can take ~30-60s). Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      required: ['tenant_id', 'confirm'],
+      properties: {
+        tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
+        confirm: { type: 'boolean', description: 'Must be true — calls the Xero API per customer contact.' },
       },
     },
   },
@@ -1309,6 +1496,194 @@ async function checkDeclaredDividends(args) {
   };
 }
 
+function requireTenant(args) {
+  const tenantId = (args.tenant_id || '').trim();
+  if (!tenantId) throw new Error('tenant_id is required');
+  return tenantId;
+}
+
+function requireConfirm(args, what) {
+  if (args.confirm !== true) {
+    throw new Error(`Refusing to ${what} without confirm=true (this mutates local data / calls the Xero API).`);
+  }
+}
+
+async function xeroListQuotes(args) {
+  const tenantId = requireTenant(args);
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('tenant_id', tenantId);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'status', args.status);
+  appendSearchParam(params, 'contact_id', args.contact_id);
+  appendSearchParam(params, 'date_from', args.date_from);
+  appendSearchParam(params, 'date_to', args.date_to);
+  appendSearchParam(params, 'q', args.query);
+  const data = await apiRequest(`/xero/data/quotes/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    quotes: rows,
+    agent_brief: [`${data?.count ?? rows.length} quote(s) matched.`],
+  };
+}
+
+async function xeroGetQuote(args) {
+  const tenantId = requireTenant(args);
+  const quoteId = (args.quote_id || '').trim();
+  if (!quoteId) throw new Error('quote_id is required');
+  const data = await apiRequest(`/xero/data/quotes/${encodeURIComponent(quoteId)}/?tenant_id=${encodeURIComponent(tenantId)}`);
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, quote: data };
+}
+
+async function xeroSyncQuotes(args) {
+  const tenantId = requireTenant(args);
+  requireConfirm(args, 'sync quotes');
+  const body = { tenant_id: tenantId };
+  if (args.modified_since) body.modified_since = args.modified_since;
+  if (args.full) body.full = true;
+  const data = await apiRequest('/xero/data/quotes/sync/', { method: 'POST', body });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
+async function xeroListInvoices(args) {
+  const tenantId = requireTenant(args);
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('tenant_id', tenantId);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'type', args.type);
+  appendSearchParam(params, 'status', args.status);
+  appendSearchParam(params, 'contact_id', args.contact_id);
+  appendSearchParam(params, 'date_from', args.date_from);
+  appendSearchParam(params, 'date_to', args.date_to);
+  appendSearchParam(params, 'due_date_from', args.due_date_from);
+  appendSearchParam(params, 'due_date_to', args.due_date_to);
+  appendSearchParam(params, 'min_amount_due', args.min_amount_due);
+  appendSearchParam(params, 'q', args.query);
+  const data = await apiRequest(`/xero/data/invoices/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    invoices: rows,
+    agent_brief: [`${data?.count ?? rows.length} invoice(s) matched.`],
+  };
+}
+
+async function xeroGetInvoice(args) {
+  const tenantId = requireTenant(args);
+  const invoiceId = (args.invoice_id || '').trim();
+  if (!invoiceId) throw new Error('invoice_id is required');
+  const data = await apiRequest(`/xero/data/invoices/${encodeURIComponent(invoiceId)}/?tenant_id=${encodeURIComponent(tenantId)}`);
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, invoice: data };
+}
+
+async function xeroSyncInvoices(args) {
+  const tenantId = requireTenant(args);
+  requireConfirm(args, 'sync invoices');
+  const body = { tenant_id: tenantId };
+  if (args.type) body.type = args.type;
+  if (Array.isArray(args.statuses) && args.statuses.length) body.statuses = args.statuses;
+  if (args.modified_since) body.modified_since = args.modified_since;
+  if (args.full) body.full = true;
+  const data = await apiRequest('/xero/data/invoices/sync/', { method: 'POST', body });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
+async function xeroListContacts(args) {
+  const tenantId = requireTenant(args);
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('tenant_id', tenantId);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'q', args.query);
+  if (args.is_supplier !== undefined) params.set('is_supplier', String(args.is_supplier));
+  if (args.is_customer !== undefined) params.set('is_customer', String(args.is_customer));
+  const data = await apiRequest(`/xero/metadata/contacts/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    contacts: rows,
+  };
+}
+
+async function xeroListTracking(args) {
+  const tenantId = requireTenant(args);
+  const limit = clampNumber(args.limit, 200, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('tenant_id', tenantId);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  if (args.active !== undefined) params.set('active', String(args.active));
+  const data = await apiRequest(`/xero/metadata/tracking/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    tracking: rows,
+  };
+}
+
+async function xeroListAccounts(args) {
+  const tenantId = requireTenant(args);
+  const limit = clampNumber(args.limit, 200, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('tenant_id', tenantId);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'q', args.query);
+  appendSearchParam(params, 'type', args.type);
+  const data = await apiRequest(`/xero/metadata/accounts/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    accounts: rows,
+  };
+}
+
+async function xeroListAgedReport(args, path, key) {
+  const tenantId = requireTenant(args);
+  const limit = clampNumber(args.limit, 500, 1, 5000);
+  const data = await apiRequest(`${path}?tenant_id=${encodeURIComponent(tenantId)}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    [key]: rows,
+  };
+}
+
+async function xeroSyncAged(args, path, what) {
+  const tenantId = requireTenant(args);
+  requireConfirm(args, what);
+  const data = await apiRequest(path, { method: 'POST', body: { tenant_id: tenantId } });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
 const toolHandlers = {
   data_health_summary: dataHealthSummary,
   xero_connection_status: xeroConnectionStatus,
@@ -1340,6 +1715,19 @@ const toolHandlers = {
   market_update_symbols: updateWatchlistInformation,
   market_list_dividend_calendar: listDividendCalendar,
   market_check_declared_dividends: checkDeclaredDividends,
+  xero_list_quotes: xeroListQuotes,
+  xero_get_quote: xeroGetQuote,
+  xero_sync_quotes: xeroSyncQuotes,
+  xero_list_invoices: xeroListInvoices,
+  xero_get_invoice: xeroGetInvoice,
+  xero_sync_invoices: xeroSyncInvoices,
+  xero_list_contacts: xeroListContacts,
+  xero_list_tracking: xeroListTracking,
+  xero_list_accounts: xeroListAccounts,
+  xero_list_aged_payables: (args) => xeroListAgedReport(args, '/xero/data/aged-payables/', 'aged_payables'),
+  xero_list_aged_receivables: (args) => xeroListAgedReport(args, '/xero/data/aged-receivables/', 'aged_receivables'),
+  xero_sync_aged_payables: (args) => xeroSyncAged(args, '/xero/data/aged-payables/sync/', 'sync aged payables'),
+  xero_sync_aged_receivables: (args) => xeroSyncAged(args, '/xero/data/aged-receivables/sync/', 'sync aged receivables'),
 };
 
 async function handleRequest(request, respond = send) {
