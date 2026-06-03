@@ -1,5 +1,8 @@
 <template>
-  <AppPage>
+  <AppPage
+    class="reporting-page"
+    :class="{ 'reporting-page--menu-collapsed': reportingMenuCollapsed }"
+  >
     <PageHeader
       title="Reporting"
       subtitle="Build reports across Xero, Investec, market data, and Planning Analytics"
@@ -26,64 +29,152 @@
       </template>
     </PageHeader>
 
-    <div class="reporting-workspace">
-      <aside class="reporting-menu" aria-label="Reporting menu">
-        <div class="reporting-menu__header">
-          <span class="reporting-menu__eyebrow">Reports</span>
-          <strong>Library</strong>
-        </div>
-
-        <div
-          v-for="group in reportGroups"
-          :key="group.label"
-          class="reporting-menu__group"
-        >
+    <div
+      class="reporting-workspace"
+      :class="{ 'reporting-workspace--menu-collapsed': reportingMenuCollapsed }"
+    >
+      <aside
+        class="reporting-menu"
+        :class="{ 'reporting-menu--collapsed': reportingMenuCollapsed }"
+        aria-label="Reporting menu"
+      >
+        <div class="reporting-menu__top">
           <button
-            class="reporting-menu__group-toggle"
-            :class="{ 'reporting-menu__group-toggle--active': isReportGroupActive(group) }"
-            :aria-expanded="expandedReportGroups[group.label]"
+            class="reporting-menu__collapse"
+            :aria-label="reportingMenuCollapsed ? 'Expand reporting menu' : 'Collapse reporting menu'"
+            :title="reportingMenuCollapsed ? 'Expand reporting menu' : 'Collapse reporting menu'"
             type="button"
-            @click="toggleReportGroup(group.label)"
+            @click="reportingMenuCollapsed = !reportingMenuCollapsed"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="12"
-              height="12"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               stroke-width="1.75"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="reporting-menu__caret"
-              :class="{ 'reporting-menu__caret--collapsed': !expandedReportGroups[group.label] }"
               aria-hidden="true"
             >
-              <polyline points="6 9 12 15 18 9" />
+              <polyline v-if="reportingMenuCollapsed" points="9 18 15 12 9 6" />
+              <polyline v-else points="15 18 9 12 15 6" />
             </svg>
-            <span class="reporting-menu__group-label">{{ group.label }}</span>
-            <span class="reporting-menu__count" :aria-label="`${group.items.length} reports`">
-              {{ group.items.length }}
-            </span>
           </button>
+        </div>
 
-          <transition name="reporting-collapse">
-            <div v-show="expandedReportGroups[group.label]" class="reporting-menu__items">
-              <button
-                v-for="report in group.items"
-                :key="report.id"
-                class="reporting-menu__item"
-                :class="{ 'reporting-menu__item--active': selectedReportId === report.id }"
-                :title="`${report.title} · ${report.source}`"
-                type="button"
-                @click="selectReport(report.id)"
+        <div v-show="!reportingMenuCollapsed" class="reporting-menu__groups">
+          <div
+            v-for="(group, groupIndex) in reportGroups"
+            :key="group.label"
+            class="reporting-menu__group"
+          >
+            <div v-if="groupIndex > 0" class="reporting-menu__divider" aria-hidden="true" />
+
+            <button
+              class="reporting-menu__group-toggle"
+              :class="{ 'reporting-menu__group-toggle--active': isReportGroupActive(group) }"
+              :aria-expanded="expandedReportGroups[group.label]"
+              type="button"
+              @click="toggleReportGroup(group.label)"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="reporting-menu__caret"
+                :class="{ 'reporting-menu__caret--collapsed': !expandedReportGroups[group.label] }"
+                aria-hidden="true"
               >
-                <span class="reporting-menu__item-text">
-                  <strong>{{ report.title }}</strong>
-                </span>
-              </button>
-            </div>
-          </transition>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <span class="reporting-menu__group-label">{{ group.label }}</span>
+              <span
+                v-if="group.items.length > 1"
+                class="reporting-menu__count"
+                :aria-label="`${group.items.length} reports`"
+              >
+                {{ group.items.length }}
+              </span>
+            </button>
+
+            <transition name="reporting-collapse">
+              <div v-show="expandedReportGroups[group.label]" class="reporting-menu__items">
+                <button
+                  v-for="report in group.items"
+                  :key="report.id"
+                  class="reporting-menu__item"
+                  :class="{ 'reporting-menu__item--active': selectedReportId === report.id }"
+                  :title="`${report.title} · ${report.source}`"
+                  type="button"
+                  @click="selectReport(report.id)"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="reporting-menu__item-icon"
+                    aria-hidden="true"
+                  >
+                    <template v-if="reportIcon(report) === 'layout-dashboard'">
+                      <rect x="3" y="3" width="7" height="9" rx="1" />
+                      <rect x="14" y="3" width="7" height="5" rx="1" />
+                      <rect x="14" y="12" width="7" height="9" rx="1" />
+                      <rect x="3" y="16" width="7" height="5" rx="1" />
+                    </template>
+                    <template v-else-if="reportIcon(report) === 'bar-chart-2'">
+                      <line x1="18" y1="20" x2="18" y2="10" />
+                      <line x1="12" y1="20" x2="12" y2="4" />
+                      <line x1="6" y1="20" x2="6" y2="14" />
+                    </template>
+                    <template v-else-if="reportIcon(report) === 'landmark'">
+                      <line x1="3" y1="22" x2="21" y2="22" />
+                      <line x1="6" y1="18" x2="6" y2="11" />
+                      <line x1="10" y1="18" x2="10" y2="11" />
+                      <line x1="14" y1="18" x2="14" y2="11" />
+                      <line x1="18" y1="18" x2="18" y2="11" />
+                      <polygon points="12 2 20 7 4 7" />
+                    </template>
+                    <template v-else-if="reportIcon(report) === 'trending-up'">
+                      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                      <polyline points="17 6 23 6 23 12" />
+                    </template>
+                    <template v-else-if="reportIcon(report) === 'dollar-sign'">
+                      <line x1="12" y1="1" x2="12" y2="23" />
+                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </template>
+                    <template v-else-if="reportIcon(report) === 'list'">
+                      <line x1="8" y1="6" x2="21" y2="6" />
+                      <line x1="8" y1="12" x2="21" y2="12" />
+                      <line x1="8" y1="18" x2="21" y2="18" />
+                      <line x1="3" y1="6" x2="3.01" y2="6" />
+                      <line x1="3" y1="12" x2="3.01" y2="12" />
+                      <line x1="3" y1="18" x2="3.01" y2="18" />
+                    </template>
+                    <template v-else>
+                      <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+                    </template>
+                  </svg>
+                  <span class="reporting-menu__item-text">
+                    {{ report.title }}
+                  </span>
+                </button>
+              </div>
+            </transition>
+          </div>
         </div>
       </aside>
 
@@ -384,6 +475,7 @@ import {
 const selectedReportId = ref('management-pack');
 const route = useRoute();
 const router = useRouter();
+const reportingMenuCollapsed = ref(false);
 const bankAccounts = ref([]);
 const bankCostReport = ref(null);
 const bankCostLoading = ref(false);
@@ -540,6 +632,16 @@ function toggleReportGroup(label) {
   expandedReportGroups[label] = !expandedReportGroups[label];
 }
 
+function reportIcon(report) {
+  if (['management-pack', 'dashboard-pack'].includes(report.id)) return 'layout-dashboard';
+  if (['profit-loss', 'balance-sheet', 'trial-balance', 'cash-flow'].includes(report.id)) return 'bar-chart-2';
+  if (['bank-reconciliation', 'bank-transactions', 'bank-costs'].includes(report.id)) return 'landmark';
+  if (['portfolio-returns', 'market-events'].includes(report.id)) return 'trending-up';
+  if (['dividend-forecast'].includes(report.id)) return 'dollar-sign';
+  if (['aged-receivables', 'aged-payables', 'data-freshness', 'process-audit'].includes(report.id)) return 'list';
+  return 'dot';
+}
+
 async function selectReport(reportId, updateRoute = true) {
   if (!isKnownReport(reportId)) return;
   selectedReportId.value = reportId;
@@ -570,40 +672,83 @@ watch(
 </script>
 
 <style scoped>
+.reporting-page {
+  padding-left: 264px;
+  transition: padding-left var(--duration-short) var(--ease-standard);
+}
+
+.reporting-page--menu-collapsed {
+  padding-left: 72px;
+}
+
 .reporting-workspace {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
+  display: block;
+}
+
+.reporting-workspace--menu-collapsed {
+  display: block;
 }
 
 .reporting-menu {
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - 160px);
+  position: fixed;
+  top: 44px;
+  left: 0;
+  z-index: 10;
+  width: 240px;
+  height: calc(100vh - 44px);
+  max-height: none;
   overflow-y: auto;
-  padding: 10px 8px;
-  background: transparent;
+  overflow-x: hidden;
+  padding: 8px 6px;
+  border: 0;
+  border-right: 1px solid var(--kdl-border-subtle);
+  border-radius: 0;
+  background: var(--kdl-card-bg);
+  transition: width var(--duration-short) var(--ease-standard);
 }
 
-.reporting-menu__header {
-  display: grid;
-  gap: 2px;
-  padding: 2px 10px 8px;
+.reporting-menu--collapsed {
+  width: 48px;
+  overflow: visible;
+  padding-inline: 4px;
 }
 
-.reporting-menu__header strong {
-  font-size: 14px;
+.reporting-menu__top {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 2px 6px;
+}
+
+.reporting-menu--collapsed .reporting-menu__top {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.reporting-menu__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
+  color: var(--kdl-text-secondary);
+  background: var(--kdl-card-bg);
+  cursor: pointer;
+  transition: background var(--duration-short) var(--ease-standard),
+              color var(--duration-short) var(--ease-standard),
+              border-color var(--duration-short) var(--ease-standard);
+}
+
+.reporting-menu__collapse:hover {
   color: var(--kdl-text-primary);
+  background: var(--kdl-hover-bg);
+  border-color: var(--kdl-border-strong);
 }
 
-.reporting-menu__eyebrow,
-.reporting-menu__group-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--kdl-text-muted);
+.reporting-menu__groups {
+  width: 100%;
 }
 
 .reporting-menu__group {
@@ -611,9 +756,10 @@ watch(
   overflow: hidden;
 }
 
-.reporting-menu__group + .reporting-menu__group {
-  margin-top: 4px;
-  border-top: 1px solid var(--kdl-border-subtle);
+.reporting-menu__divider {
+  height: 1px;
+  background: var(--kdl-border-subtle);
+  margin: 4px 2px 0;
 }
 
 .reporting-menu__group-toggle {
@@ -623,10 +769,11 @@ watch(
   width: 100%;
   margin-top: 4px;
   padding: 8px 12px;
-  border: 0;
+  border: none;
   border-radius: 5px;
   background: transparent;
   color: var(--kdl-text-muted);
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
   transition: background var(--duration-short) var(--ease-standard),
@@ -655,6 +802,11 @@ watch(
 .reporting-menu__group-label {
   flex: 1;
   min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kdl-text-muted);
   transition: color var(--duration-short) var(--ease-standard),
               font-weight var(--duration-short) var(--ease-standard);
 }
@@ -684,10 +836,14 @@ watch(
   width: 100%;
   min-height: 26px;
   padding: 5px 8px 5px 22px;
-  border: 0;
+  border: none;
   border-radius: 5px;
   background: transparent;
   color: var(--kdl-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: -0.005em;
   text-align: left;
   cursor: pointer;
   transition: background var(--duration-short) var(--ease-standard),
@@ -710,17 +866,16 @@ watch(
 }
 
 .reporting-menu__item-text {
-  display: grid;
-  gap: 2px;
   min-width: 0;
-}
-
-.reporting-menu__item strong {
   overflow: hidden;
-  font-size: 12px;
-  font-weight: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.reporting-menu__item-icon {
+  flex-shrink: 0;
+  color: inherit;
+  opacity: 0.7;
 }
 
 .reporting-collapse-enter-active,
@@ -1038,23 +1193,25 @@ watch(
 }
 
 @media (max-width: 1180px) {
-  .reporting-workspace {
-    grid-template-columns: 240px minmax(0, 1fr);
-  }
-
   .reporting-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
-  .reporting-workspace {
-    grid-template-columns: 1fr;
+  .reporting-page,
+  .reporting-page--menu-collapsed {
+    padding-left: 16px;
   }
 
   .reporting-menu {
     position: static;
+    width: auto;
+    height: auto;
     max-height: none;
+    margin-bottom: 16px;
+    border: 1px solid var(--kdl-border-subtle);
+    border-radius: 8px;
   }
 
   .reporting-selected {
