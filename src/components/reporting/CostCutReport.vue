@@ -35,6 +35,31 @@
 
       <!-- Loaded -->
       <template v-else-if="report">
+        <!-- Period status chip + comparison basis (change #2) -->
+        <div class="cost-cut__period">
+          <span class="cost-cut__period-year">FY {{ year }}</span>
+          <StatusPill
+            v-if="periodLabel"
+            :tone="yearInProgress ? 'info' : 'neutral'"
+            :label="periodLabel"
+            size="sm"
+            :icon="yearInProgress ? 'info' : false"
+          />
+          <!-- Background reconcile indicator. The edited ROW already changed
+               optimistically; the cross-row aggregates (totals, splits, RAG
+               counts) settle here ~1-2s later under this pill — that settle is
+               correct, not a glitch. The aria-live region is ALWAYS present in
+               the DOM (an empty live region established up front) and only its
+               inner content toggles via v-show, so the "Syncing…" update is
+               actually announced when it appears. -->
+          <span class="cost-cut__reconcile" role="status" aria-live="polite">
+            <span v-show="reconciling" class="cost-cut__reconcile-inner">
+              <KSpinner size="xs" tone="muted" />
+              <span>Syncing…</span>
+            </span>
+          </span>
+        </div>
+
         <!-- Headline strip -->
         <div class="cost-cut__headline">
           <!-- Cost-behaviour split (operating leverage) — spans full width -->
@@ -47,31 +72,67 @@
             :format-currency="formatCurrency"
           />
 
-          <div class="cost-cut__total-tile">
-            <MetricTile
-              label="Total recurring cost"
-              :value="formatCurrency(report.total_recurring_cost)"
-              :tone="totalTone"
-            />
-            <!--
-              YoY delta rendered separately from MetricTile's `trend` prop:
-              MetricTile hardcodes up=green/down=red, which inverts cost
-              semantics (a rising cost is BAD). We use the same cost-direction
-              colour logic as CostCutRow (rise = red/bad, fall = green/good).
-            -->
-            <span
-              v-if="totalYoy"
-              class="cost-cut__total-delta cost-cut__total-num"
-              :class="totalYoy.cls"
-              :aria-label="`Year on year: ${totalYoy.label}`"
-            >
-              {{ totalYoy.label }} YoY
-            </span>
+          <!-- PRIMARY headline: addressable operating cost (change #1) -->
+          <div class="cost-cut__headline-primary">
+            <div class="cost-cut__addressable-tile">
+              <MetricTile
+                label="Addressable operating cost"
+                :value="formatCurrency(addressableOperatingCost)"
+              />
+              <p class="cost-cut__addressable-sub">
+                (excludes tax, finance &amp; statutory — shown below the line)
+              </p>
+              <!--
+                Like-for-like YoY beside the headline. Rendered separately from
+                MetricTile's `trend` (which hardcodes up=green/down=red, inverting
+                cost semantics): a RISE in cost is bad (red), a FALL is good
+                (green) — same cost-direction logic as CostCutRow.
+              -->
+              <span
+                v-if="addressableYoy"
+                class="cost-cut__delta cost-cut__num"
+                :class="addressableYoy.cls"
+                :aria-label="`Addressable cost year on year, like for like: ${addressableYoy.label}`"
+              >
+                {{ addressableYoy.label }} YoY
+                <span class="cost-cut__delta-note">like-for-like</span>
+              </span>
+              <p v-if="comparisonBasis" class="cost-cut__basis-caption">
+                {{ comparisonBasis }}
+              </p>
+              <p v-if="annualisedLabel" class="cost-cut__annualised">
+                {{ annualisedLabel }}
+              </p>
+            </div>
+
+            <!-- Secondary stats: total incl. below-the-line + RAG summary -->
+            <div class="cost-cut__secondary">
+              <div class="cost-cut__secondary-stat">
+                <span class="cost-cut__secondary-label">Total incl. below-the-line RX</span>
+                <span class="cost-cut__secondary-value cost-cut__num">
+                  {{ formatCurrency(report.total_recurring_cost) }}
+                </span>
+              </div>
+              <div class="cost-cut__secondary-stat">
+                <span class="cost-cut__secondary-label">RAG summary</span>
+                <div class="cost-cut__rag-pills">
+                  <StatusPill tone="error" :label="`${ragCounts.red} red`" size="sm" />
+                  <StatusPill tone="warning" :label="`${ragCounts.amber} amber`" size="sm" />
+                  <StatusPill tone="success" :label="`${ragCounts.green} green`" size="sm" />
+                  <StatusPill
+                    v-if="ragCounts.none"
+                    tone="neutral"
+                    :label="`${ragCounts.none} unset`"
+                    size="sm"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Editable FY target tile -->
           <div class="cost-cut__target-tile">
-            <span class="cost-cut__target-label">FY target</span>
+            <span class="cost-cut__target-label">FY target (total)</span>
             <div class="cost-cut__target-row">
               <KInput
                 v-model="totalTargetDraft"
@@ -79,6 +140,7 @@
                 prefix="R"
                 placeholder="Set target"
                 aria-label="Full-year total cost target"
+                @focus="totalTargetFocused = true"
                 @blur="commitTotalTarget"
                 @keyup="onTargetKeyup"
               />
@@ -98,22 +160,6 @@
               />
             </div>
           </div>
-
-          <!-- RAG summary -->
-          <div class="cost-cut__rag-tile">
-            <span class="cost-cut__target-label">RAG summary</span>
-            <div class="cost-cut__rag-pills">
-              <StatusPill tone="error" :label="`${ragCounts.red} red`" size="sm" />
-              <StatusPill tone="warning" :label="`${ragCounts.amber} amber`" size="sm" />
-              <StatusPill tone="success" :label="`${ragCounts.green} green`" size="sm" />
-              <StatusPill
-                v-if="ragCounts.none"
-                tone="neutral"
-                :label="`${ragCounts.none} unset`"
-                size="sm"
-              />
-            </div>
-          </div>
         </div>
 
         <!-- Tabs -->
@@ -124,29 +170,46 @@
           :tabs="tabDefs"
         />
 
-        <!-- Behaviour filter (client-side; narrows the visible rows) -->
-        <div class="cost-cut__beh-filter" role="group" aria-label="Filter by cost behaviour">
-          <span class="cost-cut__beh-filter-label">Behaviour</span>
-          <button
-            v-for="opt in behaviourFilterOptions"
-            :key="opt.value"
-            type="button"
-            class="cost-cut__beh-chip"
-            :class="{ 'cost-cut__beh-chip--active': behaviourFilter === opt.value }"
-            :aria-pressed="behaviourFilter === opt.value"
-            @click="behaviourFilter = opt.value"
-          >
-            {{ opt.label }}
-          </button>
+        <!-- Controls row: Group-by toggle + behaviour filter chips -->
+        <div class="cost-cut__controls">
+          <div class="cost-cut__groupby" role="group" aria-label="Group accounts by">
+            <span class="cost-cut__controls-label">Group by</span>
+            <button
+              v-for="opt in groupByOptions"
+              :key="opt.value"
+              type="button"
+              class="cost-cut__chip"
+              :class="{ 'cost-cut__chip--active': groupBy === opt.value }"
+              :aria-pressed="groupBy === opt.value"
+              @click="groupBy = opt.value"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+
+          <div class="cost-cut__beh-filter" role="group" aria-label="Filter by cost behaviour">
+            <span class="cost-cut__controls-label">Behaviour</span>
+            <button
+              v-for="opt in behaviourFilterOptions"
+              :key="opt.value"
+              type="button"
+              class="cost-cut__chip"
+              :class="{ 'cost-cut__chip--active': behaviourFilter === opt.value }"
+              :aria-pressed="behaviourFilter === opt.value"
+              @click="behaviourFilter = opt.value"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
         </div>
 
         <!-- Where the money goes -->
         <div v-if="activeTab === 'accounts'" class="cost-cut__panel">
           <EmptyState
-            v-if="!accounts.length"
+            v-if="!addressableAccounts.length"
             icon="∅"
-            title="No recurring cost"
-            body="No recurring cash expense was returned for this entity and year."
+            title="No addressable recurring cost"
+            body="No addressable recurring cash expense was returned for this entity and year."
           />
           <EmptyState
             v-else-if="!filteredAccounts.length"
@@ -154,33 +217,17 @@
             title="No matching accounts"
             :body="`No ${activeBehaviourLabel.toLowerCase()} accounts in this view. Clear the behaviour filter to see all.`"
           />
-          <div v-else class="cost-cut__table-wrap">
-            <table class="cost-cut__table">
-              <thead>
-                <tr>
-                  <th scope="col">Account</th>
-                  <th scope="col">Behaviour</th>
-                  <th scope="col" class="text-right">Recurring cost</th>
-                  <th scope="col" class="text-right">% of cost</th>
-                  <th scope="col" class="text-right">YoY</th>
-                  <th scope="col" class="text-right">Target</th>
-                  <th scope="col">RAG</th>
-                </tr>
-              </thead>
-              <tbody>
-                <CostCutRow
-                  v-for="row in filteredAccounts"
-                  :key="row.account_id"
-                  :row="row"
-                  :saving="isSaving(accountMetricKey(row.account_id))"
-                  :saving-behaviour="isSaving(behaviourKey(row.account_id))"
-                  :format-currency="formatCurrency"
-                  @commit="commitAccountTarget"
-                  @retag="commitBehaviour"
-                />
-              </tbody>
-            </table>
-          </div>
+          <CostCutGroupTable
+            v-else
+            :rows="filteredAccounts"
+            :group-by="groupBy"
+            :addressable="addressableOperatingCost"
+            :saving-keys="savingKeys"
+            :format-currency="formatCurrency"
+            @commit="commitAccountTarget"
+            @retag="commitBehaviour"
+            @retag-tier="commitTier"
+          />
         </div>
 
         <!-- Top cut opportunities -->
@@ -189,7 +236,7 @@
             Fastest-growing recurring costs — best candidates to challenge.
           </p>
           <EmptyState
-            v-if="!opportunities.length"
+            v-if="!addressableOpportunities.length"
             icon="∅"
             title="No opportunities"
             body="No growing recurring costs were identified for this entity and year."
@@ -200,35 +247,27 @@
             title="No matching opportunities"
             :body="`No ${activeBehaviourLabel.toLowerCase()} opportunities in this view. Clear the behaviour filter to see all.`"
           />
-          <div v-else class="cost-cut__table-wrap">
-            <table class="cost-cut__table">
-              <thead>
-                <tr>
-                  <th scope="col">Account</th>
-                  <th scope="col">Behaviour</th>
-                  <th scope="col" class="text-right">Recurring cost</th>
-                  <th scope="col" class="text-right">% of cost</th>
-                  <th scope="col" class="text-right">YoY</th>
-                  <th scope="col" class="text-right">Target</th>
-                  <th scope="col">RAG</th>
-                </tr>
-              </thead>
-              <tbody>
-                <CostCutRow
-                  v-for="row in filteredOpportunities"
-                  :key="row.account_id"
-                  :row="row"
-                  emphasise-yoy
-                  :saving="isSaving(accountMetricKey(row.account_id))"
-                  :saving-behaviour="isSaving(behaviourKey(row.account_id))"
-                  :format-currency="formatCurrency"
-                  @commit="commitAccountTarget"
-                  @retag="commitBehaviour"
-                />
-              </tbody>
-            </table>
-          </div>
+          <CostCutGroupTable
+            v-else
+            :rows="filteredOpportunities"
+            :group-by="groupBy"
+            :addressable="addressableOperatingCost"
+            emphasise-yoy
+            :saving-keys="savingKeys"
+            :format-currency="formatCurrency"
+            @commit="commitAccountTarget"
+            @retag="commitBehaviour"
+            @retag-tier="commitTier"
+          />
         </div>
+
+        <!-- Below the line — not cost-cut targets (change #4) -->
+        <BelowTheLineSection
+          v-if="belowTheLine.length"
+          :rows="belowTheLine"
+          :total="belowTheLineTotal"
+          :format-currency="formatCurrency"
+        />
       </template>
     </div>
   </SectionCard>
@@ -245,8 +284,9 @@ import KInput from '../klikk/KInput.vue';
 import KTabs from '../klikk/KTabs.vue';
 import KSpinner from '../klikk/KSpinner.vue';
 import EmptyState from '../klikk/EmptyState.vue';
-import CostCutRow from './CostCutRow.vue';
+import CostCutGroupTable from './CostCutGroupTable.vue';
 import CostBehaviourBar from './CostBehaviourBar.vue';
+import BelowTheLineSection from './BelowTheLineSection.vue';
 import { useDataStore } from '../../stores/data';
 import { useToast } from '../../composables/useToast';
 import {
@@ -258,15 +298,18 @@ import {
 import {
   BEHAVIOUR_FILTER_OPTIONS,
   normaliseBehaviour,
+  normaliseTier,
   behaviourLabel,
+  computeRag,
 } from '../../utils/costBehaviour';
 
 const KLIKK_FALLBACK_ENTITY = '41ebfa0e-012e-4ff1-82ba-a9a7585c536c';
 const TOTAL_METRIC_KEY = 'cost_cut.total';
-// Prefix for behaviour-save keys in `savingKeys`. Kept distinct from the
-// target metric keys so a behaviour save and a target save on the SAME account
-// never share a spinner-state slot.
+// Prefixes for save-state keys in `savingKeys`. Kept distinct per edit axis so a
+// behaviour save, a tier save and a target save on the SAME account never share
+// a spinner-state slot. CostCutGroupTable mirrors these helpers exactly.
 const BEHAVIOUR_KEY_PREFIX = 'cost_cut.behaviour.';
+const TIER_KEY_PREFIX = 'cost_cut.tier.';
 
 const dataStore = useDataStore();
 const { selectedTenant, tenants } = storeToRefs(dataStore);
@@ -282,17 +325,26 @@ const entitySeeded = ref(!!selectedTenant.value);
 
 const report = ref(null);
 const loading = ref(false);
+// Distinct from `loading`: a BACKGROUND reconcile re-fetch (after an optimistic
+// edit) must NOT blank the table — the displayed numbers already changed. This
+// drives only the subtle "Syncing…" indicator.
+const reconciling = ref(false);
 const errorMessage = ref('');
 // In-flight saves keyed by metricKey — supports concurrent edits on different
-// rows without one clobbering another's spinner state.
+// rows/axes without one clobbering another's spinner state.
 const savingKeys = ref(new Set());
-// Monotonic token so a stale post-save re-fetch can be dropped (last-wins).
+// Monotonic token so a stale reconcile re-fetch can be dropped (last-wins).
 let loadSeq = 0;
 const totalTargetDraft = ref('');
+// Tracks focus on the FY-total target input. A background reconcile (fired by a
+// per-row edit) must NOT resync totalTargetDraft while the user is mid-typing a
+// new FY-total — mirrors CostCutRow's own isFocused guard on the row draft.
+const totalTargetFocused = ref(false);
 const activeTab = ref('accounts');
-// Behaviour filter for the tables — 'all' or a behaviour key. Client-side only
-// (no re-fetch); just narrows the visible rows.
+// Behaviour filter for the tables — 'all' or a behaviour key. Client-side only.
 const behaviourFilter = ref('all');
+// Grouping axis for the table — 'tier' (default) | 'behaviour' | 'group'.
+const groupBy = ref('tier');
 
 function isSaving(metricKey) {
   return savingKeys.value.has(metricKey);
@@ -301,6 +353,12 @@ function isSaving(metricKey) {
 const tabDefs = [
   { name: 'accounts', label: 'Where the money goes' },
   { name: 'opportunities', label: 'Top cut opportunities' },
+];
+
+const groupByOptions = [
+  { value: 'tier', label: 'Cuttability tier' },
+  { value: 'behaviour', label: 'Behaviour' },
+  { value: 'group', label: 'Account group' },
 ];
 
 const entityOptions = computed(() =>
@@ -319,8 +377,28 @@ const yearOptions = computed(() => {
   return years;
 });
 
+// All accounts (addressable + any below-the-line that the backend may still
+// include in accounts[]). The grouped table only ever renders ADDRESSABLE rows.
 const accounts = computed(() => report.value?.accounts ?? []);
 const opportunities = computed(() => report.value?.top_opportunities ?? []);
+
+// is_addressable is the authoritative split. A row is addressable unless it is
+// explicitly flagged is_addressable === false OR carries the T0 sentinel.
+function isAddressableRow(row) {
+  if (row?.is_addressable === false) return false;
+  if (normaliseTier(row?.cuttability) === 'T0') return false;
+  return true;
+}
+
+const addressableAccounts = computed(() => accounts.value.filter(isAddressableRow));
+const addressableOpportunities = computed(() =>
+  opportunities.value.filter(isAddressableRow),
+);
+
+// ── Below the line (change #4) ───────────────────────────────────────────────
+const belowTheLine = computed(() => report.value?.below_the_line ?? []);
+const belowTheLineTotal = computed(() => Number(report.value?.below_the_line_total) || 0);
+
 const ragCounts = computed(() => ({
   green: report.value?.rag_counts?.green ?? 0,
   amber: report.value?.rag_counts?.amber ?? 0,
@@ -328,19 +406,60 @@ const ragCounts = computed(() => ({
   none: report.value?.rag_counts?.none ?? 0,
 }));
 
-// ── Cost-behaviour split (headline) ──────────────────────────────────────
+// ── Addressable headline (change #1) ─────────────────────────────────────────
+const addressableOperatingCost = computed(() =>
+  Number(report.value?.addressable_operating_cost) || 0,
+);
+
+// Like-for-like prior addressable = sum of addressable accounts' recurring_prior.
+// Matched-period because the per-account recurring_prior is already YTD-matched
+// by the backend (change #2: no client math beyond this addressable total YoY).
+const priorAddressable = computed(() =>
+  addressableAccounts.value.reduce((s, r) => s + (Number(r.recurring_prior) || 0), 0),
+);
+
+const addressableDeltaPct = computed(() => {
+  if (!report.value) return null;
+  if (!priorAddressable.value) return null;
+  return (
+    ((addressableOperatingCost.value - priorAddressable.value) / priorAddressable.value) * 100
+  );
+});
+
+// Cost-direction YoY for the addressable headline: rise = bad (red), fall = good.
+const addressableYoy = computed(() => {
+  if (addressableDeltaPct.value === null) return null;
+  const pct = addressableDeltaPct.value;
+  const sign = pct > 0 ? '+' : '';
+  const cls = pct > 0 ? 'cost-cut__delta--bad' : pct < 0 ? 'cost-cut__delta--good' : '';
+  return { label: `${sign}${pct.toFixed(1)}%`, cls };
+});
+
+// ── Partial-year honesty (change #2) ─────────────────────────────────────────
+const yearInProgress = computed(() => !!report.value?.year_in_progress);
+const periodLabel = computed(() => report.value?.period_label || '');
+const comparisonBasis = computed(() => report.value?.comparison_basis || '');
+const annualisedEstimate = computed(() => {
+  const v = report.value?.annualised_estimate;
+  return v == null ? null : Number(v);
+});
+const annualisedLabel = computed(() => {
+  if (annualisedEstimate.value == null || !Number.isFinite(annualisedEstimate.value)) return '';
+  return `Projected full year ≈ ${formatCurrency(annualisedEstimate.value)} (seasonal estimate)`;
+});
+
+// ── Cost-behaviour split (headline bar) ──────────────────────────────────────
 const behaviourTotals = computed(() => report.value?.behaviour_totals ?? {});
 const addressableBase = computed(() => Number(report.value?.addressable_base) || 0);
 const fixedVariableRatio = computed(() => {
   const r = report.value?.fixed_variable_ratio;
   return r == null ? null : Number(r);
 });
-// Render the headline split only once there's something to show.
 const hasBehaviourData = computed(() =>
   Object.values(behaviourTotals.value).some((v) => (Number(v) || 0) > 0),
 );
 
-// ── Behaviour filter (client-side, no re-fetch) ──────────────────────────
+// ── Behaviour filter (client-side, no re-fetch) — applies WITHIN the group view ─
 const behaviourFilterOptions = BEHAVIOUR_FILTER_OPTIONS;
 
 function matchesBehaviourFilter(row) {
@@ -348,46 +467,14 @@ function matchesBehaviourFilter(row) {
   return normaliseBehaviour(row.behaviour) === behaviourFilter.value;
 }
 
-const filteredAccounts = computed(() => accounts.value.filter(matchesBehaviourFilter));
+const filteredAccounts = computed(() =>
+  addressableAccounts.value.filter(matchesBehaviourFilter),
+);
 const filteredOpportunities = computed(() =>
-  opportunities.value.filter(matchesBehaviourFilter),
+  addressableOpportunities.value.filter(matchesBehaviourFilter),
 );
 
-// Label for the active filter, used in the "no matching rows" empty state.
 const activeBehaviourLabel = computed(() => behaviourLabel(behaviourFilter.value));
-
-// Total YoY trend — cost direction: a RISE in cost is bad (error/up),
-// a FALL is good (success/down).
-const totalPrior = computed(() =>
-  accounts.value.reduce((sum, r) => sum + (Number(r.recurring_prior) || 0), 0),
-);
-
-const totalDeltaPct = computed(() => {
-  if (!report.value) return null;
-  if (!totalPrior.value) return null;
-  return ((report.value.total_recurring_cost - totalPrior.value) / totalPrior.value) * 100;
-});
-
-// Cost-direction YoY delta for the total tile. Mirrors CostCutRow's classes:
-// a rise in cost is bad (red), a fall is good (green).
-const totalYoy = computed(() => {
-  if (totalDeltaPct.value === null) return null;
-  const pct = totalDeltaPct.value;
-  const sign = pct > 0 ? '+' : '';
-  const cls =
-    pct > 0
-      ? 'cost-cut__total-delta--bad'
-      : pct < 0
-        ? 'cost-cut__total-delta--good'
-        : '';
-  return { label: `${sign}${pct.toFixed(1)}%`, cls };
-});
-
-// Tone for the total cost value: rising cost = error, falling = success.
-const totalTone = computed(() => {
-  if (totalDeltaPct.value === null || totalDeltaPct.value === 0) return 'default';
-  return totalDeltaPct.value > 0 ? 'error' : 'success';
-});
 
 const totalRagLabel = computed(() => {
   const rag = report.value?.total_rag;
@@ -407,14 +494,11 @@ function ragTone(rag) {
 function accountMetricKey(accountId) {
   return `cost_cut.account.${accountId}`;
 }
-
 function behaviourKey(accountId) {
   return `${BEHAVIOUR_KEY_PREFIX}${accountId}`;
 }
-
-function formatCurrency(value) {
-  const number = Number(value || 0);
-  return currencyFormatter.format(Number.isFinite(number) ? number : 0);
+function tierKey(accountId) {
+  return `${TIER_KEY_PREFIX}${accountId}`;
 }
 
 const currencyFormatter = new Intl.NumberFormat('en-ZA', {
@@ -422,26 +506,56 @@ const currencyFormatter = new Intl.NumberFormat('en-ZA', {
   currency: 'ZAR',
 });
 
-async function loadReport() {
+function formatCurrency(value) {
+  const number = Number(value || 0);
+  return currencyFormatter.format(Number.isFinite(number) ? number : 0);
+}
+
+// ── Load ──────────────────────────────────────────────────────────────────
+// `background` = true → reconcile after an optimistic edit: do NOT set the
+// blanking `loading` flag (the table stays put with the optimistic numbers);
+// only flip the subtle `reconciling` indicator.
+async function loadReport({ background = false } = {}) {
   if (!entity.value) return;
-  loading.value = true;
+  if (background) reconciling.value = true;
+  else loading.value = true;
   errorMessage.value = '';
-  // Last-wins: capture this request's sequence number; if a newer load has
-  // started by the time we resolve, drop this (stale) response.
+  // Last-wins: capture this request's sequence; if a newer load started by the
+  // time we resolve, drop this (stale) response.
   const seq = ++loadSeq;
   try {
     const data = await getCostCutReport(entity.value, year.value);
     if (seq !== loadSeq) return;
     report.value = data;
-    totalTargetDraft.value = data.total_target != null ? String(data.total_target) : '';
+    // Skip resyncing the FY-total draft while its input is focused, so a
+    // background reconcile can't clobber a half-typed FY-total target.
+    if (!totalTargetFocused.value) {
+      totalTargetDraft.value = data.total_target != null ? String(data.total_target) : '';
+    }
   } catch (error) {
     if (seq !== loadSeq) return;
-    report.value = null;
-    errorMessage.value =
-      error?.response?.data?.error || error?.message || 'Could not load the cost-cut report.';
+    // A failed BACKGROUND reconcile must not wipe the screen the user is editing
+    // — keep the optimistic state and surface the failure as a toast only.
+    if (background) {
+      toast.error('Could not sync latest figures — showing your last edit.');
+    } else {
+      report.value = null;
+      errorMessage.value =
+        error?.response?.data?.error || error?.message || 'Could not load the cost-cut report.';
+    }
   } finally {
-    if (seq === loadSeq) loading.value = false;
+    if (seq === loadSeq) {
+      if (background) reconciling.value = false;
+      else loading.value = false;
+    }
   }
+}
+
+// Fire a background reconcile WITHOUT awaiting it — the optimistic mutation has
+// already updated the display; the reconcile corrects silently if it differs.
+function reconcileInBackground() {
+  // Intentionally not awaited.
+  loadReport({ background: true });
 }
 
 // Parse a raw target draft into a number, or null for "no target".
@@ -453,15 +567,63 @@ function parseTargetDraft(raw) {
   return n;
 }
 
-async function commitTarget(metricKey, rawValue, currentValue, label) {
+// ── Optimistic-mutation scope (the reviewer's option b) ─────────────────────
+//
+// We optimistically mutate ONLY the edited row's own visible cells; the
+// background reconcile is the SOLE source of truth for EVERY cross-row aggregate
+// (rag_counts, total_rag, behaviour_totals, tier_totals, addressable_base,
+// addressable_operating_cost, fixed_variable_ratio, total_recurring_cost). This
+// eliminates the divergence surface where a half-recomputed client state showed
+// moved bar segments against a stale "% of addressable" denominator, or a
+// changed addressable headline against an unchanged "Total incl. below-the-line".
+//
+// Rationale: a behaviour/tier re-tag does not change actuals, so
+// total_recurring_cost is invariant; the addressable splits DO change but are
+// cross-row, so only the reconcile can compute them consistently. We do not
+// half-compute them on the client. The "Syncing…" pill signals the settle window.
+
+// Find the matching row object(s) for an account across accounts[] AND
+// top_opportunities[] (the same account can appear in both — mutate both so the
+// optimistic update is consistent regardless of the active tab).
+function rowsForAccount(accountId) {
+  if (!report.value) return [];
+  const out = [];
+  for (const r of report.value.accounts || []) {
+    if (r.account_id === accountId) out.push(r);
+  }
+  for (const r of report.value.top_opportunities || []) {
+    if (r.account_id === accountId) out.push(r);
+  }
+  return out;
+}
+
+// ── Target edit — OPTIMISTIC then background reconcile (change #5) ───────────
+async function commitTarget(metricKey, accountId, rawValue, currentValue, label) {
   const parsed = parseTargetDraft(rawValue);
   // No-op if unchanged.
   if (parsed === currentValue) return;
+
+  // 1) OPTIMISTIC: mutate ONLY the edited row's own visible cells on THIS tick,
+  //    before any network call. We update that one row's `target` and recompute
+  //    that ONE row's `rag` via computeRag — this assumes the server's DEFAULT
+  //    5% amber band (a<=t green, a<=t*1.05 amber, else red); the background
+  //    reconcile is authoritative and corrects it if the band ever differs.
+  //    We deliberately do NOT recompute rag_counts / total_rag / any total here
+  //    — the reconcile owns every cross-row aggregate. accountId === null → the
+  //    FY-total target tile (no per-row mutation; reconcile recomputes total_rag).
+  if (accountId != null) {
+    for (const r of rowsForAccount(accountId)) {
+      r.target = parsed;
+      r.rag = computeRag(r.recurring_actual, parsed);
+    }
+  } else {
+    report.value.total_target = parsed;
+  }
+
+  // 2) Persist, then 3) background reconcile.
   savingKeys.value.add(metricKey);
   try {
     if (parsed === null) {
-      // Empty / 0 → "no target". Only DELETE if a target currently exists;
-      // otherwise this is a no-op (nothing to clear).
       if (currentValue != null) {
         await deleteKpiTarget({
           metric_key: metricKey,
@@ -480,86 +642,97 @@ async function commitTarget(metricKey, rawValue, currentValue, label) {
       });
       toast.success('Target saved');
     }
-    await loadReport();
+    reconcileInBackground();
   } catch (error) {
     const msg = error?.response?.data?.error || error?.message || 'Could not save target.';
     toast.error(msg);
+    // The write failed — pull authoritative state back so the optimistic value
+    // doesn't linger incorrectly.
+    reconcileInBackground();
   } finally {
     savingKeys.value.delete(metricKey);
   }
 }
 
-// In-flight target commits, keyed by metricKey, holding the commit promise.
-// A behaviour re-tag must let any pending target edit on the SAME interaction
-// finish (write + its re-fetch) before it runs its own re-fetch — otherwise the
-// two loadReport() calls race and a just-typed, not-yet-persisted target can be
-// dropped from the re-fetched report. See settlePendingTargetCommits().
-const pendingTargetCommits = new Map();
-
-// Run commitTarget and track its promise so commitBehaviour can await it.
-function trackTargetCommit(metricKey, rawValue, currentValue, label) {
-  const p = commitTarget(metricKey, rawValue, currentValue, label).finally(() => {
-    // Only clear if this is still the tracked promise (a newer commit on the
-    // same key supersedes us).
-    if (pendingTargetCommits.get(metricKey) === p) {
-      pendingTargetCommits.delete(metricKey);
-    }
-  });
-  pendingTargetCommits.set(metricKey, p);
-  return p;
-}
-
-// Await every in-flight target commit. Used by commitBehaviour to flush a
-// pending blur-commit before the re-tag re-fetch. Never throws — commitTarget
-// already surfaces its own errors via toast and resolves.
-async function settlePendingTargetCommits() {
-  if (pendingTargetCommits.size === 0) return;
-  await Promise.allSettled([...pendingTargetCommits.values()]);
-}
-
 function commitTotalTarget() {
-  trackTargetCommit(
+  commitTarget(
     TOTAL_METRIC_KEY,
+    null,
     totalTargetDraft.value,
     report.value?.total_target ?? null,
     'Total recurring cost',
   );
 }
 
+// Keying intent: the TARGET metric keys on account_id (the TM1 element UUID,
+// unique + non-null on every accounts[]/top_opportunities[] row) — see
+// accountMetricKey(). The row also emits account_key, but that is only used for
+// the behaviour/tier SAVES (saveCostBehaviour keys on account_key); the target
+// save deliberately does not consume it, so it is dropped from the destructure.
 function commitAccountTarget({ accountId, value, currentValue, label }) {
-  trackTargetCommit(accountMetricKey(accountId), value, currentValue, label);
+  commitTarget(accountMetricKey(accountId), accountId, value, currentValue, label);
 }
 
-// Re-tag an account's cost behaviour. POST the override, then re-fetch the
-// report through the SAME concurrency-safe path the targets use (loadReport's
-// monotonic loadSeq drops any stale response) so behaviour_totals /
-// fixed_variable_ratio / addressable_base recompute server-side.
-//
-// Ordering safety (P1-4): clicking the behaviour select blurs a focused target
-// input, which fires its blur-commit (commitAccountTarget) on the SAME tick.
-// We await that pending target commit FIRST so its write + re-fetch settle
-// before this re-tag's own re-fetch runs. Because loadReport() is loadSeq-
-// guarded, the behaviour re-fetch then starts strictly last and wins, reflecting
-// BOTH the persisted target and the new behaviour — the typed target is never
-// dropped.
+// ── Behaviour re-tag — OPTIMISTIC then background reconcile (change #5) ───────
 async function commitBehaviour({ accountKey, accountId, behaviour, label }) {
   if (!accountKey) {
     toast.error('Cannot re-tag: missing account key.');
     return;
   }
+  // 1) OPTIMISTIC: flip ONLY this row's behaviour chip on this tick. We do NOT
+  //    recompute behaviour_totals / addressable_base / the headline bar /
+  //    fixed_variable_ratio — those are cross-row aggregates the background
+  //    reconcile owns (a re-tag doesn't change actuals, so total_recurring_cost
+  //    is invariant; the splits change but only the reconcile can compute them
+  //    consistently). The "Syncing…" pill covers the settle window.
+  for (const r of rowsForAccount(accountId)) {
+    r.behaviour = behaviour;
+  }
+
   const key = behaviourKey(accountId);
   savingKeys.value.add(key);
   try {
-    // Flush any in-progress target edit (e.g. a blur fired by this very click)
-    // so its write + re-fetch complete before our re-fetch starts.
-    await settlePendingTargetCommits();
     await saveCostBehaviour({ account_key: accountKey, behaviour });
-    await loadReport();
+    reconcileInBackground();
     toast.success(`${label}: ${behaviourLabel(behaviour)}`);
   } catch (error) {
     const msg =
       error?.response?.data?.error || error?.message || 'Could not save cost behaviour.';
     toast.error(msg);
+    reconcileInBackground();
+  } finally {
+    savingKeys.value.delete(key);
+  }
+}
+
+// ── Tier re-tag — OPTIMISTIC then background reconcile (change #5) ────────────
+// cuttability is now a first-class editable axis (like behaviour). The endpoint
+// accepts { account_key, cuttability }.
+async function commitTier({ accountKey, accountId, cuttability, label }) {
+  if (!accountKey) {
+    toast.error('Cannot re-tag tier: missing account key.');
+    return;
+  }
+  // 1) OPTIMISTIC: flip ONLY this row's cuttability on this tick — its TierTag
+  //    chip flips and it re-buckets in the grouped table (a local row-field
+  //    change, fine). We do NOT recompute tier_totals / addressable_operating_cost
+  //    / addressable_base / the headline — those are cross-row aggregates the
+  //    background reconcile owns. The "Syncing…" pill covers the settle window.
+  for (const r of rowsForAccount(accountId)) {
+    r.cuttability = cuttability;
+  }
+
+  const key = tierKey(accountId);
+  savingKeys.value.add(key);
+  try {
+    await saveCostBehaviour({ account_key: accountKey, cuttability });
+    reconcileInBackground();
+    toast.success(`${label}: ${cuttability}`);
+  } catch (error) {
+    const msg =
+      error?.response?.data?.error || error?.message || 'Could not save cuttability tier.';
+    toast.error(msg);
+    reconcileInBackground();
   } finally {
     savingKeys.value.delete(key);
   }
@@ -574,8 +747,7 @@ function onTargetKeyup(event) {
 }
 
 // Seed `entity` from the store ONLY on its initial resolution. A user's
-// in-session entity choice must survive a later store change (e.g. tenants
-// loading after mount), so we don't re-seed once seeded.
+// in-session entity choice must survive a later store change.
 watch(selectedTenant, (val) => {
   if (val && !entitySeeded.value) {
     entitySeeded.value = true;
@@ -639,29 +811,86 @@ onMounted(async () => {
   color: var(--kdl-danger, #b42318);
 }
 
+/* ── Period chip + comparison basis (change #2) ──────────────────────────── */
+.cost-cut__period {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.cost-cut__period-year {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--kdl-text-primary);
+  letter-spacing: 0.01em;
+}
+
+/* Always-present aria-live region wrapper (empty when idle, so nothing shows
+   and nothing is announced until the inner content appears). */
+.cost-cut__reconcile {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cost-cut__reconcile-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kdl-text-secondary);
+}
+
 /* ── Headline strip ──────────────────────────────────────────────────────── */
 .cost-cut__headline {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 12px;
 }
 
-/* Total tile = MetricTile + a cost-direction YoY delta beneath it. */
-.cost-cut__total-tile {
+.cost-cut__num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Primary headline = addressable tile + secondary stats stacked. */
+.cost-cut__headline-primary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.cost-cut__addressable-tile {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
 
-.cost-cut__total-delta {
-  font-size: 12px;
+.cost-cut__addressable-sub {
+  margin: 0;
+  font-size: 11px;
   font-weight: 500;
+  line-height: 1.4;
+  color: var(--kdl-text-muted);
+}
+
+.cost-cut__delta {
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   padding-left: 2px;
 }
 
-.cost-cut__total-num {
-  font-variant-numeric: tabular-nums;
+.cost-cut__delta-note {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--kdl-text-hint);
 }
 
 /*
@@ -670,24 +899,73 @@ onMounted(async () => {
   Tailwind danger/success scales). These hex values mirror MetricTile and
   CostCutRow exactly; once KDL exposes semantic tokens, swap all three.
 */
-.cost-cut__total-delta--bad {
+.cost-cut__delta--bad {
   color: #dc2626;
 }
 
-.cost-cut__total-delta--good {
+.cost-cut__delta--good {
   color: #0d9488;
 }
 
-:root[data-theme="dark"] .cost-cut__total-delta--bad {
+:root[data-theme="dark"] .cost-cut__delta--bad {
   color: #f87171;
 }
 
-:root[data-theme="dark"] .cost-cut__total-delta--good {
+:root[data-theme="dark"] .cost-cut__delta--good {
   color: #2dd4bf;
 }
 
-.cost-cut__target-tile,
-.cost-cut__rag-tile {
+.cost-cut__basis-caption {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--kdl-text-muted);
+}
+
+.cost-cut__annualised {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--kdl-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Secondary stats column (total incl. below-the-line + RAG summary). */
+.cost-cut__secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 8px;
+  background: var(--kdl-card-bg);
+  min-width: 0;
+}
+
+.cost-cut__secondary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cost-cut__secondary-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--kdl-text-hint);
+  line-height: 1.35;
+}
+
+.cost-cut__secondary-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--kdl-text-primary);
+}
+
+.cost-cut__target-tile {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -728,7 +1006,15 @@ onMounted(async () => {
   gap: 6px;
 }
 
-/* ── Behaviour filter toggle ─────────────────────────────────────────────── */
+/* ── Controls (group-by + behaviour filter) ──────────────────────────────── */
+.cost-cut__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  align-items: center;
+}
+
+.cost-cut__groupby,
 .cost-cut__beh-filter {
   display: flex;
   flex-wrap: wrap;
@@ -736,7 +1022,7 @@ onMounted(async () => {
   gap: 6px;
 }
 
-.cost-cut__beh-filter-label {
+.cost-cut__controls-label {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -745,7 +1031,7 @@ onMounted(async () => {
   margin-right: 2px;
 }
 
-.cost-cut__beh-chip {
+.cost-cut__chip {
   appearance: none;
   padding: 4px 12px;
   border-radius: 9999px;
@@ -763,31 +1049,30 @@ onMounted(async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cost-cut__beh-chip {
+  .cost-cut__chip {
     transition: none;
   }
 }
 
-.cost-cut__beh-chip:hover {
+.cost-cut__chip:hover {
   border-color: var(--kdl-text-muted);
   color: var(--kdl-text-primary);
 }
 
-.cost-cut__beh-chip:focus-visible {
+.cost-cut__chip:focus-visible {
   outline: 2px solid var(--kdl-accent);
   outline-offset: 1px;
 }
 
-/* Active filter uses the brand navy as a NEUTRAL "selected" affordance — not a
-   categorical behaviour hue and not a RAG tone, so it never collides with the
-   behaviour tags or the RAG pills. */
-.cost-cut__beh-chip--active {
+/* Active chip uses the brand navy as a NEUTRAL "selected" affordance — not a
+   categorical behaviour/tier hue and not a RAG tone, so it never collides. */
+.cost-cut__chip--active {
   background: var(--kdl-brand-navy);
   border-color: var(--kdl-brand-navy);
   color: #ffffff;
 }
 
-.cost-cut__beh-chip--active:hover {
+.cost-cut__chip--active:hover {
   color: #ffffff;
 }
 
@@ -804,44 +1089,12 @@ onMounted(async () => {
   color: var(--kdl-text-muted);
 }
 
-/* ── Table ───────────────────────────────────────────────────────────────── */
-.cost-cut__table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 8px;
-}
-
-.cost-cut__table {
-  width: 100%;
-  /* 7 columns since the Behaviour column (chip + inline re-tag select) was
-     added; the wider min-width keeps the dense table from cramping. */
-  min-width: 900px;
-  border-collapse: collapse;
-}
-
-.cost-cut__table th,
-.cost-cut__table :deep(td) {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--kdl-border-subtle);
-  text-align: left;
-  vertical-align: middle;
-}
-
-.cost-cut__table th {
-  background: var(--kdl-page-bg);
-  color: var(--kdl-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.text-right {
-  text-align: right;
-}
-
 @media (max-width: 980px) {
   .cost-cut__headline {
+    grid-template-columns: 1fr;
+  }
+
+  .cost-cut__headline-primary {
     grid-template-columns: 1fr;
   }
 }

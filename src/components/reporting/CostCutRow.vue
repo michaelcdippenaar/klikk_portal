@@ -1,9 +1,31 @@
 <template>
-  <tr>
+  <tr :class="{ 'cost-cut-row--readonly': readOnly }">
     <!-- Account name + group tag -->
     <td>
       <strong class="cost-cut-row__name">{{ row.name }}</strong>
-      <small class="cost-cut-row__group">{{ groupLabel }}</small>
+      <small class="cost-cut-row__group">{{ groupLabelText }}</small>
+    </td>
+
+    <!-- Cuttability tier: chip + (when editable) inline re-tag select -->
+    <td>
+      <div class="cost-cut-row__tier">
+        <TierTag :tier="row.cuttability" />
+        <template v-if="!readOnly">
+          <KSelect
+            class="cost-cut-row__tier-select"
+            :model-value="normalisedTier"
+            :options="tierOptions"
+            :aria-label="`Cuttability tier for ${row.name}`"
+            @update:model-value="onTierRetag"
+          />
+          <KSpinner
+            v-if="savingTier"
+            size="xs"
+            tone="muted"
+            label="Saving tier"
+          />
+        </template>
+      </div>
     </td>
 
     <!-- Behaviour: categorical chip + inline re-tag select + driver subtext -->
@@ -11,19 +33,21 @@
       <div class="cost-cut-row__behaviour">
         <div class="cost-cut-row__behaviour-top">
           <BehaviourTag :behaviour="row.behaviour" :driver="row.driver" short />
-          <KSelect
-            class="cost-cut-row__behaviour-select"
-            :model-value="normalisedBehaviour"
-            :options="behaviourOptions"
-            :aria-label="`Cost behaviour for ${row.name}`"
-            @update:model-value="onRetag"
-          />
-          <KSpinner
-            v-if="savingBehaviour"
-            size="xs"
-            tone="muted"
-            label="Saving behaviour"
-          />
+          <template v-if="!readOnly">
+            <KSelect
+              class="cost-cut-row__behaviour-select"
+              :model-value="normalisedBehaviour"
+              :options="behaviourOptions"
+              :aria-label="`Cost behaviour for ${row.name}`"
+              @update:model-value="onRetag"
+            />
+            <KSpinner
+              v-if="savingBehaviour"
+              size="xs"
+              tone="muted"
+              label="Saving behaviour"
+            />
+          </template>
         </div>
         <small v-if="row.driver" class="cost-cut-row__driver">{{ row.driver }}</small>
       </div>
@@ -49,9 +73,10 @@
       {{ yoyLabel }}
     </td>
 
-    <!-- Editable target -->
+    <!-- Editable target (read-only rows show an em-dash, no input) -->
     <td class="text-right">
-      <div class="cost-cut-row__target">
+      <span v-if="readOnly" class="cost-cut-row__num cost-cut-row__readonly-cell">—</span>
+      <div v-else class="cost-cut-row__target">
         <KInput
           v-model="draft"
           type="number"
@@ -71,9 +96,11 @@
       </div>
     </td>
 
-    <!-- RAG -->
+    <!-- RAG (read-only rows show a muted reason instead of a RAG pill) -->
     <td>
+      <span v-if="readOnly" class="cost-cut-row__reason">{{ readOnlyReason }}</span>
       <StatusPill
+        v-else
         :tone="ragTone"
         :label="ragLabel"
         size="sm"
@@ -90,10 +117,14 @@ import KSelect from '../klikk/KSelect.vue';
 import KSpinner from '../klikk/KSpinner.vue';
 import StatusPill from '../klikk/StatusPill.vue';
 import BehaviourTag from './BehaviourTag.vue';
+import TierTag from './TierTag.vue';
 import {
   BEHAVIOUR_SELECT_OPTIONS,
+  TIER_SELECT_OPTIONS,
   normaliseBehaviour,
+  normaliseTier,
   behaviourLabel,
+  groupLabel,
 } from '../../utils/costBehaviour';
 
 const props = defineProps({
@@ -111,7 +142,19 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // Tier re-tag spinner — independent of the target / behaviour spinners.
+  savingTier: {
+    type: Boolean,
+    default: false,
+  },
   emphasiseYoy: {
+    type: Boolean,
+    default: false,
+  },
+  // Below-the-line rows render read-only: no target input, no behaviour/tier
+  // re-tag, a muted reason instead of a RAG pill. They are T0 and cannot be
+  // re-tagged into a normal tier from here.
+  readOnly: {
     type: Boolean,
     default: false,
   },
@@ -121,13 +164,16 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['commit', 'retag']);
+const emit = defineEmits(['commit', 'retag', 'retag-tier']);
 
 // The row's behaviour normalised to a known key ('unclassified' for any
 // missing/unknown value). Bound as the select's model-value so the TRIGGER
 // agrees with the BehaviourTag chip (both read off the same normalised key)
 // instead of showing the bare placeholder on unclassified/missing rows.
 const normalisedBehaviour = computed(() => normaliseBehaviour(props.row.behaviour));
+
+// Same idea for the tier select trigger.
+const normalisedTier = computed(() => normaliseTier(props.row.cuttability));
 
 // Re-tag options: the four classified behaviours you can tag INTO. When the row
 // is currently unclassified we append a DISABLED 'Unclassified' entry purely so
@@ -144,10 +190,15 @@ const behaviourOptions = computed(() => {
   return BEHAVIOUR_SELECT_OPTIONS;
 });
 
+// Tier re-tag options: the five addressable tiers (T1..T5). 'T0' is the
+// below-the-line sentinel and is never a destination — read-only rows don't
+// render the select at all, so no disabled-sentinel handling is needed here.
+const tierOptions = TIER_SELECT_OPTIONS;
+
 // Re-tag this account's behaviour. No-op if the chosen value matches what the
 // row already shows (KSelect can re-emit the current value), or if it's the
-// non-selectable 'unclassified' sentinel. The parent owns the POST +
-// concurrency-safe re-fetch.
+// non-selectable 'unclassified' sentinel. The parent owns the optimistic
+// mutation + POST + background reconcile.
 function onRetag(value) {
   if (!value || value === 'unclassified' || value === normalisedBehaviour.value) return;
   emit('retag', {
@@ -158,11 +209,22 @@ function onRetag(value) {
   });
 }
 
+// Re-tag this account's cuttability tier. No-op if unchanged.
+function onTierRetag(value) {
+  if (!value || value === normalisedTier.value) return;
+  emit('retag-tier', {
+    accountKey: props.row.account_key,
+    accountId: props.row.account_id,
+    cuttability: value,
+    label: props.row.name,
+  });
+}
+
 const draft = ref(props.row.target != null ? String(props.row.target) : '');
 const isFocused = ref(false);
 
 // Re-sync the draft when the underlying row target changes (e.g. after a
-// post-save re-fetch). Skip while the input is focused so we never clobber a
+// background reconcile). Skip while the input is focused so we never clobber a
 // user's in-progress typing mid-edit.
 watch(
   () => props.row.target,
@@ -172,13 +234,11 @@ watch(
   },
 );
 
-const GROUP_LABELS = {
-  OVERHEADS: 'Overheads',
-  DIRECTCOSTS: 'Direct costs',
-  EXPENSE: 'Expense',
-};
+const groupLabelText = computed(() => groupLabel(props.row.group));
 
-const groupLabel = computed(() => GROUP_LABELS[props.row.group] || props.row.group || '—');
+// Below-the-line reason: the muted "why this isn't a target" string. Built from
+// the behaviour label so the row still explains itself (e.g. "Non-controllable").
+const readOnlyReason = computed(() => behaviourLabel(props.row.behaviour));
 
 const pctOfCostLabel = computed(() => {
   const pct = Number(props.row.pct_of_cost);
@@ -232,6 +292,7 @@ function commit() {
   const currentValue = props.row.target ?? null;
   emit('commit', {
     accountId: props.row.account_id,
+    accountKey: props.row.account_key,
     value: draft.value,
     currentValue,
     label: props.row.name,
@@ -240,7 +301,7 @@ function commit() {
 
 function onBlur() {
   // Clear focus first so the props-target watch is allowed to re-sync the
-  // draft once the post-save re-fetch lands. The user's typed value stays in
+  // draft once the background reconcile lands. The user's typed value stays in
   // `draft` until then (no flicker back to the stale server value).
   isFocused.value = false;
   commit();
@@ -272,6 +333,25 @@ function onKeyup(event) {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   color: var(--kdl-text-primary);
+}
+
+/* ── Tier cell ───────────────────────────────────────────────────────────── */
+.cost-cut-row__tier {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+}
+
+/* Compact the tier re-tag select — the chip carries the label, the select is
+   the affordance to change it (mirrors the behaviour select). */
+.cost-cut-row__tier-select {
+  flex: 0 0 auto;
+  width: 132px;
+}
+
+.cost-cut-row__tier-select :deep(.kselect-trigger) {
+  height: 30px;
 }
 
 /* ── Behaviour cell ──────────────────────────────────────────────────────── */
@@ -362,6 +442,21 @@ function onKeyup(event) {
 .cost-cut-row__target > :deep(.kinput-root) {
   flex: 1 1 0;
   min-width: 0;
+}
+
+/* ── Read-only (below-the-line) rows ─────────────────────────────────────── */
+.cost-cut-row--readonly {
+  background: var(--kdl-page-bg);
+}
+
+.cost-cut-row__readonly-cell {
+  color: var(--kdl-text-hint);
+}
+
+.cost-cut-row__reason {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--kdl-text-muted);
 }
 
 .text-right {

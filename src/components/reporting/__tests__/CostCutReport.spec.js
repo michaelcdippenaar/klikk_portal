@@ -1,41 +1,42 @@
 /**
- * CostCutReport.spec.js — MOUNT-BASED test for the Recurring-Cash Cost-Cut Finder.
+ * CostCutReport.spec.js — MOUNT-BASED tests for the Recurring-Cash Cost-Cut
+ * Finder, v2 ("Cost-Cut Finder v2" rebuild).
  *
  * Authored under the test-authorship-split doctrine: written by an independent
- * tester (not the feature author). The bar is mount-based + realistic data +
- * observable DOM. We actually mount(CostCutReport), let the real children
- * (CostCutRow, CostBehaviourBar, BehaviourTag), real primitives
- * (KInput/KSelect/StatusPill/KTabs), and the real Pinia store run; only the
- * network boundary (src/api/planningAnalytics) and the useToast composable are
- * mocked.
+ * tester (NOT the feature author). The bar is mount-based + realistic data +
+ * observable DOM. We mount the real consumer (CostCutReport) with the real
+ * children (CostCutGroupTable, CostCutRow, BelowTheLineSection, CostBehaviourBar,
+ * TierTag, BehaviourTag), real KDL primitives (KInput/KSelect/StatusPill/KTabs/
+ * KSpinner) and the real Pinia store. Only the network boundary
+ * (src/api/planningAnalytics) and the useToast composable are mocked.
  *
- * Prior incident this guards against: the KTable tests were TanStack-direct
- * (library internals), so they passed while the consumer component shipped a
- * runtime bug. These tests assert against the rendered DOM of the consumer.
+ * Prior incident this guards against (2026-05-26): the KTable tests were
+ * TanStack-direct (library internals), so they passed while the consumer shipped
+ * a runtime bug. These tests assert against the rendered DOM of the consumer.
  *
- * COST-BEHAVIOUR layer coverage (added by the independent tester):
- *   1. Headline split (CostBehaviourBar): 4 segments, legend ZAR+%, ratio read,
- *      addressable read; bar hidden when behaviour_totals all 0/absent.
- *   2. Per-row behaviour chip (BehaviourTag via CostCutRow): each value +
- *      unknown/missing → "Unclassified", correct short label + categorical
- *      class, driver as subtext + title.
- *   3. Behaviour filter: narrows visible row count per behaviour; "All"
- *      restores; distinct "no matching accounts" empty state; verified on BOTH
- *      tabs.
- *   4. Inline re-tag → POST + re-fetch: saveCostBehaviour once with
- *      {account_key, behaviour}; getCostCutReport re-called after; per-row
- *      spinner in-flight; current value = no-op; missing account_key = error
- *      toast + no POST.
- *   5. Re-tag concurrency last-wins (loadSeq guard): stale re-fetch dropped.
- *   6. (supplementary, library-direct) saveCostBehaviour POSTs to
- *      PA_COST_BEHAVIOUR with the payload.
+ * ── Why this file was rewritten ─────────────────────────────────────────────
+ * The previous revision of this spec was written against the v1 component (flat
+ * row list; behaviour_totals-only headline; `.cost-cut__beh-chip` filter; rows
+ * keyed only by account_key with no `cuttability`). The v2 rebuild changed the
+ * response contract (addressable_operating_cost as the headline; per-row
+ * `cuttability` T1..T5; below_the_line[]; grouped collapsible table; filter
+ * chips on the shared `.cost-cut__chip` class) and the rows render through
+ * CostCutGroupTable now. Against v2, 20 of the old 29 cases failed for contract
+ * reasons (the old fixture carried no `addressable_operating_cost` → headline
+ * read R0; old rows carried no `cuttability` → normaliseTier()→'T0' → every row
+ * was treated as below-the-line and excluded from the addressable table → zero
+ * rows rendered). This file rebuilds the suite to the v2 contract and adds the
+ * eight v2 behaviour areas.
  *
- * Driving the inline re-tag: KSelect wraps Reka UI's SelectRoot, whose dropdown
- * is portal-teleported and does not open reliably under happy-dom. So for the
- * re-tag we locate the REAL row KSelect *component* (by its aria-label prop) and
- * emit its `update:modelValue` — the exact event Reka emits on selection. This
- * still exercises the real consumer chain (CostCutRow.onRetag →
- * CostCutReport.commitBehaviour); only the portal click itself is bypassed.
+ * ── Driving the inline re-tag / filter / group selects ──────────────────────
+ * KSelect wraps Reka UI's SelectRoot, whose dropdown is portal-teleported and
+ * does not open reliably under happy-dom. So for the inline re-tag we locate the
+ * REAL row KSelect *component* (by its accessible name — the aria-label that
+ * falls through to the trigger) and emit its `update:modelValue` — the exact
+ * event Reka emits on selection. This still exercises the real consumer chain
+ * (CostCutRow.onRetag/onTierRetag → CostCutReport.commitBehaviour/commitTier);
+ * only the portal click itself is bypassed. The group-by + behaviour filter are
+ * plain <button> chips, so those are driven with real clicks.
  */
 
 // @vitest-environment happy-dom
@@ -60,8 +61,8 @@ vi.mock('../../../composables/useToast', () => ({
 }));
 
 // ── Stub vue-router so KTabs' useRoute/useRouter resolve cleanly ─────────────
-// (KTabs guards these in a try/catch, but providing stubs silences the inject
-//  warnings and keeps url-sync code paths deterministic).
+// (KTabs guards these in a try/catch, and is mounted with :url-sync="false"
+//  regardless, but stubs silence the inject warnings.)
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
   useRouter: () => ({ replace: vi.fn() }),
@@ -69,11 +70,13 @@ vi.mock('vue-router', () => ({
 
 import CostCutReport from '../CostCutReport.vue';
 import CostCutRow from '../CostCutRow.vue';
+import CostCutGroupTable from '../CostCutGroupTable.vue';
+import BelowTheLineSection from '../BelowTheLineSection.vue';
 import BehaviourTag from '../BehaviourTag.vue';
+import TierTag from '../TierTag.vue';
 import KSelect from '../../klikk/KSelect.vue';
 import {
   getCostCutReport,
-  getKpiTargets,
   saveKpiTarget,
   deleteKpiTarget,
   saveCostBehaviour,
@@ -81,385 +84,281 @@ import {
 import { useDataStore } from '../../../stores/data';
 import { API_ENDPOINTS } from '../../../utils/constants';
 
-// ── Realistic fixture — the shape the live TM1 endpoint actually returns ─────
-// Now ALSO carries the cost-behaviour layer: per-row behaviour/driver/account_key
-// and the top-level behaviour_totals / addressable_base / fixed_variable_ratio.
+const ENTITY = '41ebfa0e-012e-4ff1-82ba-a9a7585c536c';
+
+// ════════════════════════════════════════════════════════════════════════════
+// FIXTURES — the FULL-LEDGER shape the v2 endpoint returns
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Addressable accounts (is_addressable: true, one per tier T1..T5). The sum of
+// is_addressable recurring_actual == addressable_operating_cost, by construction:
+//   a1 T1 fixed             420000  (prior 471000, target 380000 → red)
+//   a2 T2 variable          300000  (prior 250000, no target     → none)
+//   a3 T3 semi_variable     180000  (prior 170000, target 200000 → green)
+//   a4 T4 non_controllable   90000  (prior  88000, no target     → none)
+//   a5 T5 fixed             250000  (prior 230000, target 240000 → amber)
+//   ────────────────────────────────────────────────────────────────────────
+//   Σ recurring_actual   = 1,240,000  → addressable_operating_cost
+//   Σ recurring_prior    = 1,209,000  → priorAddressable (like-for-like base)
+//   YoY = (1,240,000-1,209,000)/1,209,000 = +2.56% → rise → bad/red, "+2.6%"
+//
+// below_the_line[] (T0 — tax / finance, never cut targets):
+//   b1 Income tax            95000   (non_controllable)
+//   b2 Finance costs         60000   (non_controllable)
+//   below_the_line_total = 155,000
+//
+// total_recurring_cost = 1,240,000 + 155,000 = 1,395,000 ("Total incl. below…")
+//
+// tier_totals : T1 420000, T2 300000, T3 180000, T4 90000, T5 250000
+// behaviour_totals (addressable): fixed 670000, variable 300000, semi 180000,
+//   non_controllable 90000, unclassified 0
+// addressable_base (fixed+variable+semi) = 1,150,000
+// fixed_variable_ratio = 670000/300000 = 2.23
+// rag_counts over accounts[] = { red:1, amber:1, green:1, none:2 }
+
+function addressableRows() {
+  return [
+    {
+      account_id: 'a1', account_key: 'kl_T1', name: 'Employee Expenses Tanja',
+      group: 'OVERHEADS', cuttability: 'T1', is_addressable: true,
+      behaviour: 'fixed', driver: 'headcount (salaried)',
+      recurring_actual: 420000, recurring_prior: 471000,
+      yoy_pct: -10.8, pct_of_cost: 33.9, target: 380000, rag: 'red',
+    },
+    {
+      account_id: 'a2', account_key: 'kl_T2', name: 'Casual Wages',
+      group: 'DIRECTCOSTS', cuttability: 'T2', is_addressable: true,
+      behaviour: 'variable', driver: 'hours worked',
+      recurring_actual: 300000, recurring_prior: 250000,
+      yoy_pct: 20, pct_of_cost: 24.2, target: null, rag: 'none',
+    },
+    {
+      account_id: 'a3', account_key: 'kl_T3', name: 'Electricity',
+      group: 'OVERHEADS', cuttability: 'T3', is_addressable: true,
+      behaviour: 'semi_variable', driver: 'usage + standing',
+      recurring_actual: 180000, recurring_prior: 170000,
+      yoy_pct: 5.9, pct_of_cost: 14.5, target: 200000, rag: 'green',
+    },
+    {
+      account_id: 'a4', account_key: 'kl_T4', name: 'Statutory Levies',
+      group: 'EXPENSE', cuttability: 'T4', is_addressable: true,
+      behaviour: 'non_controllable', driver: 'regulation',
+      recurring_actual: 90000, recurring_prior: 88000,
+      yoy_pct: 2.3, pct_of_cost: 7.3, target: null, rag: 'none',
+    },
+    {
+      account_id: 'a5', account_key: 'kl_T5', name: 'Premises Lease',
+      group: 'OVERHEADS', cuttability: 'T5', is_addressable: true,
+      behaviour: 'fixed', driver: 'lease',
+      recurring_actual: 250000, recurring_prior: 230000,
+      yoy_pct: 8.7, pct_of_cost: 20.2, target: 240000, rag: 'amber',
+    },
+  ];
+}
+
+function belowTheLineRows() {
+  return [
+    {
+      account_id: 'b1', account_key: 'kl_TAX', name: 'Income Tax',
+      group: 'EXPENSE', cuttability: 'T0', is_addressable: false,
+      behaviour: 'non_controllable', driver: null,
+      recurring_actual: 95000, recurring_prior: 90000,
+      yoy_pct: 5.6, pct_of_cost: 6.8, target: null, rag: 'none',
+    },
+    {
+      account_id: 'b2', account_key: 'kl_FIN', name: 'Finance Costs',
+      group: 'EXPENSE', cuttability: 'T0', is_addressable: false,
+      behaviour: 'non_controllable', driver: 'interest on debt',
+      recurring_actual: 60000, recurring_prior: 55000,
+      yoy_pct: 9.1, pct_of_cost: 4.3, target: null, rag: 'none',
+    },
+  ];
+}
+
+// FULL-LEDGER, year-in-progress (partial year) variant.
 function makeReport(overrides = {}) {
   return {
-    entity: '41ebfa0e-012e-4ff1-82ba-a9a7585c536c',
+    entity: ENTITY,
     year: 2025,
     prior_year: 2024,
     basis: 'Recurring cash expense (excludes non-cash & one-offs)',
-    total_recurring_cost: 3062363,
-    total_target: 2800000,
-    total_rag: 'red',
-    rag_counts: { green: 1, amber: 0, red: 1, none: 0 },
-    // ── Cost-behaviour headline split (operating leverage) ──────────────────
-    behaviour_totals: {
-      fixed: 1617280,
-      variable: 783602,
-      semi_variable: 444639,
-      non_controllable: 216842,
-      unclassified: 0,
-    },
-    addressable_base: 2845521,
-    fixed_variable_ratio: 2.06,
-    accounts: [
-      {
-        account_id: 'a1',
-        account_key: 'kl_HH--EM01/1',
-        name: 'Employee Expenses Tanja',
-        group: 'OVERHEADS',
-        behaviour: 'fixed',
-        driver: 'headcount (salaried)',
-        recurring_actual: 420000,
-        recurring_prior: 471000,
-        yoy_delta: -51000,
-        yoy_pct: -10.9,
-        pct_of_cost: 13.7,
-        target: 380000,
-        rag: 'red',
-      },
-      {
-        account_id: 'a2',
-        account_key: 'kl_HH--AU04',
-        name: 'Management Service',
-        group: 'OVERHEADS',
-        behaviour: 'variable',
-        driver: null,
-        recurring_actual: 165208,
-        recurring_prior: 82800,
-        yoy_delta: 82408,
-        yoy_pct: 99.5,
-        pct_of_cost: 5.4,
-        target: 999999,
-        rag: 'green',
-      },
-    ],
-    top_opportunities: [
-      {
-        account_id: 'a2',
-        account_key: 'kl_HH--AU04',
-        name: 'Management Service',
-        group: 'OVERHEADS',
-        behaviour: 'variable',
-        driver: null,
-        recurring_actual: 165208,
-        recurring_prior: 82800,
-        yoy_delta: 82408,
-        yoy_pct: 99.5,
-        pct_of_cost: 5.4,
-        target: 999999,
-        rag: 'green',
-      },
-    ],
     source: 'TM1 gl_src_trial_balance (live)',
+
+    accounts: addressableRows(),
+    top_opportunities: [
+      // Fastest-growing addressable costs — a subset, distinct ordering.
+      { ...addressableRows()[1] }, // Casual Wages  (variable, T2, +20%)
+      { ...addressableRows()[4] }, // Premises Lease (fixed,   T5, +8.7%)
+    ],
+
+    // ── v2 headline (change #1) ──────────────────────────────────────────────
+    addressable_operating_cost: 1240000,
+
+    // ── Below the line (change #4) ───────────────────────────────────────────
+    below_the_line: belowTheLineRows(),
+    below_the_line_total: 155000,
+
+    // ── Tier + behaviour aggregates ──────────────────────────────────────────
+    tier_totals: { T1: 420000, T2: 300000, T3: 180000, T4: 90000, T5: 250000 },
+    behaviour_totals: {
+      fixed: 670000, variable: 300000, semi_variable: 180000,
+      non_controllable: 90000, unclassified: 0,
+    },
+    addressable_base: 1150000,
+    fixed_variable_ratio: 2.23,
+
+    // ── Partial-year honesty (change #2) ─────────────────────────────────────
+    year_in_progress: true,
+    months_elapsed: 5,
+    period_label: 'YTD to May (5 mo)',
+    comparison_basis: 'Compared like-for-like to the same 5 months last year.',
+    annualised_estimate: 3100000,
+
+    // ── Back-compat fields (legacy consumers / total tile / RAG summary) ──────
+    total_recurring_cost: 1395000,
+    total_target: 1300000,
+    total_rag: 'red',
+    rag_counts: { green: 1, amber: 1, red: 1, none: 2 },
+
     ...overrides,
   };
 }
 
-/**
- * A four-behaviour account set — one account per behaviour, plus one with a
- * missing behaviour (→ should be treated as unclassified). Used by the
- * behaviour-filter and per-row-chip tests where we need a known mix.
- */
-function makeMixedAccounts() {
-  return [
-    {
-      account_id: 'f1', account_key: 'kl_F1', name: 'Rent Head Office',
-      group: 'OVERHEADS', behaviour: 'fixed', driver: 'lease',
-      recurring_actual: 600000, recurring_prior: 600000, yoy_delta: 0,
-      yoy_pct: 0, pct_of_cost: 20, target: null, rag: 'none',
-    },
-    {
-      account_id: 'v1', account_key: 'kl_V1', name: 'Casual Wages',
-      group: 'DIRECTCOSTS', behaviour: 'variable', driver: 'hours worked',
-      recurring_actual: 300000, recurring_prior: 250000, yoy_delta: 50000,
-      yoy_pct: 20, pct_of_cost: 10, target: null, rag: 'none',
-    },
-    {
-      account_id: 's1', account_key: 'kl_S1', name: 'Electricity',
-      group: 'OVERHEADS', behaviour: 'semi_variable', driver: 'usage + standing',
-      recurring_actual: 180000, recurring_prior: 170000, yoy_delta: 10000,
-      yoy_pct: 5.9, pct_of_cost: 6, target: null, rag: 'none',
-    },
-    {
-      account_id: 'n1', account_key: 'kl_N1', name: 'Statutory Levies',
-      group: 'EXPENSE', behaviour: 'non_controllable', driver: 'regulation',
-      recurring_actual: 90000, recurring_prior: 88000, yoy_delta: 2000,
-      yoy_pct: 2.3, pct_of_cost: 3, target: null, rag: 'none',
-    },
-    {
-      account_id: 'u1', account_key: 'kl_U1', name: 'Sundry Uncategorised',
-      group: 'EXPENSE', behaviour: undefined, driver: null,
-      recurring_actual: 12000, recurring_prior: 10000, yoy_delta: 2000,
-      yoy_pct: 20, pct_of_cost: 0.4, target: null, rag: 'none',
-    },
-  ];
+// SECOND variant — complete year: no period chip "in progress" tone, and the
+// annualised estimate is absent (null) because there is nothing to project.
+function makeCompleteYearReport(overrides = {}) {
+  return makeReport({
+    year_in_progress: false,
+    months_elapsed: 12,
+    period_label: 'Full year',
+    comparison_basis: 'Compared to the full prior year.',
+    annualised_estimate: null,
+    ...overrides,
+  });
 }
 
-/**
- * Mount with a real Pinia store, pre-seeded with tenants so the component's
- * onMounted skips the loadTenants() network call and goes straight to
- * loadReport().
- */
+// ── Mount helpers ────────────────────────────────────────────────────────────
 function mountReport() {
   const pinia = createPinia();
   setActivePinia(pinia);
   const store = useDataStore();
-  store.tenants = [
-    { tenant_id: '41ebfa0e-012e-4ff1-82ba-a9a7585c536c', tenant_name: 'Klikk Rentals' },
-  ];
-  store.selectedTenant = '41ebfa0e-012e-4ff1-82ba-a9a7585c536c';
+  store.tenants = [{ tenant_id: ENTITY, tenant_name: 'Klikk Rentals' }];
+  store.selectedTenant = ENTITY;
 
   return mount(CostCutReport, {
-    global: {
-      plugins: [pinia],
-      // KTabs guards useRoute/useRouter in a try/catch, so no router stub is
-      // needed; the component is mounted with :url-sync="false" regardless.
-    },
+    global: { plugins: [pinia] },
   });
 }
 
-// Find the inline re-tag KSelect *component* for a given account name. The row
-// passes :aria-label="`Cost behaviour for <name>`"; KSelect declares no
-// aria-label prop, so it FALLS THROUGH to the rendered root element — hence we
-// match on attributes('aria-label'), not props. This is a stable, semantic
-// handle (the accessible name of the control), not a test-only hook.
-function retagSelectFor(wrapper, accountName) {
+// Find a row KSelect *component* for a given account name + axis. The row passes
+// :aria-label="`Cost behaviour for <name>`" / "Cuttability tier for <name>";
+// KSelect forwards that fallthrough aria-label onto its trigger element, so we
+// match on attributes('aria-label') — a stable accessible-name handle, not a
+// test-only hook.
+function behaviourSelectFor(wrapper, accountName) {
   return wrapper
     .findAllComponents(KSelect)
     .find((c) => c.attributes('aria-label') === `Cost behaviour for ${accountName}`);
 }
-
-// True if the per-row "Saving behaviour" spinner is showing for the named
-// account. KSpinner renders its `label` as visually-hidden sr-only text
-// (role="status"), so we look for that text — distinct from the target-save
-// spinner ("Saving target") in the same row. We re-find the row's CostCutRow
-// from the TOP wrapper on every call: a post-save re-fetch re-renders the
-// table, so a captured child wrapper would go stale and report the old subtree.
-function behaviourSpinnerShowing(wrapper, accountName) {
-  const row = wrapper
-    .findAllComponents(CostCutRow)
-    .find((r) => r.props('row').name === accountName);
-  if (!row) return false;
-  const cell = row.find('.cost-cut-row__behaviour');
-  if (!cell.exists()) return false;
-  return cell
-    .findAll('.kspinner')
-    .some((s) => s.text().includes('Saving behaviour'));
+function tierSelectFor(wrapper, accountName) {
+  return wrapper
+    .findAllComponents(KSelect)
+    .find((c) => c.attributes('aria-label') === `Cuttability tier for ${accountName}`);
 }
 
-// Click a behaviour filter chip by its visible label ("All", "Fixed", …).
-async function clickBehaviourFilter(wrapper, label) {
+// The data <tr> rows actually rendered for the active table (CostCutRow roots).
+function leafRows(wrapper) {
+  return wrapper.findAllComponents(CostCutRow);
+}
+
+// Names of the CostCutRow leaves currently in the DOM (regardless of v-show).
+function leafNames(wrapper) {
+  return leafRows(wrapper).map((r) => r.props('row').name);
+}
+
+// Click a chip (group-by OR behaviour filter) within a labelled group by text.
+async function clickChip(wrapper, groupAriaLabel, label) {
   const chip = wrapper
-    .findAll('.cost-cut__beh-filter .cost-cut__beh-chip')
+    .findAll(`[aria-label="${groupAriaLabel}"] .cost-cut__chip`)
     .find((b) => b.text() === label);
-  expect(chip, `behaviour filter chip "${label}" should exist`).toBeTruthy();
+  expect(chip, `chip "${label}" in "${groupAriaLabel}" should exist`).toBeTruthy();
   await chip.trigger('click');
   await flushPromises();
   return chip;
 }
+const clickBehaviourFilter = (w, label) => clickChip(w, 'Filter by cost behaviour', label);
+const clickGroupBy = (w, label) => clickChip(w, 'Group accounts by', label);
+
+// Strip all whitespace (regular / NBSP / narrow-NBSP) so en-ZA currency
+// assertions don't depend on the irregular separator char.
+const digits = (s) => s.replace(/\s/g, '');
+
+// en-ZA currency renders with a ",00" decimal (comma is the decimal separator).
+// rand(value) builds the exact whitespace-stripped string the component prints,
+// so an exact toBe() assertion stays strict on the integer rand amount without
+// hard-coding the locale's separator chars in the source.
+const rand = (n) => `R${n}` + ',00';
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  // Sensible defaults — individual tests override getCostCutReport as needed.
-  getCostCutReport.mockResolvedValue(makeReport());
-  getKpiTargets.mockResolvedValue({ targets: [] });
+  // mockReset (not just clearAllMocks) so a `mockResolvedValueOnce` / held-open
+  // `mockImplementationOnce` queued by a prior test cannot leak into the next
+  // mount. clearAllMocks keeps implementation queues; reset drops them, and we
+  // re-establish the defaults below.
+  getCostCutReport.mockReset();
+  saveKpiTarget.mockReset();
+  deleteKpiTarget.mockReset();
+  saveCostBehaviour.mockReset();
+  toastCalls.success.mockReset();
+  toastCalls.error.mockReset();
+  toastCalls.info.mockReset();
+  toastCalls.warn.mockReset();
+
+  // IMPORTANT: return a FRESH report object per call. A single shared object
+  // would be mutated in-place by the optimistic edits, so a "reconcile" that
+  // resolved with that same reference would silently appear to preserve the
+  // edit even if last-wins were broken — a false pass. Fresh objects make the
+  // reconcile genuinely server-authoritative (un-mutated) on every call.
+  getCostCutReport.mockImplementation(async () => makeReport());
   saveKpiTarget.mockResolvedValue({ ok: true });
   deleteKpiTarget.mockResolvedValue({ ok: true });
   saveCostBehaviour.mockResolvedValue({ ok: true });
 });
 
-describe('CostCutReport — mount-based', () => {
-  it('renders both account rows and the formatted total after the fetch resolves', async () => {
+// ════════════════════════════════════════════════════════════════════════════
+// Baseline — the report mounts, fetches and renders the v2 surface
+// ════════════════════════════════════════════════════════════════════════════
+describe('CostCutReport — mount baseline', () => {
+  it('fetches on mount and renders all five addressable leaf rows', async () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    expect(getCostCutReport).toHaveBeenCalled();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+    expect(getCostCutReport).toHaveBeenCalledWith(ENTITY, '2025');
 
-    const text = wrapper.text();
-    // Account NAMES appear in the rendered DOM (real CostCutRow rendered them).
-    expect(text).toContain('Employee Expenses Tanja');
-    expect(text).toContain('Management Service');
-
-    // Two real CostCutRow children were rendered in the "accounts" table.
-    const rows = wrapper.findAll('tbody tr');
-    expect(rows.length).toBe(2);
-
-    // Total recurring cost is formatted as ZAR currency (3 062 363).
-    // Intl en-ZA uses a non-breaking-space thousands separator. Rather than
-    // embed that irregular-whitespace literal in this source file (which trips
-    // no-irregular-whitespace), strip ALL whitespace — regular space, NBSP and
-    // narrow-NBSP are all matched by \s — and assert on the contiguous,
-    // separator-free digit run. This keeps the assertion strict on the digits.
-    const digitsOnly = text.replace(/\s/g, '');
-    expect(digitsOnly).toContain('R3062363');
+    // All five addressable accounts render (below-the-line is a separate section).
+    expect(leafRows(wrapper).length).toBe(5);
+    const names = leafNames(wrapper);
+    expect(names).toContain('Employee Expenses Tanja');
+    expect(names).toContain('Premises Lease');
   });
 
-  it('renders RAG StatusPills: over-target row is error/red, under-target row is success/green', async () => {
-    const wrapper = mountReport();
-    await flushPromises();
-
-    const rows = wrapper.findAll('tbody tr');
-    expect(rows.length).toBe(2);
-
-    // Row 1 = Employee Expenses Tanja (rag: 'red' → tone error → "Over").
-    const row1 = rows[0];
-    const row1Pill = row1.find('.status-pill');
-    expect(row1Pill.exists()).toBe(true);
-    expect(row1Pill.classes()).toContain('status-pill--error');
-    expect(row1Pill.text()).toContain('Over');
-
-    // Row 2 = Management Service (rag: 'green' → tone success → "On target").
-    const row2 = rows[1];
-    const row2Pill = row2.find('.status-pill');
-    expect(row2Pill.exists()).toBe(true);
-    expect(row2Pill.classes()).toContain('status-pill--success');
-    expect(row2Pill.text()).toContain('On target');
-  });
-
-  it('commits an edited per-account target: saveKpiTarget called with the right metric_key and value', async () => {
-    const wrapper = mountReport();
-    await flushPromises();
-
-    const rows = wrapper.findAll('tbody tr');
-    // The per-account target input is the one aria-labelled for that account.
-    const input = rows[0].find('input[aria-label="Target for Employee Expenses Tanja"]');
-    expect(input.exists()).toBe(true);
-
-    // Change the value (380000 → 350000) and blur to commit.
-    await input.setValue('350000');
-    await input.trigger('blur');
-    await flushPromises();
-
-    expect(saveKpiTarget).toHaveBeenCalledTimes(1);
-    const payload = saveKpiTarget.mock.calls[0][0];
-    expect(payload.metric_key).toBe('cost_cut.account.a1');
-    expect(payload.target_value).toBe(350000);
-    expect(payload.entity_id).toBe('41ebfa0e-012e-4ff1-82ba-a9a7585c536c');
-    expect(payload.period_year).toBe(2025);
-  });
-
-  // ── BEHAVIOUR CHANGE (review fix, 2026-06): clear-to-delete now works ──────
-  // Previously KInput type="number" coerced ''→0, so clearing a target SAVED
-  // target_value 0 and the delete path was dead. The fix: parseTargetDraft()
-  // now treats empty OR 0 as "no target" (null). On commit, parsed === null
-  // → deleteKpiTarget IS called (only when a target currently exists), and
-  // saveKpiTarget is NOT called. This test locks in the new, correct behaviour.
-  //
-  // The delete payload shape matches what commitTarget() actually sends:
-  //   { metric_key, year, entity }  — note `year` is the string '2025'
-  //   (year.value) and `entity` is the entity UUID string (entity.value).
-  it('clearing a per-account target that HAS a target DELETES it and does not save', async () => {
-    const wrapper = mountReport();
-    await flushPromises();
-
-    const rows = wrapper.findAll('tbody tr');
-    // Row 1 = account a1, which has an existing target of 380000.
-    const input = rows[0].find('input[aria-label="Target for Employee Expenses Tanja"]');
-    expect(input.exists()).toBe(true);
-
-    // Clear the field (380000 → '') and blur to commit.
-    await input.setValue('');
-    await input.trigger('blur');
-    await flushPromises();
-
-    // New behaviour: an existing target cleared → DELETE, never SAVE.
-    expect(saveKpiTarget).not.toHaveBeenCalled();
-    expect(deleteKpiTarget).toHaveBeenCalledTimes(1);
-
-    const payload = deleteKpiTarget.mock.calls[0][0];
-    expect(payload.metric_key).toBe('cost_cut.account.a1');
-    // entity/year params the component sends (entity.value / year.value).
-    expect(payload.entity).toBe('41ebfa0e-012e-4ff1-82ba-a9a7585c536c');
-    expect(payload.year).toBe('2025');
-  });
-
-  // Edge: a row with NO existing target, cleared → no-op (neither save nor
-  // delete fires). Row a2 has a target (999999), so we override the fixture to
-  // give the first row a null target, then clear it.
-  it('clearing a per-account target that has NO existing target is a no-op (no save, no delete)', async () => {
-    getCostCutReport.mockResolvedValue(
-      makeReport({
-        accounts: [
-          {
-            account_id: 'a1',
-            account_key: 'kl_HH--EM01/1',
-            name: 'Employee Expenses Tanja',
-            group: 'OVERHEADS',
-            behaviour: 'fixed',
-            driver: 'headcount (salaried)',
-            recurring_actual: 420000,
-            recurring_prior: 471000,
-            yoy_delta: -51000,
-            yoy_pct: -10.9,
-            pct_of_cost: 13.7,
-            target: null,
-            rag: 'none',
-          },
-        ],
-      }),
-    );
-
-    const wrapper = mountReport();
-    await flushPromises();
-
-    const rows = wrapper.findAll('tbody tr');
-    const input = rows[0].find('input[aria-label="Target for Employee Expenses Tanja"]');
-    expect(input.exists()).toBe(true);
-
-    // The field is already empty (target null); set to '' and blur.
-    await input.setValue('');
-    await input.trigger('blur');
-    await flushPromises();
-
-    // parsed === null and currentValue === null → no-op.
-    expect(saveKpiTarget).not.toHaveBeenCalled();
-    expect(deleteKpiTarget).not.toHaveBeenCalled();
-  });
-
-  it('renders both KTabs: "Where the money goes" and "Top cut opportunities"', async () => {
-    const wrapper = mountReport();
-    await flushPromises();
-
-    const tabs = wrapper.findAll('[role="tab"]');
-    const tabLabels = tabs.map((t) => t.text());
-    expect(tabLabels).toContain('Where the money goes');
-    expect(tabLabels).toContain('Top cut opportunities');
-
-    // Switching to the opportunities tab renders the opportunities panel.
-    const oppTab = tabs.find((t) => t.text() === 'Top cut opportunities');
-    await oppTab.trigger('click');
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('Fastest-growing recurring costs');
-    // The single opportunity row (Management Service) renders.
-    expect(wrapper.findAll('tbody tr').length).toBe(1);
-    expect(wrapper.text()).toContain('Management Service');
-  });
-
-  it('shows the loading state before the fetch resolves', async () => {
-    // Hold the promise open so we can observe the loading state.
+  it('shows the loading state before the fetch resolves, then clears it', async () => {
     let resolveFetch;
     getCostCutReport.mockImplementation(
       () => new Promise((resolve) => { resolveFetch = resolve; }),
     );
 
     const wrapper = mountReport();
-    // Let onMounted run up to the awaited (unresolved) fetch.
     await Promise.resolve();
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain('Reading live from TM1');
-    // No data rows while loading.
-    expect(wrapper.findAll('tbody tr').length).toBe(0);
+    expect(leafRows(wrapper).length).toBe(0);
 
-    // Resolve and confirm loading clears, rows appear.
     resolveFetch(makeReport());
     await flushPromises();
     expect(wrapper.text()).not.toContain('Reading live from TM1');
-    expect(wrapper.findAll('tbody tr').length).toBe(2);
+    expect(leafRows(wrapper).length).toBe(5);
   });
 
   it('shows an error state when getCostCutReport rejects', async () => {
@@ -470,138 +369,950 @@ describe('CostCutReport — mount-based', () => {
 
     expect(wrapper.find('.cost-cut__status--error').exists()).toBe(true);
     expect(wrapper.text()).toContain('TM1 connection refused');
-    // No report content rendered on error.
-    expect(wrapper.findAll('tbody tr').length).toBe(0);
+    expect(leafRows(wrapper).length).toBe(0);
+  });
+
+  it('renders both KTabs and switches to the opportunities panel on click', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const tabs = wrapper.findAll('[role="tab"]');
+    const labels = tabs.map((t) => t.text());
+    expect(labels).toContain('Where the money goes');
+    expect(labels).toContain('Top cut opportunities');
+
+    const oppTab = tabs.find((t) => t.text() === 'Top cut opportunities');
+    await oppTab.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Fastest-growing recurring costs');
+    // Two opportunities in the fixture.
+    expect(leafRows(wrapper).length).toBe(2);
+    expect(leafNames(wrapper)).toContain('Casual Wages');
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// COST-BEHAVIOUR LAYER — added by the independent tester
+// AREA 1 — Headline: addressable operating cost + like-for-like YoY + total
 // ════════════════════════════════════════════════════════════════════════════
-
-// ── Area 1: Headline cost-behaviour split (CostBehaviourBar) ─────────────────
-describe('CostCutReport — headline cost-behaviour split', () => {
-  it('renders the 4 stacked-bar segments with proportional widths from behaviour_totals', async () => {
+describe('Area 1 — addressable headline', () => {
+  it('headline value is addressable_operating_cost with the "(excludes tax…)" sub-caption', async () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    const bar = wrapper.find('.beh-split__bar');
-    expect(bar.exists()).toBe(true);
+    const tile = wrapper.find('.cost-cut__addressable-tile');
+    expect(tile.exists()).toBe(true);
 
-    // Four categorical segments, in BEHAVIOUR_ORDER (unclassified excluded).
-    const segs = wrapper.findAll('.beh-split__seg');
-    expect(segs.length).toBe(4);
-    expect(wrapper.find('.beh-split__seg--fixed').exists()).toBe(true);
-    expect(wrapper.find('.beh-split__seg--variable').exists()).toBe(true);
-    expect(wrapper.find('.beh-split__seg--semi_variable').exists()).toBe(true);
-    expect(wrapper.find('.beh-split__seg--non_controllable').exists()).toBe(true);
+    // Primary value = R1 240 000 (addressable_operating_cost), NOT 1 395 000.
+    expect(digits(tile.find('.metric-tile__value').text())).toBe(rand(1240000));
+    expect(tile.find('.metric-tile__label').text()).toBe('Addressable operating cost');
 
-    // Proportional widths (runtime-value :style exception). The segment width
-    // is the RAW unrounded percentage (the legend carries the rounded label).
-    // fixed 1617280 / total 3062363 = 52.81%; variable 783602 / … = 25.59%.
-    const fixedSeg = wrapper.find('.beh-split__seg--fixed');
-    expect(fixedSeg.attributes('style')).toContain('width: 52.8');
-    const varSeg = wrapper.find('.beh-split__seg--variable');
-    expect(varSeg.attributes('style')).toContain('width: 25.5');
-
-    // The widths are proportional: fixed > variable > semi > non-controllable.
-    const widthOf = (sel) =>
-      parseFloat(wrapper.find(sel).attributes('style').replace(/[^0-9.]/g, ''));
-    const wFixed = widthOf('.beh-split__seg--fixed');
-    const wVar = widthOf('.beh-split__seg--variable');
-    const wSemi = widthOf('.beh-split__seg--semi_variable');
-    const wNon = widthOf('.beh-split__seg--non_controllable');
-    expect(wFixed).toBeGreaterThan(wVar);
-    expect(wVar).toBeGreaterThan(wSemi);
-    expect(wSemi).toBeGreaterThan(wNon);
+    // Sub-caption naming the exclusion.
+    const sub = tile.find('.cost-cut__addressable-sub');
+    expect(sub.exists()).toBe(true);
+    expect(sub.text()).toContain('excludes tax');
+    expect(sub.text().toLowerCase()).toContain('statutory');
   });
 
-  it('renders a legend with ZAR + % per behaviour, the fixed:variable ratio and the addressable read', async () => {
+  it('like-for-like YoY = (addressable − Σ prior)/Σ prior, rendered as a cost-direction (rise=red) delta', async () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    // Legend has one item per behaviour (4), each rendering a BehaviourTag.
-    const legendItems = wrapper.findAll('.beh-split__legend-item');
-    expect(legendItems.length).toBe(4);
-
-    const splitText = wrapper.find('.beh-split').text();
-    const splitDigits = splitText.replace(/\s/g, '');
-
-    // ZAR amounts per behaviour appear in the legend.
-    expect(splitDigits).toContain('R1617280'); // fixed
-    expect(splitDigits).toContain('R783602'); // variable
-    expect(splitDigits).toContain('R444639'); // semi-variable
-    expect(splitDigits).toContain('R216842'); // non-controllable
-
-    // Percentages per behaviour (52.8% fixed, 25.6% variable).
-    expect(splitText).toContain('52.8%');
-    expect(splitText).toContain('25.6%');
-
-    // Operating-leverage reads: "Fixed : Variable = 2.06 : 1" and % addressable.
-    expect(splitText).toContain('Fixed : Variable = 2.06 : 1');
-    // addressable_base 2845521 / total 3062363 = 92.9% → rounded to 93%.
-    expect(splitText).toContain('93% addressable');
+    const delta = wrapper.find('.cost-cut__delta');
+    expect(delta.exists()).toBe(true);
+    // +2.56% → "+2.6% YoY", with the like-for-like note.
+    expect(delta.text()).toContain('+2.6%');
+    expect(delta.text().toLowerCase()).toContain('like-for-like');
+    // A RISE in cost is bad → red class (not MetricTile's up=green).
+    expect(delta.classes()).toContain('cost-cut__delta--bad');
+    expect(delta.classes()).not.toContain('cost-cut__delta--good');
   });
 
-  it('hides the headline split when behaviour_totals are all zero', async () => {
+  it('a FALL in like-for-like addressable cost reads green (cost-direction good)', async () => {
+    // Make this year's addressable lower than the prior sum → fall → good/green.
+    // Drop a1's actual to 300000 so Σ actual = 1,120,000 < Σ prior 1,209,000.
+    const rows = addressableRows();
+    rows[0].recurring_actual = 300000;
     getCostCutReport.mockResolvedValue(
-      makeReport({
-        behaviour_totals: {
-          fixed: 0, variable: 0, semi_variable: 0, non_controllable: 0, unclassified: 0,
-        },
-        addressable_base: 0,
-        fixed_variable_ratio: null,
-      }),
+      makeReport({ accounts: rows, addressable_operating_cost: 1120000 }),
     );
-
     const wrapper = mountReport();
     await flushPromises();
 
-    // The report still loaded (rows render) but the bar must NOT.
-    expect(wrapper.findAll('tbody tr').length).toBe(2);
-    expect(wrapper.find('.beh-split').exists()).toBe(false);
-    expect(wrapper.find('.beh-split__bar').exists()).toBe(false);
+    const delta = wrapper.find('.cost-cut__delta');
+    expect(delta.exists()).toBe(true);
+    expect(delta.text()).toContain('-7.4%'); // (1,120,000-1,209,000)/1,209,000
+    expect(delta.classes()).toContain('cost-cut__delta--good');
+    expect(delta.classes()).not.toContain('cost-cut__delta--bad');
   });
 
-  it('hides the headline split when behaviour_totals is absent from the response', async () => {
-    // A legacy/older response with no behaviour layer at all must not crash.
-    const legacy = makeReport();
-    delete legacy.behaviour_totals;
-    delete legacy.addressable_base;
-    delete legacy.fixed_variable_ratio;
-    getCostCutReport.mockResolvedValue(legacy);
-
+  it('shows total_recurring_cost as the smaller "Total incl. below-the-line" secondary stat', async () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    expect(wrapper.findAll('tbody tr').length).toBe(2);
-    expect(wrapper.find('.beh-split').exists()).toBe(false);
+    const secondary = wrapper.find('.cost-cut__secondary');
+    expect(secondary.exists()).toBe(true);
+    expect(secondary.text().toLowerCase()).toContain('total incl. below-the-line');
+    // The total (1 395 000) lives in the secondary stat, distinct from the
+    // primary addressable value (1 240 000).
+    expect(digits(secondary.find('.cost-cut__secondary-value').text())).toBe(rand(1395000));
+  });
+
+  it('like-for-like YoY is absent when there is no prior addressable base', async () => {
+    const rows = addressableRows().map((r) => ({ ...r, recurring_prior: 0 }));
+    getCostCutReport.mockResolvedValue(makeReport({ accounts: rows }));
+    const wrapper = mountReport();
+    await flushPromises();
+
+    expect(wrapper.find('.cost-cut__delta').exists()).toBe(false);
   });
 });
 
-// ── Area 2: Per-row behaviour chip (BehaviourTag through CostCutRow) ─────────
-describe('CostCutRow — per-row behaviour chip', () => {
-  // Mount the REAL CostCutRow directly inside a table so the <tr>/<td> are
-  // valid; assert on the rendered BehaviourTag chip. formatCurrency is the same
-  // ZAR formatter the parent passes.
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 2 — Partial-year honesty: period chip, comparison basis, annualised
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 2 — partial-year vs complete-year', () => {
+  it('renders the period_label chip beside the year with an INFO tone while year_in_progress', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const period = wrapper.find('.cost-cut__period');
+    expect(period.exists()).toBe(true);
+    expect(period.find('.cost-cut__period-year').text()).toContain('FY 2025');
+
+    // The period chip is a StatusPill with the period_label, info tone in-progress.
+    const pill = period.find('.status-pill');
+    expect(pill.exists()).toBe(true);
+    expect(pill.text()).toContain('YTD to May (5 mo)');
+    expect(pill.classes()).toContain('status-pill--info');
+  });
+
+  it('renders the comparison_basis caption and the annualised projection when in progress', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const basis = wrapper.find('.cost-cut__basis-caption');
+    expect(basis.exists()).toBe(true);
+    expect(basis.text()).toContain('like-for-like to the same 5 months');
+
+    const annualised = wrapper.find('.cost-cut__annualised');
+    expect(annualised.exists()).toBe(true);
+    expect(annualised.text()).toContain('Projected full year');
+    expect(digits(annualised.text())).toContain('R3100000');
+  });
+
+  it('complete-year fixture: chip is NOT info-toned and the annualised projection is ABSENT', async () => {
+    getCostCutReport.mockResolvedValue(makeCompleteYearReport());
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Period chip still renders (period_label = "Full year") but neutral, not info.
+    const pill = wrapper.find('.cost-cut__period .status-pill');
+    expect(pill.exists()).toBe(true);
+    expect(pill.text()).toContain('Full year');
+    expect(pill.classes()).toContain('status-pill--neutral');
+    expect(pill.classes()).not.toContain('status-pill--info');
+
+    // annualised_estimate is null → the projection line must not render.
+    expect(wrapper.find('.cost-cut__annualised').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Projected full year');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 3 — Grouped, collapsible table
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 3 — grouped table', () => {
+  it('defaults to grouping by tier in T1→T5 order, with label + hint + count + subtotal + % per header', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const headers = wrapper.findAll('.cc-group__header');
+    expect(headers.length).toBe(5);
+
+    const labels = headers.map((h) => h.find('.cc-group__label').text());
+    // Act-first order, top-down.
+    expect(labels).toEqual([
+      'T1 Quick win', 'T2 Behavioural', 'T3 Discretionary', 'T4 Renegotiable', 'T5 Structural',
+    ]);
+
+    // First header (T1): hint, count, subtotal, % read all present.
+    const t1 = headers[0];
+    expect(t1.find('.cc-group__hint').text()).toBe('Stop the leak');
+    expect(t1.find('.cc-group__count').text()).toContain('1 account');
+    expect(digits(t1.find('.cc-group__subtotal').text())).toBe(rand(420000));
+    // 420000 / 1,240,000 = 33.9% of addressable.
+    expect(t1.find('.cc-group__pct-num').text()).toContain('33.9%');
+    expect(t1.find('.cc-group__pct-num').text().toLowerCase()).toContain('of addressable');
+  });
+
+  it('group subtotals sum to addressable_operating_cost on the accounts tab', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Parse the integer rand amount from each subtotal cell (drop "R", drop the
+    // ",00" decimal that en-ZA appends).
+    const subtotals = wrapper
+      .findAll('.cc-group__subtotal')
+      .map((td) => Number(digits(td.text()).replace('R', '').replace(/,\d+$/, '')));
+    const sum = subtotals.reduce((s, n) => s + n, 0);
+    expect(sum).toBe(1240000); // == addressable_operating_cost
+  });
+
+  it('collapse toggle flips aria-expanded and hides (v-show) the leaf rows of that group', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const firstToggle = wrapper.findAll('.cc-group__toggle')[0];
+    expect(firstToggle.attributes('aria-expanded')).toBe('true');
+
+    // The T1 leaf (Employee Expenses Tanja) is visible (not display:none).
+    const t1Leaf = leafRows(wrapper).find((r) => r.props('row').name === 'Employee Expenses Tanja');
+    expect(t1Leaf.attributes('style') || '').not.toContain('display: none');
+
+    await firstToggle.trigger('click');
+    await flushPromises();
+
+    // aria-expanded flips; the leaf is still in the DOM but hidden via v-show.
+    expect(firstToggle.attributes('aria-expanded')).toBe('false');
+    const t1LeafAfter = leafRows(wrapper).find((r) => r.props('row').name === 'Employee Expenses Tanja');
+    expect(t1LeafAfter.attributes('style') || '').toContain('display: none');
+    // The control points at the body it collapses.
+    expect(firstToggle.attributes('aria-controls')).toBeTruthy();
+  });
+
+  it('switching Group-by to Behaviour re-buckets into behaviour groups (fixed has 2 leaves)', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    await clickGroupBy(wrapper, 'Behaviour');
+
+    const labels = wrapper.findAll('.cc-group__header .cc-group__label').map((l) => l.text());
+    // BEHAVIOUR_ORDER: Fixed, Variable, Semi-variable, Non-controllable.
+    expect(labels).toEqual(['Fixed', 'Variable', 'Semi-variable', 'Non-controllable']);
+
+    // Fixed bucket = a1 (420000) + a5 (250000) = 670000 over two leaves.
+    const fixedHeader = wrapper
+      .findAll('.cc-group__header')
+      .find((h) => h.find('.cc-group__label').text() === 'Fixed');
+    expect(fixedHeader.find('.cc-group__count').text()).toContain('2 accounts');
+    expect(digits(fixedHeader.find('.cc-group__subtotal').text())).toBe(rand(670000));
+  });
+
+  it('switching Group-by to Account group re-buckets by the account group', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    await clickGroupBy(wrapper, 'Account group');
+
+    const labels = wrapper.findAll('.cc-group__header .cc-group__label').map((l) => l.text());
+    // Overheads (a1,a3,a5), Direct costs (a2), Expense (a4).
+    expect(labels).toContain('Overheads');
+    expect(labels).toContain('Direct costs');
+    expect(labels).toContain('Expense');
+
+    const overheads = wrapper
+      .findAll('.cc-group__header')
+      .find((h) => h.find('.cc-group__label').text() === 'Overheads');
+    // 420000 + 180000 + 250000 = 850000 over three leaves.
+    expect(overheads.find('.cc-group__count').text()).toContain('3 accounts');
+    expect(digits(overheads.find('.cc-group__subtotal').text())).toBe(rand(850000));
+  });
+
+  it('every leaf carries a tier chip under ANY grouping (TierTag present on each row)', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Default (tier) grouping.
+    expect(leafRows(wrapper).every((r) => r.findComponent(TierTag).exists())).toBe(true);
+
+    // Behaviour grouping — the per-leaf tier chip must still be present.
+    await clickGroupBy(wrapper, 'Behaviour');
+    const leaves = leafRows(wrapper);
+    expect(leaves.length).toBe(5);
+    expect(leaves.every((r) => r.findComponent(TierTag).exists())).toBe(true);
+  });
+
+  it('behaviour filter narrows WITHIN groups on the accounts tab', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(leafRows(wrapper).length).toBe(5);
+
+    await clickBehaviourFilter(wrapper, 'Fixed');
+    // Two fixed accounts survive (a1, a5).
+    const names = leafNames(wrapper);
+    expect(names.sort()).toEqual(['Employee Expenses Tanja', 'Premises Lease']);
+
+    await clickBehaviourFilter(wrapper, 'Variable');
+    expect(leafNames(wrapper)).toEqual(['Casual Wages']);
+
+    await clickBehaviourFilter(wrapper, 'All');
+    expect(leafRows(wrapper).length).toBe(5);
+  });
+
+  it('behaviour filter narrows WITHIN groups on the opportunities tab too', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const oppTab = wrapper.findAll('[role="tab"]').find((t) => t.text() === 'Top cut opportunities');
+    await oppTab.trigger('click');
+    await flushPromises();
+    expect(leafRows(wrapper).length).toBe(2); // Casual Wages (variable), Premises Lease (fixed)
+
+    await clickBehaviourFilter(wrapper, 'Fixed');
+    expect(leafNames(wrapper)).toEqual(['Premises Lease']);
+
+    await clickBehaviourFilter(wrapper, 'Variable');
+    expect(leafNames(wrapper)).toEqual(['Casual Wages']);
+  });
+
+  it('sets aria-pressed on the active group-by chip only', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    await clickGroupBy(wrapper, 'Behaviour');
+    const chips = wrapper.findAll('[aria-label="Group accounts by"] .cost-cut__chip');
+    const pressed = chips.filter((c) => c.attributes('aria-pressed') === 'true');
+    expect(pressed.length).toBe(1);
+    expect(pressed[0].text()).toBe('Behaviour');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 4 — Below-the-line section
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 4 — below-the-line section', () => {
+  it('is collapsed by default and shows the total in the header while collapsed', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const btl = wrapper.findComponent(BelowTheLineSection);
+    expect(btl.exists()).toBe(true);
+
+    const toggle = btl.find('.btl__toggle');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+
+    // Total visible in the header even while collapsed.
+    expect(digits(btl.find('.btl__total').text())).toContain('R155000');
+
+    // Body hidden (v-show) while collapsed: its rows are not visible.
+    const body = btl.find('.btl__body');
+    expect(body.attributes('style') || '').toContain('display: none');
+  });
+
+  it('expands to list the T0 below-the-line rows, rendered READ-ONLY (no target input, no re-tag select)', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const btl = wrapper.findComponent(BelowTheLineSection);
+    await btl.find('.btl__toggle').trigger('click');
+    await flushPromises();
+
+    expect(btl.find('.btl__toggle').attributes('aria-expanded')).toBe('true');
+
+    // Both T0 rows listed.
+    const text = btl.text();
+    expect(text).toContain('Income Tax');
+    expect(text).toContain('Finance Costs');
+
+    // READ-ONLY: no target input and no inline re-tag KSelect inside the section.
+    expect(btl.findAll('input').length).toBe(0);
+    expect(btl.findAllComponents(KSelect).length).toBe(0);
+  });
+
+  it('is ABSENT entirely when below_the_line is empty', async () => {
+    getCostCutReport.mockResolvedValue(
+      makeReport({ below_the_line: [], below_the_line_total: 0 }),
+    );
+    const wrapper = mountReport();
+    await flushPromises();
+
+    expect(wrapper.findComponent(BelowTheLineSection).exists()).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 5 — Optimistic target edit (same-tick) + background reconcile
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 5 — optimistic target edit', () => {
+  it('edits the row target + its OWN RAG pill same-tick; rag_counts settle only AFTER the reconcile', async () => {
+    // Contract (post-P0 no-client-recompute fix): the optimistic mutation touches
+    // ONLY the edited row's own cells (its target + its own `rag` via computeRag).
+    // The rag_counts SUMMARY is a cross-row aggregate owned EXCLUSIVELY by the
+    // background reconcile — the client does NOT recompute it. So we assert:
+    //   • same-tick: the edited row's RAG pill flips (its own cell), AND the
+    //     summary pills are UNCHANGED (still the server's pre-edit counts);
+    //   • post-reconcile: the summary pills move to the authoritative counts.
+    // Hold the reconcile OPEN with an AUTHORITATIVE report whose counts differ, so
+    // a regression that re-introduced client recompute (summary changing early)
+    // would be caught here.
+    let resolveReconcile;
+    const authoritative = makeReport({
+      rag_counts: { green: 9, amber: 9, red: 9, none: 9 }, // obviously-different
+    });
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport()) // mount load
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Before: a3 (Electricity) is green (180000 ≤ 200000). rag_counts.red = 1.
+    expect(wrapper.find('.cost-cut__rag-pills').text()).toContain('1 red');
+
+    // Edit a3's target down to 150000 → 180000 > 150000*1.05=157500 → red.
+    const a3Input = wrapper.find('input[aria-label="Target for Electricity"]');
+    expect(a3Input.exists()).toBe(true);
+    await a3Input.setValue('150000');
+    await a3Input.trigger('blur');
+    // Let the synchronous optimistic mutation + the saveKpiTarget microtask flush,
+    // but the reconcile getCostCutReport is held open (unresolved).
+    await flushPromises();
+
+    // saveKpiTarget fired; reconcile was kicked off but is still pending.
+    expect(saveKpiTarget).toHaveBeenCalledTimes(1);
+    expect(getCostCutReport).toHaveBeenCalledTimes(2);
+    expect(resolveReconcile).toBeTypeOf('function');
+
+    // OPTIMISTIC, same-tick (reconcile not yet resolved):
+    //  - the edited ROW's own RAG pill flipped green → red ("Over").
+    const a3Row = leafRows(wrapper).find((r) => r.props('row').name === 'Electricity');
+    const a3Pill = a3Row.find('.status-pill');
+    expect(a3Pill.classes()).toContain('status-pill--error');
+    expect(a3Pill.text()).toContain('Over');
+    //  - the cross-row rag_counts SUMMARY is NOT recomputed on the client: it is
+    //    still the server's pre-edit counts (1 red / 1 green), NOT a locally
+    //    recomputed 2 red / 0 green. This locks the no-client-recompute contract.
+    const summaryOptimistic = wrapper.find('.cost-cut__rag-pills').text();
+    expect(summaryOptimistic).toContain('1 red');
+    expect(summaryOptimistic).toContain('1 green');
+    expect(summaryOptimistic).not.toContain('2 red');
+    expect(summaryOptimistic).not.toContain('0 green');
+    // The table is NOT blanked during reconcile — five leaves still present.
+    expect(leafRows(wrapper).length).toBe(5);
+
+    // Now let the reconcile land with the authoritative payload — the summary
+    // pills move to the server-authoritative counts ONLY now.
+    resolveReconcile(authoritative);
+    await flushPromises();
+    expect(wrapper.find('.cost-cut__rag-pills').text()).toContain('9 red');
+  });
+
+  it('commits the edited target with the right metric_key / value / entity / year', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const input = wrapper.find('input[aria-label="Target for Employee Expenses Tanja"]');
+    await input.setValue('350000');
+    await input.trigger('blur');
+    await flushPromises();
+
+    expect(saveKpiTarget).toHaveBeenCalledTimes(1);
+    const payload = saveKpiTarget.mock.calls[0][0];
+    expect(payload.metric_key).toBe('cost_cut.account.a1');
+    expect(payload.target_value).toBe(350000);
+    expect(payload.entity_id).toBe(ENTITY);
+    expect(payload.period_year).toBe(2025);
+  });
+
+  it('clearing a target that HAS one DELETEs it (no save); a target with NONE is a no-op', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // a1 HAS a target (380000) → clear → DELETE.
+    const a1 = wrapper.find('input[aria-label="Target for Employee Expenses Tanja"]');
+    await a1.setValue('');
+    await a1.trigger('blur');
+    await flushPromises();
+
+    expect(saveKpiTarget).not.toHaveBeenCalled();
+    expect(deleteKpiTarget).toHaveBeenCalledTimes(1);
+    const del = deleteKpiTarget.mock.calls[0][0];
+    expect(del.metric_key).toBe('cost_cut.account.a1');
+    expect(del.entity).toBe(ENTITY);
+    expect(del.year).toBe('2025');
+
+    vi.clearAllMocks();
+    getCostCutReport.mockResolvedValue(makeReport());
+
+    // a2 has NO target → clearing it is a no-op (neither save nor delete).
+    const a2 = wrapper.find('input[aria-label="Target for Casual Wages"]');
+    await a2.setValue('');
+    await a2.trigger('blur');
+    await flushPromises();
+    expect(saveKpiTarget).not.toHaveBeenCalled();
+    expect(deleteKpiTarget).not.toHaveBeenCalled();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 6 — Optimistic behaviour & tier re-tag
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 6 — optimistic behaviour & tier re-tag', () => {
+  it('behaviour re-tag flips the chip + POSTs same-tick; headline split settles only AFTER the reconcile', async () => {
+    // Contract (post-P0 no-client-recompute fix): the optimistic mutation flips
+    // ONLY the edited row's behaviour chip (a per-row cell). behaviour_totals —
+    // and therefore the headline split legend — is a CROSS-ROW aggregate owned
+    // EXCLUSIVELY by the background reconcile; the client does NOT recompute it.
+    // So the load-bearing same-tick effects are: the chip flip + the
+    // saveCostBehaviour POST. The split moves only once the reconcile resolves to
+    // the server's behaviour_totals.
+    //
+    // Hold the reconcile OPEN and resolve it with a server payload whose
+    // behaviour_totals REFLECT the re-tag (fixed 250k / variable 720k), so the
+    // post-reconcile assertion proves the split followed the SERVER, and the
+    // same-tick assertion proves it did NOT move early (no client recompute).
+    let resolveReconcile;
+    const reconciled = makeReport({
+      behaviour_totals: {
+        fixed: 250000, variable: 720000, semi_variable: 180000,
+        non_controllable: 90000, unclassified: 0,
+      },
+    });
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport())
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Before: fixed legend amount = R670 000 (a1 420k + a5 250k).
+    const fixedLegendBefore = wrapper
+      .findAll('.beh-split__legend-item')
+      .find((li) => li.text().includes('Fixed'));
+    expect(digits(fixedLegendBefore.text())).toContain('R670000');
+
+    // Re-tag a1 (Employee Expenses Tanja) fixed → variable.
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    expect(select, 'behaviour re-tag KSelect should exist').toBeTruthy();
+    select.vm.$emit('update:modelValue', 'variable');
+    await flushPromises();
+
+    // SAME-TICK, load-bearing: POST fired with {account_key, behaviour};
+    // reconcile kicked off (still open).
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({
+      account_key: 'kl_T1', behaviour: 'variable',
+    });
+    expect(getCostCutReport).toHaveBeenCalledTimes(2);
+    expect(resolveReconcile).toBeTypeOf('function');
+
+    // SAME-TICK, optimistic: a1's chip now reads Variable (its own cell flipped).
+    const a1Row = leafRows(wrapper).find((r) => r.props('row').name === 'Employee Expenses Tanja');
+    expect(a1Row.findComponent(BehaviourTag).find('.behaviour-tag__label').text()).toBe('Variable');
+
+    // SAME-TICK, no-client-recompute lock: the headline split is a cross-row
+    // aggregate — it must NOT move on the optimistic tick. Fixed still reads
+    // R670 000 (the server value), NOT a locally recomputed R250 000.
+    const fixedLegendOptimistic = wrapper
+      .findAll('.beh-split__legend-item')
+      .find((li) => li.text().includes('Fixed') && !li.text().includes('Variable'));
+    expect(digits(fixedLegendOptimistic.text())).toContain('R670000');
+    expect(digits(fixedLegendOptimistic.text())).not.toContain('R250000');
+
+    // Let the reconcile land — the split now follows the SERVER behaviour_totals:
+    // fixed R250 000, variable R720 000.
+    resolveReconcile(reconciled);
+    await flushPromises();
+
+    const fixedLegendAfter = wrapper
+      .findAll('.beh-split__legend-item')
+      .find((li) => li.text().includes('Fixed') && !li.text().includes('Variable'));
+    expect(digits(fixedLegendAfter.text())).toContain('R250000');
+    const varLegendAfter = wrapper
+      .findAll('.beh-split__legend-item')
+      .find((li) => li.text().includes('Variable'));
+    expect(digits(varLegendAfter.text())).toContain('R720000');
+
+    expect(toastCalls.success).toHaveBeenCalled();
+    expect(toastCalls.success.mock.calls.at(-1)[0]).toContain('Variable');
+  });
+
+  it('tier re-tag instantly (before reconcile) updates the tier chip and re-buckets, POSTs {account_key, cuttability}', async () => {
+    // Hold the reconcile OPEN so we observe the OPTIMISTIC re-bucket, not the
+    // post-reconcile state. (Once the background reconcile resolves it replaces
+    // report.value with server-authoritative data — that path is covered by the
+    // last-wins test; here we lock the same-tick optimistic re-bucket.)
+    let resolveReconcile;
+    getCostCutReport
+      .mockImplementationOnce(async () => makeReport()) // mount
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Re-tag a2 (Casual Wages) from T2 → T1.
+    const tierSelect = tierSelectFor(wrapper, 'Casual Wages');
+    expect(tierSelect, 'tier re-tag KSelect should exist').toBeTruthy();
+    tierSelect.vm.$emit('update:modelValue', 'T1');
+    await flushPromises();
+
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({
+      account_key: 'kl_T2', cuttability: 'T1',
+    });
+    expect(resolveReconcile).toBeTypeOf('function'); // reconcile kicked off, still pending
+
+    // OPTIMISTIC re-bucket (reconcile not yet resolved): T1 now has 2 accounts
+    // (a1 + a2), T2 has 0 → T2 group gone.
+    const t1Header = wrapper
+      .findAll('.cc-group__header')
+      .find((h) => h.find('.cc-group__label').text() === 'T1 Quick win');
+    expect(t1Header.find('.cc-group__count').text()).toContain('2 accounts');
+    const t2Header = wrapper
+      .findAll('.cc-group__header')
+      .find((h) => h.find('.cc-group__label').text() === 'T2 Behavioural');
+    expect(t2Header).toBeFalsy(); // empty bucket not rendered
+
+    // a2's per-row tier chip now reads T1.
+    const a2Row = leafRows(wrapper).find((r) => r.props('row').name === 'Casual Wages');
+    expect(a2Row.findComponent(TierTag).find('.tier-tag__label').text()).toBe('T1 Quick win');
+
+    // Let the reconcile land (server-authoritative) so no unhandled promise.
+    resolveReconcile(makeReport());
+    await flushPromises();
+  });
+
+  it('a behaviour re-tag to the SAME value is a no-op (no POST, no reconcile)', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    select.vm.$emit('update:modelValue', 'fixed'); // already fixed
+    await flushPromises();
+
+    expect(saveCostBehaviour).not.toHaveBeenCalled();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('a re-tag on a row MISSING account_key surfaces an error toast and does NOT POST', async () => {
+    const rows = addressableRows();
+    rows[0].account_key = null; // a1 loses its key
+    getCostCutReport.mockResolvedValue(makeReport({ accounts: rows }));
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    select.vm.$emit('update:modelValue', 'variable');
+    await flushPromises();
+
+    expect(saveCostBehaviour).not.toHaveBeenCalled();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+    expect(toastCalls.error).toHaveBeenCalled();
+    expect(toastCalls.error.mock.calls.at(-1)[0].toLowerCase()).toContain('account key');
+  });
+
+  it('surfaces an error toast when saveCostBehaviour rejects (and still reconciles to recover)', async () => {
+    saveCostBehaviour.mockRejectedValue(new Error('behaviour save failed'));
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    select.vm.$emit('update:modelValue', 'variable');
+    await flushPromises();
+
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(toastCalls.error).toHaveBeenCalled();
+    expect(toastCalls.success).not.toHaveBeenCalled();
+    // The catch path fires a reconcile to pull authoritative state back.
+    expect(getCostCutReport).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 7 — Reconcile last-wins + same-tick blur+re-tag race (adversarial)
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 7 — reconcile race / last-wins', () => {
+  it('drops a STALE background reconcile when a newer load (year change) lands first', async () => {
+    const freshReport = makeReport({
+      year: 2024,
+      accounts: [
+        {
+          account_id: 'fresh1', account_key: 'kl_FRESH', name: 'FRESH Account',
+          group: 'OVERHEADS', cuttability: 'T1', is_addressable: true,
+          behaviour: 'variable', driver: null,
+          recurring_actual: 200000, recurring_prior: 180000,
+          yoy_pct: 11.1, pct_of_cost: 100, target: null, rag: 'none',
+        },
+      ],
+      addressable_operating_cost: 200000,
+      below_the_line: [], below_the_line_total: 0,
+    });
+    const staleReport = makeReport({
+      accounts: [
+        {
+          account_id: 'stale1', account_key: 'kl_STALE', name: 'STALE Account',
+          group: 'OVERHEADS', cuttability: 'T1', is_addressable: true,
+          behaviour: 'fixed', driver: null,
+          recurring_actual: 420000, recurring_prior: 471000,
+          yoy_pct: -10.8, pct_of_cost: 100, target: null, rag: 'none',
+        },
+      ],
+      addressable_operating_cost: 420000,
+    });
+
+    let resolveStaleReconcile;
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport()) // #1 mount
+      .mockImplementationOnce(() => new Promise((r) => { resolveStaleReconcile = r; })) // #2 re-tag reconcile (HELD)
+      .mockResolvedValueOnce(freshReport); // #3 year-change load
+
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+
+    // Re-tag → save resolves → reconcile (#2) kicks off and is held open.
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    select.vm.$emit('update:modelValue', 'variable');
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(2);
+
+    // Newer load via the year KSelect (#3) resolves first → FRESH wins.
+    const yearSelect = wrapper.findAllComponents(KSelect).find((c) => c.props('label') === 'Year');
+    expect(yearSelect, 'year KSelect should exist').toBeTruthy();
+    yearSelect.vm.$emit('update:modelValue', '2024');
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(3);
+    expect(leafNames(wrapper)).toContain('FRESH Account');
+
+    // Now resolve the STALE reconcile (#2) — its loadSeq is older → DROPPED.
+    resolveStaleReconcile(staleReport);
+    await flushPromises();
+    expect(leafNames(wrapper)).toContain('FRESH Account');
+    expect(leafNames(wrapper)).not.toContain('STALE Account');
+  });
+
+  it('a focused target input is NOT clobbered by a background reconcile that lands mid-edit', async () => {
+    // Real mechanism: the user is mid-edit in a1's target (focused, typed 355000
+    // but NOT blurred). A reconcile fires from committing a DIFFERENT row (a3),
+    // and lands a fresh report where a1.target is still 380000 server-side. The
+    // reconcile must NOT clobber a1's in-progress draft — CostCutRow's props
+    // watch skips re-syncing while the field is focused.
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+
+    const a1 = wrapper.find('input[aria-label="Target for Employee Expenses Tanja"]');
+    await a1.trigger('focus');
+    await a1.setValue('355000'); // typed, not committed (no blur)
+
+    // Commit a3's target → fires saveKpiTarget → background reconcile (#2),
+    // which returns the original makeReport() (a1.target still 380000).
+    const a3 = wrapper.find('input[aria-label="Target for Electricity"]');
+    await a3.setValue('190000');
+    await a3.trigger('blur');
+    await flushPromises();
+
+    expect(getCostCutReport).toHaveBeenCalledTimes(2); // reconcile ran
+
+    // a1 is still focused → its draft survives, not reset to 380000.
+    const a1After = wrapper.find('input[aria-label="Target for Employee Expenses Tanja"]');
+    expect(a1After.element.value).toBe('355000');
+  });
+
+  it('ADVERSARIAL: a target-blur immediately followed by a behaviour re-tag — BOTH optimistic mutations coexist (pre-reconcile)', async () => {
+    // Author is ~80% sure this is clean. The exact same-tick race: commit a
+    // target on a1, then immediately re-tag a1's behaviour, BEFORE either
+    // background reconcile resolves. The invariant under test: the two handlers
+    // (commitTarget / commitBehaviour) mutate DIFFERENT fields of the SAME row
+    // object and must not clobber each other, so both optimistic mutations are
+    // on screen at once. Both reconciles are held open so we observe the
+    // optimistic state deterministically (post-reconcile = server truth, covered
+    // by last-wins + the dedicated reconcile tests).
+    let resolveReconcileA;
+    let resolveReconcileB;
+    getCostCutReport
+      .mockImplementationOnce(async () => makeReport()) // mount
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcileA = r; })) // target reconcile
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcileB = r; })); // behaviour reconcile
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const input = wrapper.find('input[aria-label="Target for Employee Expenses Tanja"]');
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+
+    // 1) Target blur: 420000 actual, set target 500000 → actual ≤ target → green.
+    await input.setValue('500000');
+    await input.trigger('blur');
+    // 2) Without flushing, re-tag behaviour fixed → semi_variable.
+    select.vm.$emit('update:modelValue', 'semi_variable');
+    await flushPromises();
+
+    // Both writes fired with the right payloads.
+    expect(saveKpiTarget).toHaveBeenCalledTimes(1);
+    expect(saveKpiTarget.mock.calls[0][0].target_value).toBe(500000);
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({
+      account_key: 'kl_T1', behaviour: 'semi_variable',
+    });
+    // Both reconciles were kicked off but are held open.
+    expect(resolveReconcileA).toBeTypeOf('function');
+    expect(resolveReconcileB).toBeTypeOf('function');
+
+    // OPTIMISTIC DOM reflects BOTH mutations on a1 simultaneously:
+    const a1Row = leafRows(wrapper).find((r) => r.props('row').name === 'Employee Expenses Tanja');
+    //  - behaviour chip now "Semi"
+    expect(a1Row.findComponent(BehaviourTag).find('.behaviour-tag__label').text()).toBe('Semi');
+    //  - target RAG now green (On target): 420000 ≤ 500000.
+    const pill = a1Row.find('.status-pill');
+    expect(pill.classes()).toContain('status-pill--success');
+    expect(pill.text()).toContain('On target');
+    //  - the optimistic target value is in the row's input.
+    expect(a1Row.find('input[aria-label="Target for Employee Expenses Tanja"]').element.value).toBe('500000');
+
+    // Drain the held reconciles so there's no unhandled promise.
+    resolveReconcileA(makeReport());
+    resolveReconcileB(makeReport());
+    await flushPromises();
+  });
+
+  it('after a behaviour re-tag, a server-authoritative reconcile REPLACES the optimistic value (last-write = server)', async () => {
+    // The flip side of the optimistic path, locking current behaviour: once the
+    // background reconcile resolves, report.value is replaced wholesale with the
+    // server payload. Here the server reconcile reports a1 as 'variable' (a
+    // value distinct from both the original 'fixed' and the optimistic
+    // 'semi_variable'), proving the displayed state follows the reconcile, not
+    // the optimistic guess, once it lands.
+    const serverAfter = makeReport();
+    serverAfter.accounts[0].behaviour = 'variable'; // server's truth for a1
+    getCostCutReport
+      .mockImplementationOnce(async () => makeReport()) // mount
+      .mockImplementationOnce(async () => serverAfter); // reconcile
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    select.vm.$emit('update:modelValue', 'semi_variable'); // optimistic guess
+    await flushPromises(); // let the reconcile fully land
+
+    const a1Row = leafRows(wrapper).find((r) => r.props('row').name === 'Employee Expenses Tanja');
+    // Displayed value follows the server reconcile ('Variable'), not the
+    // optimistic 'Semi'.
+    expect(a1Row.findComponent(BehaviourTag).find('.behaviour-tag__label').text()).toBe('Variable');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 8 — T0 / unclassified handling
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 8 — T0 / unclassified exclusion + unexpected-tier bucketing', () => {
+  it('a T0 row in accounts[] is excluded from the addressable groups + headline', async () => {
+    // Inject an extra T0 row INTO accounts[] (not just below_the_line). It must
+    // not appear among the addressable leaves nor inflate the headline.
+    const rows = [
+      ...addressableRows(),
+      {
+        account_id: 'sneaky', account_key: 'kl_SNEAK', name: 'Sneaky Tax Row',
+        group: 'EXPENSE', cuttability: 'T0', is_addressable: true, // T0 wins regardless of flag
+        behaviour: 'non_controllable', driver: null,
+        recurring_actual: 999999, recurring_prior: 0,
+        yoy_pct: 0, pct_of_cost: 0, target: null, rag: 'none',
+      },
+    ];
+    getCostCutReport.mockResolvedValue(makeReport({ accounts: rows }));
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Still only the five real addressable leaves; the T0 row is excluded.
+    expect(leafRows(wrapper).length).toBe(5);
+    expect(leafNames(wrapper)).not.toContain('Sneaky Tax Row');
+    // Headline value remains the addressable_operating_cost (1 240 000), not inflated.
+    expect(digits(wrapper.find('.cost-cut__addressable-tile .metric-tile__value').text())).toBe(rand(1240000));
+  });
+
+  it('a row MISSING cuttability (→ normalises to T0) is excluded from the addressable table', async () => {
+    const rows = [
+      ...addressableRows(),
+      {
+        account_id: 'nocut', account_key: 'kl_NOCUT', name: 'No Tier Row',
+        group: 'EXPENSE', is_addressable: true, // cuttability omitted → T0
+        behaviour: 'variable', driver: null,
+        recurring_actual: 50000, recurring_prior: 50000,
+        yoy_pct: 0, pct_of_cost: 4, target: null, rag: 'none',
+      },
+    ];
+    getCostCutReport.mockResolvedValue(makeReport({ accounts: rows }));
+    const wrapper = mountReport();
+    await flushPromises();
+
+    expect(leafRows(wrapper).length).toBe(5);
+    expect(leafNames(wrapper)).not.toContain('No Tier Row');
+  });
+
+  it('an is_addressable:false row is excluded even if it carries a real tier', async () => {
+    const rows = [
+      ...addressableRows(),
+      {
+        account_id: 'flagged', account_key: 'kl_FLAG', name: 'Flagged Out Row',
+        group: 'OVERHEADS', cuttability: 'T2', is_addressable: false, // explicit exclusion
+        behaviour: 'variable', driver: null,
+        recurring_actual: 70000, recurring_prior: 70000,
+        yoy_pct: 0, pct_of_cost: 5, target: null, rag: 'none',
+      },
+    ];
+    getCostCutReport.mockResolvedValue(makeReport({ accounts: rows }));
+    const wrapper = mountReport();
+    await flushPromises();
+
+    expect(leafRows(wrapper).length).toBe(5);
+    expect(leafNames(wrapper)).not.toContain('Flagged Out Row');
+  });
+
+  it('CostCutGroupTable (in isolation): an UNEXPECTED tier value still gets a bucket, not dropped', async () => {
+    // The grouping engine must never silently drop a row whose tier is off-list.
+    // normaliseTier('T9') → 'T0' (a defensive bucket appended after T1..T5).
+    // NOTE: this exercises the TABLE directly — at the full-report level such a
+    // row is filtered out upstream by isAddressableRow (covered above); the
+    // table's own contract is "bucket, never drop".
+    const rows = [
+      { ...addressableRows()[0] }, // T1
+      {
+        account_id: 'weird', account_key: 'kl_WEIRD', name: 'Weird Tier Row',
+        group: 'OVERHEADS', cuttability: 'T9', is_addressable: true,
+        behaviour: 'fixed', driver: null,
+        recurring_actual: 12345, recurring_prior: 12000,
+        yoy_pct: 2.9, pct_of_cost: 1, target: null, rag: 'none',
+      },
+    ];
+    const fmt = (v) => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(v) || 0);
+    const wrapper = mount(CostCutGroupTable, {
+      props: { rows, groupBy: 'tier', addressable: 432345, formatCurrency: fmt },
+    });
+
+    // Both rows present — nothing dropped.
+    expect(wrapper.findAllComponents(CostCutRow).length).toBe(2);
+    const names = wrapper.findAllComponents(CostCutRow).map((r) => r.props('row').name);
+    expect(names).toContain('Weird Tier Row');
+
+    // The off-list tier lands in the T0 (below-the-line sentinel) bucket header.
+    const labels = wrapper.findAll('.cc-group__header .cc-group__label').map((l) => l.text());
+    expect(labels).toContain('T0 Below the line');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// CostCutRow — per-row chip behaviours (mounted directly, still mount-based)
+// ════════════════════════════════════════════════════════════════════════════
+describe('CostCutRow — per-row behaviour + tier chips', () => {
   const fmt = (v) => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(v) || 0);
 
-  function mountRow(rowOverrides = {}) {
+  function mountRow(rowOverrides = {}, extraProps = {}) {
     const row = {
       account_id: 'x1', account_key: 'kl_X1', name: 'Test Account',
-      group: 'OVERHEADS', behaviour: 'fixed', driver: 'headcount (salaried)',
-      recurring_actual: 100000, recurring_prior: 90000, yoy_delta: 10000,
+      group: 'OVERHEADS', cuttability: 'T1', behaviour: 'fixed',
+      driver: 'headcount (salaried)',
+      recurring_actual: 100000, recurring_prior: 90000,
       yoy_pct: 11.1, pct_of_cost: 5, target: null, rag: 'none',
       ...rowOverrides,
     };
-    // CostCutRow's root is a <tr>. happy-dom tolerates mounting it standalone
-    // for these chip assertions; we don't need a wrapping <table>.
-    return mount(CostCutRow, {
-      props: { row, formatCurrency: fmt },
-    });
+    return mount(CostCutRow, { props: { row, formatCurrency: fmt, ...extraProps } });
   }
 
-  it('renders the correct short label + categorical class for each behaviour', async () => {
+  it('renders the correct short behaviour label + categorical class for each behaviour', () => {
     const cases = [
       { behaviour: 'fixed', short: 'Fixed', cls: 'behaviour-tag--fixed' },
       { behaviour: 'variable', short: 'Variable', cls: 'behaviour-tag--variable' },
@@ -610,8 +1321,6 @@ describe('CostCutRow — per-row behaviour chip', () => {
     ];
     for (const c of cases) {
       const wrapper = mountRow({ behaviour: c.behaviour, driver: null });
-      const tag = wrapper.findComponent(BehaviourTag);
-      expect(tag.exists()).toBe(true);
       const chip = wrapper.find('.behaviour-tag');
       expect(chip.classes()).toContain(c.cls);
       expect(chip.find('.behaviour-tag__label').text()).toBe(c.short);
@@ -619,380 +1328,105 @@ describe('CostCutRow — per-row behaviour chip', () => {
     }
   });
 
-  it('shows "Unclassified" (not a crash) for an unknown behaviour value', async () => {
-    const wrapper = mountRow({ behaviour: 'made_up_value', driver: null });
-    const chip = wrapper.find('.behaviour-tag');
-    expect(chip.exists()).toBe(true);
-    expect(chip.classes()).toContain('behaviour-tag--unclassified');
-    expect(chip.find('.behaviour-tag__label').text()).toBe('Unclassified');
+  it('shows "Unclassified" (not a crash) for unknown / missing behaviour', () => {
+    for (const behaviour of ['made_up_value', undefined]) {
+      const wrapper = mountRow({ behaviour, driver: null });
+      const chip = wrapper.find('.behaviour-tag');
+      expect(chip.classes()).toContain('behaviour-tag--unclassified');
+      expect(chip.find('.behaviour-tag__label').text()).toBe('Unclassified');
+      wrapper.unmount();
+    }
   });
 
-  it('shows "Unclassified" (not a crash) for a missing/undefined behaviour value', async () => {
-    const wrapper = mountRow({ behaviour: undefined, driver: null });
-    const chip = wrapper.find('.behaviour-tag');
-    expect(chip.exists()).toBe(true);
-    expect(chip.classes()).toContain('behaviour-tag--unclassified');
-    expect(chip.find('.behaviour-tag__label').text()).toBe('Unclassified');
+  it('renders the correct tier chip for each T1..T5 and a T0 sentinel for unknown', () => {
+    const cases = [
+      { cuttability: 'T1', cls: 'tier-tag--t1', label: 'T1 Quick win' },
+      { cuttability: 'T5', cls: 'tier-tag--t5', label: 'T5 Structural' },
+      { cuttability: 'NONSENSE', cls: 'tier-tag--t0', label: 'T0 Below the line' },
+    ];
+    for (const c of cases) {
+      const wrapper = mountRow({ cuttability: c.cuttability });
+      const tier = wrapper.find('.tier-tag');
+      expect(tier.classes()).toContain(c.cls);
+      expect(tier.find('.tier-tag__label').text()).toBe(c.label);
+      wrapper.unmount();
+    }
   });
 
-  it('renders the driver as subtext AND as the chip title (tooltip) when present', async () => {
-    const wrapper = mountRow({ behaviour: 'fixed', driver: 'headcount (salaried)' });
+  it('renders the driver as subtext AND chip title when present, omits subtext when absent', () => {
+    const withDriver = mountRow({ behaviour: 'fixed', driver: 'headcount (salaried)' });
+    expect(withDriver.find('.cost-cut-row__driver').text()).toBe('headcount (salaried)');
+    expect(withDriver.find('.behaviour-tag').attributes('title')).toBe('Fixed — driver: headcount (salaried)');
 
-    // Subtext under the chip.
-    const driverSub = wrapper.find('.cost-cut-row__driver');
-    expect(driverSub.exists()).toBe(true);
-    expect(driverSub.text()).toBe('headcount (salaried)');
-
-    // Native title on the chip (advisory tooltip) carries label + driver.
-    const chip = wrapper.find('.behaviour-tag');
-    expect(chip.attributes('title')).toBe('Fixed — driver: headcount (salaried)');
+    const noDriver = mountRow({ behaviour: 'variable', driver: null });
+    expect(noDriver.find('.cost-cut-row__driver').exists()).toBe(false);
   });
 
-  it('omits the driver subtext when no driver is provided', async () => {
-    const wrapper = mountRow({ behaviour: 'variable', driver: null });
-    expect(wrapper.find('.cost-cut-row__driver').exists()).toBe(false);
+  it('read-only rows render no target input and no re-tag selects', () => {
+    const wrapper = mountRow({ cuttability: 'T0', behaviour: 'non_controllable' }, { readOnly: true });
+    expect(wrapper.findAll('input').length).toBe(0);
+    expect(wrapper.findAllComponents(KSelect).length).toBe(0);
+    // A muted reason replaces the RAG pill.
+    expect(wrapper.find('.cost-cut-row__reason').exists()).toBe(true);
+    expect(wrapper.find('.status-pill').exists()).toBe(false);
   });
 });
 
-// ── Area 3: Behaviour filter narrows the visible rows ───────────────────────
-describe('CostCutReport — behaviour filter', () => {
-  it('narrows the visible row count to the matching behaviour and restores on "All"', async () => {
-    getCostCutReport.mockResolvedValue(makeReport({ accounts: makeMixedAccounts() }));
+// ════════════════════════════════════════════════════════════════════════════
+// CostBehaviourBar — headline split (mounted through the report)
+// ════════════════════════════════════════════════════════════════════════════
+describe('CostBehaviourBar — headline split', () => {
+  it('renders four proportional segments + a legend with ZAR/% and the operating-leverage reads', async () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    // All five accounts render initially (filter = 'all').
-    expect(wrapper.findAll('tbody tr').length).toBe(5);
+    const bar = wrapper.find('.beh-split__bar');
+    expect(bar.exists()).toBe(true);
 
-    // Fixed → only the one fixed account.
-    await clickBehaviourFilter(wrapper, 'Fixed');
-    expect(wrapper.findAll('tbody tr').length).toBe(1);
-    expect(wrapper.text()).toContain('Rent Head Office');
-    expect(wrapper.text()).not.toContain('Casual Wages');
+    const segs = wrapper.findAll('.beh-split__seg');
+    expect(segs.length).toBe(4);
 
-    // Variable → only the variable account.
-    await clickBehaviourFilter(wrapper, 'Variable');
-    expect(wrapper.findAll('tbody tr').length).toBe(1);
-    expect(wrapper.text()).toContain('Casual Wages');
+    // Widths use total_recurring_cost (1 395 000) as the denominator:
+    //  fixed 670000/1395000 = 48.0%, variable 300000/1395000 = 21.5%.
+    expect(wrapper.find('.beh-split__seg--fixed').attributes('style')).toContain('width: 48.0');
+    expect(wrapper.find('.beh-split__seg--variable').attributes('style')).toContain('width: 21.5');
 
-    // Semi-variable → only the semi account.
-    await clickBehaviourFilter(wrapper, 'Semi-variable');
-    expect(wrapper.findAll('tbody tr').length).toBe(1);
-    expect(wrapper.text()).toContain('Electricity');
-
-    // Non-controllable → only the non-controllable account.
-    await clickBehaviourFilter(wrapper, 'Non-controllable');
-    expect(wrapper.findAll('tbody tr').length).toBe(1);
-    expect(wrapper.text()).toContain('Statutory Levies');
-
-    // All → restores every row (5).
-    await clickBehaviourFilter(wrapper, 'All');
-    expect(wrapper.findAll('tbody tr').length).toBe(5);
+    const splitText = wrapper.find('.beh-split').text();
+    expect(digits(splitText)).toContain('R670000'); // fixed legend
+    expect(digits(splitText)).toContain('R300000'); // variable legend
+    // Fixed:Variable ratio + addressable read.
+    expect(splitText).toContain('2.23 : 1');
+    // addressable_base 1 150 000 / 1 395 000 = 82.4% → 82% addressable.
+    expect(splitText).toContain('82% addressable');
   });
 
-  it('sets aria-pressed on the active filter chip only', async () => {
-    getCostCutReport.mockResolvedValue(makeReport({ accounts: makeMixedAccounts() }));
-    const wrapper = mountReport();
-    await flushPromises();
-
-    await clickBehaviourFilter(wrapper, 'Fixed');
-    const chips = wrapper.findAll('.cost-cut__beh-filter .cost-cut__beh-chip');
-    const pressed = chips.filter((c) => c.attributes('aria-pressed') === 'true');
-    expect(pressed.length).toBe(1);
-    expect(pressed[0].text()).toBe('Fixed');
-  });
-
-  it('shows the "No matching accounts" empty state (distinct from no-cost) when a filter matches zero rows', async () => {
-    // A report WITH cost, but no fixed accounts — only variable.
+  it('hides the headline split when behaviour_totals are all zero / absent', async () => {
     getCostCutReport.mockResolvedValue(
       makeReport({
-        accounts: [makeMixedAccounts()[1]], // variable only (Casual Wages)
+        behaviour_totals: { fixed: 0, variable: 0, semi_variable: 0, non_controllable: 0, unclassified: 0 },
+        addressable_base: 0, fixed_variable_ratio: null,
       }),
     );
     const wrapper = mountReport();
     await flushPromises();
 
-    expect(wrapper.findAll('tbody tr').length).toBe(1);
-
-    // Filter to Fixed → zero rows → the "no matching" empty state, NOT the
-    // genuine no-cost empty state.
-    await clickBehaviourFilter(wrapper, 'Fixed');
-    expect(wrapper.findAll('tbody tr').length).toBe(0);
-    expect(wrapper.text()).toContain('No matching accounts');
-    expect(wrapper.text()).not.toContain('No recurring cost');
-    // Body references the active behaviour and the "clear the filter" hint.
-    expect(wrapper.text().toLowerCase()).toContain('fixed');
-    expect(wrapper.text().toLowerCase()).toContain('clear the behaviour filter');
-  });
-
-  it('shows the genuine "No recurring cost" empty state (not the filter one) when there are zero accounts', async () => {
-    getCostCutReport.mockResolvedValue(
-      makeReport({ accounts: [], top_opportunities: [] }),
-    );
-    const wrapper = mountReport();
-    await flushPromises();
-
-    // Filter is 'all', accounts empty → the no-cost empty state.
-    expect(wrapper.text()).toContain('No recurring cost');
-    expect(wrapper.text()).not.toContain('No matching accounts');
-  });
-
-  it('applies the behaviour filter on the OPPORTUNITIES tab too, with its own empty state', async () => {
-    // Opportunities are all variable; filtering to Fixed must empty THAT tab.
-    getCostCutReport.mockResolvedValue(
-      makeReport({
-        top_opportunities: [
-          {
-            account_id: 'v1', account_key: 'kl_V1', name: 'Casual Wages',
-            group: 'DIRECTCOSTS', behaviour: 'variable', driver: 'hours worked',
-            recurring_actual: 300000, recurring_prior: 250000, yoy_delta: 50000,
-            yoy_pct: 20, pct_of_cost: 10, target: null, rag: 'none',
-          },
-          {
-            account_id: 'v2', account_key: 'kl_V2', name: 'Overtime',
-            group: 'DIRECTCOSTS', behaviour: 'variable', driver: 'hours worked',
-            recurring_actual: 120000, recurring_prior: 60000, yoy_delta: 60000,
-            yoy_pct: 100, pct_of_cost: 4, target: null, rag: 'none',
-          },
-        ],
-      }),
-    );
-    const wrapper = mountReport();
-    await flushPromises();
-
-    // Switch to the opportunities tab.
-    const tabs = wrapper.findAll('[role="tab"]');
-    const oppTab = tabs.find((t) => t.text() === 'Top cut opportunities');
-    await oppTab.trigger('click');
-    await flushPromises();
-    expect(wrapper.findAll('tbody tr').length).toBe(2);
-
-    // Variable filter keeps both.
-    await clickBehaviourFilter(wrapper, 'Variable');
-    expect(wrapper.findAll('tbody tr').length).toBe(2);
-
-    // Fixed filter empties the opportunities tab → its own empty state.
-    await clickBehaviourFilter(wrapper, 'Fixed');
-    expect(wrapper.findAll('tbody tr').length).toBe(0);
-    expect(wrapper.text()).toContain('No matching opportunities');
-    expect(wrapper.text()).not.toContain('No opportunities');
+    expect(leafRows(wrapper).length).toBe(5); // report still loaded
+    expect(wrapper.find('.beh-split').exists()).toBe(false);
   });
 });
 
-// ── Area 4: Inline re-tag → POST + re-fetch ─────────────────────────────────
-describe('CostCutReport — inline behaviour re-tag', () => {
-  it('re-tagging a row POSTs saveCostBehaviour once with {account_key, behaviour} and re-fetches', async () => {
-    const wrapper = mountReport();
-    await flushPromises();
-
-    // First fetch already happened on mount.
-    expect(getCostCutReport).toHaveBeenCalledTimes(1);
-
-    // Row a1 (Employee Expenses Tanja, behaviour 'fixed', key 'kl_HH--EM01/1').
-    const select = retagSelectFor(wrapper, 'Employee Expenses Tanja');
-    expect(select, 'row re-tag KSelect should exist').toBeTruthy();
-
-    // Re-tag fixed → variable (the real onRetag → commitBehaviour chain runs).
-    select.vm.$emit('update:modelValue', 'variable');
-    await flushPromises();
-
-    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
-    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({
-      account_key: 'kl_HH--EM01/1',
-      behaviour: 'variable',
-    });
-
-    // The report is re-fetched after a successful save (1 mount + 1 re-fetch).
-    expect(getCostCutReport).toHaveBeenCalledTimes(2);
-
-    // Success toast surfaced with the new behaviour label.
-    expect(toastCalls.success).toHaveBeenCalled();
-    const successArg = toastCalls.success.mock.calls.at(-1)[0];
-    expect(successArg).toContain('Variable');
-  });
-
-  it('shows the per-row behaviour saving spinner while the re-tag is in flight, then clears it', async () => {
-    // Hold the saveCostBehaviour promise open to observe the in-flight spinner.
-    let resolveSave;
-    saveCostBehaviour.mockImplementation(
-      () => new Promise((resolve) => { resolveSave = resolve; }),
-    );
-
-    const wrapper = mountReport();
-    await flushPromises();
-
-    // No behaviour spinner before the re-tag. (KSpinner renders its `label` as
-    // visually-hidden sr-only text, not an aria-label attr — see the helper.)
-    expect(behaviourSpinnerShowing(wrapper, 'Employee Expenses Tanja')).toBe(false);
-
-    const select = retagSelectFor(wrapper, 'Employee Expenses Tanja');
-    select.vm.$emit('update:modelValue', 'variable');
-    await flushPromises();
-
-    // In-flight: the per-row behaviour spinner shows while the save is pending.
-    expect(behaviourSpinnerShowing(wrapper, 'Employee Expenses Tanja')).toBe(true);
-
-    // Resolve the save → spinner clears after the re-fetch completes.
-    resolveSave({ ok: true });
-    await flushPromises();
-    expect(behaviourSpinnerShowing(wrapper, 'Employee Expenses Tanja')).toBe(false);
-  });
-
-  it('re-tagging a row to its CURRENT behaviour is a no-op (no POST, no re-fetch)', async () => {
-    const wrapper = mountReport();
-    await flushPromises();
-    expect(getCostCutReport).toHaveBeenCalledTimes(1);
-
-    // Row a1 is already 'fixed'; re-emitting 'fixed' must do nothing.
-    const select = retagSelectFor(wrapper, 'Employee Expenses Tanja');
-    select.vm.$emit('update:modelValue', 'fixed');
-    await flushPromises();
-
-    expect(saveCostBehaviour).not.toHaveBeenCalled();
-    expect(getCostCutReport).toHaveBeenCalledTimes(1); // no re-fetch
-  });
-
-  it('re-tagging a row that is MISSING an account_key surfaces an error toast and does NOT POST', async () => {
-    getCostCutReport.mockResolvedValue(
-      makeReport({
-        accounts: [
-          {
-            account_id: 'nokey', account_key: null, name: 'No Key Account',
-            group: 'OVERHEADS', behaviour: 'fixed', driver: null,
-            recurring_actual: 50000, recurring_prior: 50000, yoy_delta: 0,
-            yoy_pct: 0, pct_of_cost: 2, target: null, rag: 'none',
-          },
-        ],
-      }),
-    );
-    const wrapper = mountReport();
-    await flushPromises();
-    expect(getCostCutReport).toHaveBeenCalledTimes(1);
-
-    const select = retagSelectFor(wrapper, 'No Key Account');
-    expect(select).toBeTruthy();
-    select.vm.$emit('update:modelValue', 'variable');
-    await flushPromises();
-
-    // No POST and no re-fetch; an error toast was raised instead.
-    expect(saveCostBehaviour).not.toHaveBeenCalled();
-    expect(getCostCutReport).toHaveBeenCalledTimes(1);
-    expect(toastCalls.error).toHaveBeenCalled();
-    expect(toastCalls.error.mock.calls.at(-1)[0].toLowerCase()).toContain('account key');
-  });
-
-  it('surfaces an error toast (and clears the spinner) when saveCostBehaviour rejects', async () => {
-    saveCostBehaviour.mockRejectedValue(new Error('behaviour save failed'));
-
-    const wrapper = mountReport();
-    await flushPromises();
-
-    const select = retagSelectFor(wrapper, 'Employee Expenses Tanja');
-    select.vm.$emit('update:modelValue', 'variable');
-    await flushPromises();
-
-    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
-    // Save rejected → error toast, no success, spinner cleared in finally.
-    expect(toastCalls.error).toHaveBeenCalled();
-    expect(toastCalls.success).not.toHaveBeenCalled();
-    expect(behaviourSpinnerShowing(wrapper, 'Employee Expenses Tanja')).toBe(false);
-  });
-});
-
-// ── Area 5: Re-tag concurrency — last-wins (loadSeq guard) ──────────────────
-describe('CostCutReport — re-tag concurrency (last-wins)', () => {
-  it('drops the stale re-fetch when a newer load (year change) starts before the re-tag re-fetch resolves', async () => {
-    // Distinct reports so we can tell which one "won". The re-tag's re-fetch
-    // returns the STALE report (held open); the year-change load returns the
-    // FRESH report and resolves first.
-    const staleReport = makeReport({
-      total_recurring_cost: 3062363,
-      accounts: [
-        {
-          account_id: 'a1', account_key: 'kl_HH--EM01/1', name: 'STALE Account',
-          group: 'OVERHEADS', behaviour: 'fixed', driver: null,
-          recurring_actual: 420000, recurring_prior: 471000, yoy_delta: -51000,
-          yoy_pct: -10.9, pct_of_cost: 13.7, target: 380000, rag: 'red',
-        },
-      ],
-    });
-    const freshReport = makeReport({
-      year: 2024,
-      total_recurring_cost: 2750000,
-      accounts: [
-        {
-          account_id: 'b9', account_key: 'kl_B9', name: 'FRESH Account',
-          group: 'OVERHEADS', behaviour: 'variable', driver: null,
-          recurring_actual: 200000, recurring_prior: 180000, yoy_delta: 20000,
-          yoy_pct: 11.1, pct_of_cost: 7, target: null, rag: 'none',
-        },
-      ],
-    });
-
-    // Call sequencing:
-    //   call #1 (mount)            → resolves immediately with the initial report
-    //   call #2 (re-tag re-fetch)  → HELD OPEN (the stale, in-flight load)
-    //   call #3 (year-change load) → resolves immediately with freshReport
-    let resolveStaleRefetch;
-    getCostCutReport
-      .mockResolvedValueOnce(makeReport())
-      .mockImplementationOnce(
-        () => new Promise((resolve) => { resolveStaleRefetch = resolve; }),
-      )
-      .mockResolvedValueOnce(freshReport);
-
-    const wrapper = mountReport();
-    await flushPromises();
-    expect(getCostCutReport).toHaveBeenCalledTimes(1);
-
-    // Fire a re-tag → triggers saveCostBehaviour then loadReport (call #2, held).
-    const select = retagSelectFor(wrapper, 'Employee Expenses Tanja');
-    select.vm.$emit('update:modelValue', 'variable');
-    await flushPromises(); // save resolves; re-fetch (#2) is now pending/open
-    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
-    expect(getCostCutReport).toHaveBeenCalledTimes(2);
-
-    // Before #2 resolves, start a NEWER load by changing the year via the real
-    // year KSelect (the consumer path through watch([entity, year]) → call #3).
-    const yearSelect = wrapper
-      .findAllComponents(KSelect)
-      .find((c) => c.props('label') === 'Year');
-    expect(yearSelect, 'year KSelect should exist').toBeTruthy();
-    yearSelect.vm.$emit('update:modelValue', '2024');
-    await flushPromises(); // call #3 fires and resolves with freshReport
-    expect(getCostCutReport).toHaveBeenCalledTimes(3);
-
-    // The fresh (newest) load has landed.
-    expect(wrapper.text()).toContain('FRESH Account');
-
-    // NOW resolve the stale re-fetch (#2). Its loadSeq is older than the
-    // year-change load, so the guard must DROP it — the DOM must still show the
-    // fresh report, never revert to the stale one.
-    resolveStaleRefetch(staleReport);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('FRESH Account');
-    expect(wrapper.text()).not.toContain('STALE Account');
-  });
-});
-
-// ── Area 6 (supplementary, library-direct OK): saveCostBehaviour wire path ──
-// This is the ONE allowed library-direct case — it asserts the api wrapper POSTs
-// to the right endpoint with the payload. It mounts nothing; the mount-based
-// guarantees live in Area 4 above.
+// ════════════════════════════════════════════════════════════════════════════
+// saveCostBehaviour API wrapper (supplementary, library-direct — the ONE allowed)
+// ════════════════════════════════════════════════════════════════════════════
 describe('saveCostBehaviour API wrapper (supplementary, library-direct)', () => {
   it('POSTs to PA_COST_BEHAVIOUR with the given payload and returns response data', async () => {
-    // Reset the module mocks so we test the REAL wrapper against a fake client.
     vi.resetModules();
-
     const post = vi.fn().mockResolvedValue({ data: { ok: true, source: 'user_override' } });
     vi.doMock('../../../api/client', () => ({ default: { post } }));
 
-    const { saveCostBehaviour: realSave } = await vi.importActual(
-      '../../../api/planningAnalytics',
-    );
+    const { saveCostBehaviour: realSave } = await vi.importActual('../../../api/planningAnalytics');
 
-    const payload = { account_key: 'kl_HH--EM01/1', behaviour: 'variable' };
+    const payload = { account_key: 'kl_T1', cuttability: 'T2' };
     const result = await realSave(payload);
 
     expect(post).toHaveBeenCalledTimes(1);
