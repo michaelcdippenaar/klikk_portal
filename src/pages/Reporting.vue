@@ -330,6 +330,8 @@
           </div>
         </SectionCard>
 
+        <CostCutReport v-else-if="activeReport.id === 'cost-cut'" />
+
         <div v-else class="reporting-grid">
           <section
             v-for="card in reportCards"
@@ -467,6 +469,7 @@ import { useRoute, useRouter } from 'vue-router';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
+import CostCutReport from '../components/reporting/CostCutReport.vue';
 import {
   getInvestecBankAccounts,
   getInvestecBankCostReport,
@@ -513,6 +516,12 @@ const reportCards = [
 // Only implemented reports live here; new ones are added as they are built.
 const reportGroups = [
   {
+    label: 'Cost & Sustainability',
+    items: [
+      { id: 'cost-cut', title: 'Cost-Cut Finder', source: 'Planning Analytics (TM1)', body: 'Recurring-cash controllable cost by account, this year vs prior, with editable targets and RAG.' },
+    ],
+  },
+  {
     label: 'Banking',
     items: [
       { id: 'bank-costs', title: 'Bank cost by account', source: 'Investec banking', body: 'Total Investec bank cost by account, line item, gross fee, credit, and net cost.' },
@@ -531,7 +540,7 @@ const activeReport = computed(() =>
 
 const coreReports = computed(() =>
   allReports.value.filter((report) =>
-    ['bank-costs'].includes(report.id)
+    ['cost-cut', 'bank-costs'].includes(report.id)
   )
 );
 
@@ -598,6 +607,7 @@ function reportIcon(report) {
   if (['management-pack', 'dashboard-pack'].includes(report.id)) return 'layout-dashboard';
   if (['profit-loss', 'balance-sheet', 'trial-balance', 'cash-flow'].includes(report.id)) return 'bar-chart-2';
   if (['bank-reconciliation', 'bank-transactions', 'bank-costs'].includes(report.id)) return 'landmark';
+  if (['cost-cut'].includes(report.id)) return 'trending-up';
   if (['portfolio-returns', 'market-events'].includes(report.id)) return 'trending-up';
   if (['dividend-forecast'].includes(report.id)) return 'dollar-sign';
   if (['aged-receivables', 'aged-payables', 'data-freshness', 'process-audit'].includes(report.id)) return 'list';

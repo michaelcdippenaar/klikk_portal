@@ -100,3 +100,33 @@ export async function addTrackingElement(payload) {
   const resp = await client.post(API_ENDPOINTS.PA_TRACKING_MAPPING_ADD, payload);
   return resp.data;
 }
+
+// ── Cost & Sustainability Cockpit — Recurring-Cash Cost-Cut Finder ──────────
+
+export async function getCostCutReport(entity, year) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_COST_CUT, {
+    params: { entity, year },
+  });
+  return resp.data;
+}
+
+export async function getKpiTargets(entity, year) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_KPI_TARGETS, {
+    params: { entity, year },
+  });
+  return resp.data;
+}
+
+export async function saveKpiTarget(payload) {
+  const client = await getClient();
+  const resp = await client.post(API_ENDPOINTS.PA_KPI_TARGETS, payload);
+  return resp.data;
+}
+
+export async function deleteKpiTarget(params) {
+  const client = await getClient();
+  const resp = await client.delete(API_ENDPOINTS.PA_KPI_TARGETS, { params });
+  return resp.data;
+}

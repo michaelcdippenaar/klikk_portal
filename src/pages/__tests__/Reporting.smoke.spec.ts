@@ -19,11 +19,10 @@ describe('Reporting - smoke', () => {
   });
 
   it('offers core report starting points', () => {
-    expect(source).toContain('Monthly management pack');
-    expect(source).toContain('Portfolio returns');
-    expect(source).toContain('Dividend income forecast');
-    expect(source).toContain('Bank reconciliation summary');
-    expect(source).toContain('Data freshness and gaps');
+    // Placeholder reports cleared 2026-06; only implemented reports remain.
+    expect(source).toContain('Cost-Cut Finder');
+    expect(source).toContain('Bank cost by account');
+    expect(source).toContain('coreReports');
   });
 
   it('includes the Investec bank cost report', () => {
@@ -43,12 +42,8 @@ describe('Reporting - smoke', () => {
   it('has a left report library menu with grouped reports', () => {
     expect(source).toContain('class="reporting-menu"');
     expect(source).toContain('reportGroups');
-    expect(source).toContain('Executive');
-    expect(source).toContain('Financials');
-    expect(source).toContain('Debtors and Creditors');
+    expect(source).toContain('Cost & Sustainability');
     expect(source).toContain('Banking');
-    expect(source).toContain('Investments');
-    expect(source).toContain('Operations');
   });
 
   it('keeps the page responsive', () => {

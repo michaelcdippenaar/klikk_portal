@@ -65,6 +65,8 @@ export const API_ENDPOINTS = {
   PA_TM1_CREDENTIALS: '/api/planning-analytics/tm1/credentials/',
   PA_TRACKING_MAPPING: '/api/planning-analytics/tm1/tracking-mapping/',
   PA_TRACKING_MAPPING_ADD: '/api/planning-analytics/tm1/tracking-mapping/add/',
+  PA_COST_CUT: '/api/planning-analytics/cost-cut/',
+  PA_KPI_TARGETS: '/api/planning-analytics/kpi-targets/',
 
   // AI Agent
   AI_AGENT_HEALTH: '/api/ai-agent/health/',
