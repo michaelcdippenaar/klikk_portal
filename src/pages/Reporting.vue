@@ -472,7 +472,7 @@ import {
   getInvestecBankCostReport,
 } from '../api/endpoints';
 
-const selectedReportId = ref('management-pack');
+const selectedReportId = ref('bank-costs');
 const route = useRoute();
 const router = useRouter();
 const reportingMenuCollapsed = ref(false);
@@ -509,51 +509,13 @@ const reportCards = [
   },
 ];
 
+// Placeholder reports cleared 2026-06 — rebuilding a deliberate FP&A pack.
+// Only implemented reports live here; new ones are added as they are built.
 const reportGroups = [
-  {
-    label: 'Executive',
-    items: [
-      { id: 'management-pack', title: 'Monthly management pack', source: 'Xero + Planning Analytics', body: 'Board-ready monthly view of financial performance, variances, cash, and key exceptions.' },
-      { id: 'dashboard-pack', title: 'Business dashboard', source: 'All source systems', body: 'A compact operating dashboard across finance, cash, investments, and data freshness.' },
-    ],
-  },
-  {
-    label: 'Financials',
-    items: [
-      { id: 'profit-loss', title: 'Profit and loss', source: 'Xero + TM1', body: 'Income statement by tenant, period, account, tracking category, and budget version.' },
-      { id: 'balance-sheet', title: 'Balance sheet', source: 'Xero + TM1', body: 'Assets, liabilities, equity, and reconciliation checks by reporting period.' },
-      { id: 'trial-balance', title: 'Trial balance', source: 'Xero', body: 'Account-level trial balance with drill-through to source line items.' },
-      { id: 'cash-flow', title: 'Cash flow', source: 'Xero + Investec banking', body: 'Cash movements, operating flows, bank balance trend, and liquidity signals.' },
-    ],
-  },
-  {
-    label: 'Debtors and Creditors',
-    items: [
-      { id: 'aged-receivables', title: 'Aged receivables', source: 'Xero', body: 'Customer ageing, overdue balances, collections risk, and period movement.' },
-      { id: 'aged-payables', title: 'Aged payables', source: 'Xero', body: 'Supplier ageing, due payments, overdue exposure, and cash requirement planning.' },
-    ],
-  },
   {
     label: 'Banking',
     items: [
-      { id: 'bank-reconciliation', title: 'Bank reconciliation summary', source: 'Investec banking + Xero', body: 'Bank account movement, reconciliation status, unmatched items, and month coverage.' },
-      { id: 'bank-transactions', title: 'Bank transactions', source: 'Investec banking', body: 'Transaction-level banking report with account filters and export-ready detail.' },
       { id: 'bank-costs', title: 'Bank cost by account', source: 'Investec banking', body: 'Total Investec bank cost by account, line item, gross fee, credit, and net cost.' },
-    ],
-  },
-  {
-    label: 'Investments',
-    items: [
-      { id: 'portfolio-returns', title: 'Portfolio returns', source: 'Investec + market data', body: 'Capital growth, dividend yield, ROI, holdings concentration, and underperformers.' },
-      { id: 'dividend-forecast', title: 'Dividend income forecast', source: 'Investec + yfinance + TM1', body: 'Expected dividends from holdings, declared DPS, payment timing, and TM1 forecast adjustments.' },
-      { id: 'market-events', title: 'Market events and news', source: 'Market data + AI analysis', body: 'Stock news, dividend declarations, financial results, global events, and price impact notes.' },
-    ],
-  },
-  {
-    label: 'Operations',
-    items: [
-      { id: 'data-freshness', title: 'Data freshness and gaps', source: 'All source systems', body: 'Coverage checks for Xero, Investec banking, holdings, transactions, and market data.' },
-      { id: 'process-audit', title: 'Process run audit', source: 'Console processes', body: 'Sync runs, failures, latest refresh times, and operational exceptions.' },
     ],
   },
 ];
@@ -569,7 +531,7 @@ const activeReport = computed(() =>
 
 const coreReports = computed(() =>
   allReports.value.filter((report) =>
-    ['management-pack', 'portfolio-returns', 'dividend-forecast', 'bank-reconciliation', 'data-freshness'].includes(report.id)
+    ['bank-costs'].includes(report.id)
   )
 );
 
