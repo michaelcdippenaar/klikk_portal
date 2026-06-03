@@ -1,24 +1,41 @@
 /*
- * portals.css — global z-index rules for Reka-portalled primitives.
+ * portals.css — global styling for Reka-portalled primitives.
  *
  * WHY THIS FILE EXISTS
  * Reka UI teleports dropdown / tooltip / dialog content to <body> via a Portal.
  * Vue's <style scoped> adds a data-v-<hash> attribute selector that is scoped to
  * the component's own DOM subtree. Teleported nodes are appended to <body>, which
  * is outside that subtree, so the scoped attribute is never present on them.
- * window.getComputedStyle(teleportedEl).zIndex therefore returns "auto", and the
- * sticky <thead> at z-index 2 paints over the dropdown.
+ * Two consequences follow:
+ *   1. window.getComputedStyle(teleportedEl).zIndex returns "auto", and the
+ *      sticky <thead> at z-index 2 paints over the dropdown.
+ *   2. The panel chrome (background / border / radius / shadow) and everything
+ *      rendered INSIDE the panel (viewport, items, item states, indicators,
+ *      scroll buttons, separators, entrance/exit animations) ALSO never apply,
+ *      so the panel paints with no background → renders transparent + unstyled.
  *
- * FIX: declare z-index on portal-content classes in a global (non-scoped) stylesheet.
- * Each class uses a --kdl-z-* token from klikk.css :root so that the stacking scale
- * is controlled in one place.
+ * FIX: declare BOTH the z-index AND the full visual styling of each portalled
+ * subtree here, in a global (non-scoped) stylesheet, so the rules actually reach
+ * the teleported nodes. Each class uses KDL tokens from klikk.css :root so the
+ * stacking scale and surface colours stay controlled in one place. @keyframes /
+ * Vue <Transition> classes referenced by portalled content also live here — a
+ * scoped @keyframes referenced by a global rule would not resolve.
  *
- * IMPORTED: src/main.js (after klikk.css).
+ * IMPORTED: src/main.js (after klikk.css, so the tokens are in scope).
+ *
+ * WHAT STAYS IN EACH COMPONENT'S <style scoped>
+ * Only the NON-teleported parts: the trigger / shell, the field label above the
+ * trigger, and the below-field help / error messages. Those live in the
+ * component's own subtree and keep their data-v-<hash> match.
+ *
+ * NOTE: teleported CSS is not observable in happy-dom / jsdom unit tests, so the
+ * visual result of these rules must be eyeball-verified in a browser.
  *
  * CLASSES COVERED
  *   .kselect-content      — KSelect dropdown (SelectPortal → body)
  *   .kmselect-content     — KMultiSelect dropdown (ComboboxPortal → body)
  *   .km-content           — KMenu panel (DropdownMenuPortal → body)
+ *   .km-item / .km-sep    — KMenuItem / KMenuSeparator (rendered inside .km-content)
  *   .kp-content           — KPopover panel (PopoverPortal → body)
  *   .kt-content           — KTooltip bubble (TooltipPortal → body)
  *   .kcp-backdrop         — KCommandPalette backdrop (Teleport to body)
@@ -26,34 +43,346 @@
  *   .kd-overlay           — KDialog overlay (DialogPortal → body)
  *   .kd-content           — KDialog content panel (DialogPortal → body)
  *   .ktr-viewport         — KToastRegion viewport (ToastProvider → body)
- *
- * NOTE: All other rules (trigger styles, item styles, animations, dark-mode
- * overrides that don't involve z-index) remain in each component's <style scoped>.
  */
 
 /* ── KSelect dropdown ──────────────────────────────────────────────────────── */
 .kselect-content {
   z-index: var(--kdl-z-popover);
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 17, 57, 0.08), 0 12px 24px rgba(15, 17, 57, 0.06);
+  min-width: var(--reka-select-trigger-width);
+  max-height: var(--reka-select-content-available-height);
+  overflow: hidden;
+}
+
+.kselect-viewport {
+  padding: 4px;
+}
+
+.kselect-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--kdl-text-primary);
+  outline: none;
+  user-select: none;
+  transition: background 100ms, color 100ms;
+  position: relative;
+}
+
+.kselect-item[data-highlighted] {
+  background: var(--kdl-hover-bg);
+  color: var(--kdl-accent);
+}
+
+.kselect-item[data-state="checked"] {
+  font-weight: 500;
+}
+
+.kselect-item[data-disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.kselect-item-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--kdl-text-muted);
+}
+
+.kselect-item-indicator {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--kdl-accent);
+}
+
+.kselect-scroll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  cursor: default;
+  color: var(--kdl-text-muted);
+}
+
+:root[data-theme="dark"] .kselect-content {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.3);
 }
 
 /* ── KMultiSelect dropdown ─────────────────────────────────────────────────── */
 .kmselect-content {
   z-index: var(--kdl-z-popover);
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 17, 57, 0.08), 0 12px 24px rgba(15, 17, 57, 0.06);
+  min-width: var(--reka-combobox-trigger-width, 200px);
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.kmselect-viewport {
+  padding: 4px;
+}
+
+.kmselect-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--kdl-text-hint);
+  text-align: center;
+}
+
+.kmselect-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--kdl-text-primary);
+  outline: none;
+  user-select: none;
+  transition: background 100ms;
+}
+
+.kmselect-item[data-highlighted] {
+  background: var(--kdl-hover-bg);
+}
+
+.kmselect-item[data-disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.kmselect-item-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--kdl-border);
+  flex-shrink: 0;
+  transition: background 100ms, border-color 100ms;
+  background: var(--kdl-card-bg);
+}
+
+.kmselect-item-check--checked {
+  background: var(--kdl-accent);
+  border-color: var(--kdl-accent);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .kmselect-content {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.3);
 }
 
 /* ── KMenu panel ───────────────────────────────────────────────────────────── */
 .km-content {
   z-index: var(--kdl-z-menu);
+  min-width: 200px;
+  padding: 4px;
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-floating);
+  /* Reka positions this via its floating-ui internals */
+}
+
+:root[data-theme="dark"] .km-content {
+  box-shadow: var(--shadow-floating), 0 0 0 1px var(--kdl-border);
+}
+
+/* KMenu entrance/exit transition (Vue <Transition name="km-menu">) — the
+   transitioned node is the teleported .km-content, so these live global too. */
+.km-menu-enter-active,
+.km-menu-leave-active {
+  transition:
+    opacity var(--duration-short) var(--ease-standard),
+    transform var(--duration-short) var(--ease-enter);
+}
+.km-menu-enter-from,
+.km-menu-leave-to {
+  opacity: 0;
+  transform: scale(0.96) translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-menu-enter-active,
+  .km-menu-leave-active {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── KMenuItem (rendered inside .km-content → teleported) ──────────────────── */
+.km-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 10px;
+  height: 34px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--kdl-text-secondary);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--duration-short) var(--ease-standard),
+              color var(--duration-short) var(--ease-standard);
+  /* Reka sets [data-highlighted] on keyboard/mouse focus */
+}
+
+.km-item[data-highlighted] {
+  background: color-mix(in srgb, var(--kdl-accent) 10%, transparent);
+  color: var(--kdl-accent);
+  outline: none;
+}
+
+.km-item[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.km-item__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.km-item__label {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.km-item__shortcut {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--kdl-text-hint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── KMenuSeparator (rendered inside .km-content → teleported) ─────────────── */
+.km-sep {
+  height: 1px;
+  background: var(--kdl-border-subtle);
+  margin: 4px 0;
+  border: none;
 }
 
 /* ── KPopover panel ────────────────────────────────────────────────────────── */
 .kp-content {
   z-index: var(--kdl-z-popover);
+  padding: 12px;
+  background: var(--kdl-card-bg);
+  border: 1px solid var(--kdl-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-floating);
+  min-width: 200px;
+  max-width: 400px;
+}
+
+:root[data-theme="dark"] .kp-content {
+  box-shadow: var(--shadow-floating), 0 0 0 1px var(--kdl-border);
+}
+
+/* KPopover entrance/exit transition (Vue <Transition name="kp-popover">). */
+.kp-popover-enter-active,
+.kp-popover-leave-active {
+  transition:
+    opacity var(--duration-short) var(--ease-standard),
+    transform var(--duration-short) var(--ease-enter);
+}
+.kp-popover-enter-from,
+.kp-popover-leave-to {
+  opacity: 0;
+  transform: scale(0.96) translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kp-popover-enter-active,
+  .kp-popover-leave-active {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ── KTooltip bubble ───────────────────────────────────────────────────────── */
 .kt-content {
   z-index: var(--kdl-z-tooltip);
+  /* Distinct tooltip surface: dark in light mode, slightly lighter in dark */
+  background: var(--kdl-text-secondary);
+  color: var(--kdl-card-bg);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  max-width: 240px;
+  /* Reka provides data-state for animation targeting */
+}
+
+:root[data-theme="dark"] .kt-content {
+  /* In dark mode: lighter surface that stands out from the dark card bg */
+  background: var(--kdl-text-hint);
+  color: var(--kdl-text-primary);
+  border-color: var(--kdl-border);
+}
+
+/* Reka adds data-state="delayed-open" / "instant-open" / "closed" */
+.kt-content[data-state="delayed-open"],
+.kt-content[data-state="instant-open"] {
+  animation: kt-show var(--duration-short) var(--ease-enter);
+}
+
+@keyframes kt-show {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.kt-arrow {
+  fill: var(--kdl-text-secondary);
+}
+
+:root[data-theme="dark"] .kt-arrow {
+  fill: var(--kdl-text-hint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kt-content[data-state="delayed-open"],
+  .kt-content[data-state="instant-open"] {
+    animation-duration: 0.01ms !important;
+  }
 }
 
 /* ── KCommandPalette ───────────────────────────────────────────────────────── */

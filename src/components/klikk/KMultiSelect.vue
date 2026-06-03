@@ -459,73 +459,12 @@ function filterOptions(options, search) {
   color: var(--kdl-text-muted);
 }
 
-/* Dropdown content */
-/* z-index is set globally in src/css/portals.css via --kdl-z-popover (teleported to body) */
-.kmselect-content {
-  background: var(--kdl-card-bg);
-  border: 1px solid var(--kdl-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(15, 17, 57, 0.08), 0 12px 24px rgba(15, 17, 57, 0.06);
-  min-width: var(--reka-combobox-trigger-width, 200px);
-  max-height: 280px;
-  overflow: hidden;
-}
-
-.kmselect-viewport {
-  padding: 4px;
-}
-
-.kmselect-empty {
-  padding: 10px 12px;
-  font-size: 13px;
-  color: var(--kdl-text-hint);
-  text-align: center;
-}
-
-.kmselect-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--kdl-text-primary);
-  outline: none;
-  user-select: none;
-  transition: background 100ms;
-}
-
-.kmselect-item[data-highlighted] {
-  background: var(--kdl-hover-bg);
-}
-
-.kmselect-item[data-disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Inline checkbox-style indicator */
-.kmselect-item-check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  border: 1px solid var(--kdl-border);
-  flex-shrink: 0;
-  transition: background 100ms, border-color 100ms;
-  background: var(--kdl-card-bg);
-}
-
-.kmselect-item-check--checked {
-  background: var(--kdl-accent);
-  border-color: var(--kdl-accent);
-  color: #fff;
-}
+/* NOTE: The dropdown content panel and everything rendered inside it
+   (.kmselect-content / -viewport / -empty / -item[+states] / -item-check[+checked]
+   + the dark-mode .kmselect-content shadow) are teleported to <body> by
+   ComboboxPortal, so <style scoped> cannot reach them. Their styling lives in
+   the global src/css/portals.css. Only the shell / label / messages below stay
+   scoped — they render inside this component's own subtree. */
 
 /* Messages */
 .kmselect-message {
@@ -544,10 +483,7 @@ function filterOptions(options, search) {
 }
 
 /* ─── Dark mode ─────────────────────────────────────────────────────────── */
-:root[data-theme="dark"] .kmselect-content {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.3);
-}
-
+/* Dark .kmselect-content shadow is teleported → lives in src/css/portals.css */
 :root[data-theme="dark"] .kmselect-shell--error {
   border-color: #f87171 !important;
 }

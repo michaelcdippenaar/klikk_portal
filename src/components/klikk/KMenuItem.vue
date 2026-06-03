@@ -83,66 +83,10 @@ const ICONS = {
 };
 </script>
 
-<style scoped>
-/* ── Menu item ───────────────────────────────────────────────────────────── */
-.km-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 0 10px;
-  height: 34px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--kdl-text-secondary);
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
-  transition: background var(--duration-short) var(--ease-standard),
-              color var(--duration-short) var(--ease-standard);
-  /* Reka sets [data-highlighted] on keyboard/mouse focus */
-}
-
-.km-item[data-highlighted] {
-  background: color-mix(in srgb, var(--kdl-accent) 10%, transparent);
-  color: var(--kdl-accent);
-  outline: none;
-}
-
-.km-item[data-disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-/* ── Icon slot ───────────────────────────────────────────────────────────── */
-.km-item__icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: inherit;
-  opacity: 0.75;
-}
-
-/* ── Label ───────────────────────────────────────────────────────────────── */
-.km-item__label {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ── Shortcut ─────────────────────────────────────────────────────────────── */
-.km-item__shortcut {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--kdl-text-hint);
-  font-variant-numeric: tabular-nums;
-}
-</style>
+<!--
+  No <style scoped> here: DropdownMenuItem (.km-item) renders inside the
+  teleported DropdownMenuContent (KMenu → DropdownMenuPortal → <body>), so a
+  scoped style's data-v-<hash> would never match it. The .km-item chrome and
+  its __icon / __label / __shortcut parts live in the global
+  src/css/portals.css alongside the .km-content panel they sit in.
+-->

@@ -71,61 +71,12 @@ defineProps({
 });
 </script>
 
-<style scoped>
-/* ── Tooltip content ─────────────────────────────────────────────────────── */
-/* z-index is set globally in src/css/portals.css via --kdl-z-tooltip (teleported to body) */
-.kt-content {
-  /* Distinct tooltip surface: dark in light mode, slightly lighter in dark */
-  background: var(--kdl-text-secondary);
-  color: var(--kdl-card-bg);
-  font-size: 11px;
-  line-height: 1.4;
-  font-weight: 500;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  max-width: 240px;
-  /* Reka provides data-state for animation targeting */
-}
-
-:root[data-theme="dark"] .kt-content {
-  /* In dark mode: lighter surface that stands out from the dark card bg */
-  background: var(--kdl-text-hint);
-  color: var(--kdl-text-primary);
-  border-color: var(--kdl-border);
-}
-
-/* Reka adds data-state="delayed-open" / "instant-open" / "closed" */
-.kt-content[data-state="delayed-open"],
-.kt-content[data-state="instant-open"] {
-  animation: kt-show var(--duration-short) var(--ease-enter);
-}
-
-@keyframes kt-show {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* ── Arrow ────────────────────────────────────────────────────────────────── */
-.kt-arrow {
-  fill: var(--kdl-text-secondary);
-}
-
-:root[data-theme="dark"] .kt-arrow {
-  fill: var(--kdl-text-hint);
-}
-
-/* ── Reduced motion ──────────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  .kt-content[data-state="delayed-open"],
-  .kt-content[data-state="instant-open"] {
-    animation-duration: 0.01ms !important;
-  }
-}
-</style>
+<!--
+  No <style scoped> here: TooltipContent (.kt-content) and its TooltipArrow
+  (.kt-arrow) are teleported to <body> by TooltipPortal, so a scoped style's
+  data-v-<hash> would never match them. The .kt-content surface (z-index,
+  background, colour, typography, padding, radius + dark variant), the
+  data-state entrance animation + its @keyframes kt-show, the .kt-arrow fill
+  (+ dark) and the reduced-motion fallback all live in the global
+  src/css/portals.css. The trigger is the consumer's own slotted element.
+-->

@@ -391,76 +391,12 @@ function clearSelection() {
   transform: rotate(180deg);
 }
 
-/* Dropdown content panel */
-/* z-index is set globally in src/css/portals.css via --kdl-z-popover (teleported to body) */
-.kselect-content {
-  background: var(--kdl-card-bg);
-  border: 1px solid var(--kdl-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(15, 17, 57, 0.08), 0 12px 24px rgba(15, 17, 57, 0.06);
-  min-width: var(--reka-select-trigger-width);
-  max-height: var(--reka-select-content-available-height);
-  overflow: hidden;
-}
-
-.kselect-viewport {
-  padding: 4px;
-}
-
-/* Individual option item */
-.kselect-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--kdl-text-primary);
-  outline: none;
-  user-select: none;
-  transition: background 100ms, color 100ms;
-  position: relative;
-}
-
-.kselect-item[data-highlighted] {
-  background: var(--kdl-hover-bg);
-  color: var(--kdl-accent);
-}
-
-.kselect-item[data-state="checked"] {
-  font-weight: 500;
-}
-
-.kselect-item[data-disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.kselect-item-icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--kdl-text-muted);
-}
-
-.kselect-item-indicator {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  color: var(--kdl-accent);
-}
-
-.kselect-scroll-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  cursor: default;
-  color: var(--kdl-text-muted);
-}
+/* NOTE: The dropdown content panel and everything rendered inside it
+   (.kselect-content / -viewport / -item[+states] / -item-icon / -item-indicator
+   / -scroll-btn + the dark-mode .kselect-content shadow) are teleported to
+   <body> by SelectPortal, so <style scoped> cannot reach them. Their styling
+   lives in the global src/css/portals.css. Only the trigger / label / messages
+   below stay scoped — they render inside this component's own subtree. */
 
 /* Below-trigger messages */
 .kselect-message {
@@ -479,10 +415,7 @@ function clearSelection() {
 }
 
 /* ─── Dark mode ─────────────────────────────────────────────────────────── */
-:root[data-theme="dark"] .kselect-content {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.3);
-}
-
+/* Dark .kselect-content shadow is teleported → lives in src/css/portals.css */
 :root[data-theme="dark"] .kselect-trigger--error {
   border-color: #f87171 !important;
 }

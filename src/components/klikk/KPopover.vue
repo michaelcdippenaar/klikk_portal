@@ -80,41 +80,11 @@ defineProps({
 defineEmits(['update:modelValue']);
 </script>
 
-<style scoped>
-/* ── Popover panel ───────────────────────────────────────────────────────── */
-/* z-index is set globally in src/css/portals.css via --kdl-z-popover (teleported to body) */
-.kp-content {
-  padding: 12px;
-  background: var(--kdl-card-bg);
-  border: 1px solid var(--kdl-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-floating);
-  min-width: 200px;
-  max-width: 400px;
-}
-
-:root[data-theme="dark"] .kp-content {
-  box-shadow: var(--shadow-floating), 0 0 0 1px var(--kdl-border);
-}
-
-/* ── Transition ──────────────────────────────────────────────────────────── */
-.kp-popover-enter-active,
-.kp-popover-leave-active {
-  transition:
-    opacity var(--duration-short) var(--ease-standard),
-    transform var(--duration-short) var(--ease-enter);
-}
-.kp-popover-enter-from,
-.kp-popover-leave-to {
-  opacity: 0;
-  transform: scale(0.96) translateY(-4px);
-}
-
-/* ── Reduced motion ──────────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  .kp-popover-enter-active,
-  .kp-popover-leave-active {
-    transition-duration: 0.01ms !important;
-  }
-}
-</style>
+<!--
+  No <style scoped> here: PopoverContent (.kp-content) is teleported to <body>
+  by PopoverPortal, so a scoped style's data-v-<hash> would never match it.
+  The .kp-content panel chrome (z-index, padding, background, border, radius,
+  shadow + dark variant) and the Vue <Transition name="kp-popover"> enter/leave
+  classes incl. reduced-motion live in the global src/css/portals.css. Content
+  inside the popover is the consumer's own slot markup, styled by the consumer.
+-->

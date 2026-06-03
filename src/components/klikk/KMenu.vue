@@ -78,41 +78,14 @@ defineProps({
 defineEmits(['update:modelValue']);
 </script>
 
-<style scoped>
-/* ── Menu content panel ──────────────────────────────────────────────────── */
-/* z-index is set globally in src/css/portals.css via --kdl-z-menu (teleported to body) */
-.km-content {
-  min-width: 200px;
-  padding: 4px;
-  background: var(--kdl-card-bg);
-  border: 1px solid var(--kdl-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-floating);
-  /* Reka positions this via its floating-ui internals */
-}
-
-:root[data-theme="dark"] .km-content {
-  box-shadow: var(--shadow-floating), 0 0 0 1px var(--kdl-border);
-}
-
-/* ── Transition ──────────────────────────────────────────────────────────── */
-.km-menu-enter-active,
-.km-menu-leave-active {
-  transition:
-    opacity var(--duration-short) var(--ease-standard),
-    transform var(--duration-short) var(--ease-enter);
-}
-.km-menu-enter-from,
-.km-menu-leave-to {
-  opacity: 0;
-  transform: scale(0.96) translateY(-4px);
-}
-
-/* ── Reduced motion ──────────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  .km-menu-enter-active,
-  .km-menu-leave-active {
-    transition-duration: 0.01ms !important;
-  }
-}
-</style>
+<!--
+  No <style scoped> here: DropdownMenuContent (.km-content) is teleported to
+  <body> by DropdownMenuPortal, and so is the entire menu subtree. A scoped
+  style adds a data-v-<hash> the teleported node never carries, so the rules
+  would not apply. All of this component's styling — the .km-content panel
+  chrome (z-index, background, border, radius, shadow + dark variant) and the
+  Vue <Transition name="km-menu"> enter/leave classes incl. reduced-motion —
+  therefore lives in the global src/css/portals.css. The menu items
+  (.km-item, KMenuItem.vue) and separators (.km-sep, KMenuSeparator.vue) are
+  likewise teleported and their styling lives there too.
+-->

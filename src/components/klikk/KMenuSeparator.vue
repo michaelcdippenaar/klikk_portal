@@ -10,11 +10,8 @@
 import { DropdownMenuSeparator } from 'reka-ui';
 </script>
 
-<style scoped>
-.km-sep {
-  height: 1px;
-  background: var(--kdl-border-subtle);
-  margin: 4px 0;
-  border: none;
-}
-</style>
+<!--
+  No <style scoped> here: DropdownMenuSeparator (.km-sep) renders inside the
+  teleported DropdownMenuContent, so a scoped style would not reach it. The
+  .km-sep rule lives in the global src/css/portals.css.
+-->
