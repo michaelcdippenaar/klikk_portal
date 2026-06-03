@@ -9,6 +9,8 @@ import { initTheme } from './composables/useTheme.js';
 import './css/klikk.css';
 // portals.css: global z-index for Reka-portalled nodes (must follow klikk.css for token access)
 import './css/portals.css';
+// cost-behaviour.css: categorical chart hues (KDL has no categorical palette — gap noted in file)
+import './css/cost-behaviour.css';
 import './css/app.sass';
 
 // Apply persisted theme to <html> before first paint

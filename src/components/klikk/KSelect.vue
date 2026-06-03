@@ -35,6 +35,7 @@
           'kselect-trigger--error': error,
           'kselect-trigger--disabled': disabled,
         }"
+        :aria-label="triggerAriaLabel"
         :aria-labelledby="label ? labelId : undefined"
         :aria-describedby="(error && errorMessage) ? `${rootId}-error` : helpText ? `${rootId}-help` : undefined"
         :aria-invalid="error ? 'true' : undefined"
@@ -143,7 +144,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, useAttrs } from 'vue';
 import {
   SelectRoot,
   SelectTrigger,
@@ -215,6 +216,22 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:modelValue']);
+
+// inheritAttrs is LEFT ON (default): a consumer's `class` must keep falling
+// through to .kselect-root (callers size the whole control via the root box —
+// width/min-width/max-width/margin). We additionally READ a fallthrough
+// `aria-label` here and forward it onto the interactive SelectTrigger
+// (role="combobox") below, because an aria-label landing only on the
+// non-interactive root <div> is inert for assistive tech — the combobox button
+// is what gets focused and announced. When a visible `label` prop is present,
+// the trigger is already named via aria-labelledby, so we DON'T also stamp an
+// aria-label (avoids a double/duplicate accessible name).
+const attrs = useAttrs();
+const triggerAriaLabel = computed(() => {
+  if (props.label) return undefined;
+  const al = attrs['aria-label'];
+  return al != null && al !== '' ? String(al) : undefined;
+});
 
 const rootId = `kselect-${Math.random().toString(36).slice(2, 8)}`;
 const labelId = `${rootId}-label`;

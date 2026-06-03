@@ -6,6 +6,29 @@
       <small class="cost-cut-row__group">{{ groupLabel }}</small>
     </td>
 
+    <!-- Behaviour: categorical chip + inline re-tag select + driver subtext -->
+    <td>
+      <div class="cost-cut-row__behaviour">
+        <div class="cost-cut-row__behaviour-top">
+          <BehaviourTag :behaviour="row.behaviour" :driver="row.driver" short />
+          <KSelect
+            class="cost-cut-row__behaviour-select"
+            :model-value="normalisedBehaviour"
+            :options="behaviourOptions"
+            :aria-label="`Cost behaviour for ${row.name}`"
+            @update:model-value="onRetag"
+          />
+          <KSpinner
+            v-if="savingBehaviour"
+            size="xs"
+            tone="muted"
+            label="Saving behaviour"
+          />
+        </div>
+        <small v-if="row.driver" class="cost-cut-row__driver">{{ row.driver }}</small>
+      </div>
+    </td>
+
     <!-- Recurring cost -->
     <td class="text-right cost-cut-row__num">
       {{ formatCurrency(row.recurring_actual) }}
@@ -63,8 +86,15 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import KInput from '../klikk/KInput.vue';
+import KSelect from '../klikk/KSelect.vue';
 import KSpinner from '../klikk/KSpinner.vue';
 import StatusPill from '../klikk/StatusPill.vue';
+import BehaviourTag from './BehaviourTag.vue';
+import {
+  BEHAVIOUR_SELECT_OPTIONS,
+  normaliseBehaviour,
+  behaviourLabel,
+} from '../../utils/costBehaviour';
 
 const props = defineProps({
   row: {
@@ -72,6 +102,12 @@ const props = defineProps({
     required: true,
   },
   saving: {
+    type: Boolean,
+    default: false,
+  },
+  // Separate flag from `saving` (target) so the two inline edits on one row can
+  // show independent spinners without clobbering each other.
+  savingBehaviour: {
     type: Boolean,
     default: false,
   },
@@ -85,7 +121,42 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['commit']);
+const emit = defineEmits(['commit', 'retag']);
+
+// The row's behaviour normalised to a known key ('unclassified' for any
+// missing/unknown value). Bound as the select's model-value so the TRIGGER
+// agrees with the BehaviourTag chip (both read off the same normalised key)
+// instead of showing the bare placeholder on unclassified/missing rows.
+const normalisedBehaviour = computed(() => normaliseBehaviour(props.row.behaviour));
+
+// Re-tag options: the four classified behaviours you can tag INTO. When the row
+// is currently unclassified we append a DISABLED 'Unclassified' entry purely so
+// the trigger can display "Unclassified" (matching the chip) — it can't be
+// re-selected (disabled + the onRetag no-op guard below), preserving the
+// contract that there's no "unclassified" behaviour to re-tag into.
+const behaviourOptions = computed(() => {
+  if (normalisedBehaviour.value === 'unclassified') {
+    return [
+      ...BEHAVIOUR_SELECT_OPTIONS,
+      { value: 'unclassified', label: behaviourLabel('unclassified'), disabled: true },
+    ];
+  }
+  return BEHAVIOUR_SELECT_OPTIONS;
+});
+
+// Re-tag this account's behaviour. No-op if the chosen value matches what the
+// row already shows (KSelect can re-emit the current value), or if it's the
+// non-selectable 'unclassified' sentinel. The parent owns the POST +
+// concurrency-safe re-fetch.
+function onRetag(value) {
+  if (!value || value === 'unclassified' || value === normalisedBehaviour.value) return;
+  emit('retag', {
+    accountKey: props.row.account_key,
+    accountId: props.row.account_id,
+    behaviour: value,
+    label: props.row.name,
+  });
+}
 
 const draft = ref(props.row.target != null ? String(props.row.target) : '');
 const isFocused = ref(false);
@@ -201,6 +272,37 @@ function onKeyup(event) {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   color: var(--kdl-text-primary);
+}
+
+/* ── Behaviour cell ──────────────────────────────────────────────────────── */
+.cost-cut-row__behaviour {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.cost-cut-row__behaviour-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Compact the re-tag select to keep the dense table tidy; the chip carries the
+   colour, the select is the affordance to change it. */
+.cost-cut-row__behaviour-select {
+  flex: 0 0 auto;
+  width: 132px;
+}
+
+.cost-cut-row__behaviour-select :deep(.kselect-trigger) {
+  height: 30px;
+}
+
+.cost-cut-row__driver {
+  font-size: 11px;
+  color: var(--kdl-text-muted);
+  line-height: 1.3;
 }
 
 .cost-cut-row__pct {

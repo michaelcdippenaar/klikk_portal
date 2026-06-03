@@ -1,0 +1,54 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Cost-behaviour CATEGORICAL colour tokens.
+
+   GAP (named, not silently hardcoded — mirrors the cost-direction hex finding
+   already documented in CostCutReport.vue / CostCutRow.vue):
+   The KDL token set (src/css/klikk.css) and tailwind.config.js expose ONLY
+   RAG-semantic colour scales (success / warning / danger / info) plus brand
+   navy/accent. There are NO categorical / chart hues. The cost-behaviour split
+   (fixed / variable / semi-variable / non-controllable) is a CATEGORICAL
+   dimension, not a RAG dimension — reusing the green/amber/red RAG tones would
+   collide with the StatusPill RAG pills rendered in the SAME table.
+
+   So we define a small, dedicated categorical set here, in ONE place. Both the
+   stacked bar (CostBehaviourBar.vue) and the per-row chip (BehaviourTag.vue)
+   consume these vars, so the four hues live in exactly one location. When KDL
+   ships a categorical/chart palette, replace these with the KDL tokens here and
+   the rest of the feature is unchanged.
+
+   Semantics (deliberately distinct from RAG):
+     fixed             → indigo  (structural / committed cost)
+     variable          → cyan    (flexible / addressable now — NOT the RAG
+                                  success teal #0d9488; a distinct categorical cyan)
+     semi_variable     → violet  (mixed)
+     non_controllable  → neutral grey (muted; out of the operator's hands)
+
+   Each behaviour gets: --cc-beh-{key}        — solid hue (bar fill, swatch, text)
+                        --cc-beh-{key}-tint   — low-alpha surface (chip background)
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --cc-beh-fixed:            #4f46e5; /* indigo-600 */
+  --cc-beh-fixed-tint:       rgba(79, 70, 229, 0.12);
+  --cc-beh-variable:         #0891b2; /* cyan-600 — distinct from RAG success teal */
+  --cc-beh-variable-tint:    rgba(8, 145, 178, 0.12);
+  --cc-beh-semi:             #9333ea; /* violet-600 */
+  --cc-beh-semi-tint:        rgba(147, 51, 234, 0.12);
+  --cc-beh-nonctrl:          #6b7280; /* grey-500 (matches --kdl-text-muted) */
+  --cc-beh-nonctrl-tint:     rgba(107, 114, 128, 0.14);
+  --cc-beh-unclassified:     #9ca3af; /* grey-400 (matches --kdl-text-hint) */
+  --cc-beh-unclassified-tint: rgba(156, 163, 175, 0.14);
+}
+
+:root[data-theme="dark"] {
+  --cc-beh-fixed:            #a5b4fc; /* indigo-300 — lifts for contrast on dark */
+  --cc-beh-fixed-tint:       rgba(129, 140, 248, 0.20);
+  --cc-beh-variable:         #67e8f9; /* cyan-300 */
+  --cc-beh-variable-tint:    rgba(103, 232, 249, 0.20); /* RGB of #67e8f9 — match the solid hue */
+  --cc-beh-semi:             #d8b4fe; /* violet-300 */
+  --cc-beh-semi-tint:        rgba(192, 132, 252, 0.20);
+  --cc-beh-nonctrl:          #9ca3af; /* grey-400 */
+  --cc-beh-nonctrl-tint:     rgba(156, 163, 175, 0.20);
+  --cc-beh-unclassified:     #8a8c9f; /* matches dark --kdl-text-muted */
+  --cc-beh-unclassified-tint: rgba(138, 140, 159, 0.20);
+}

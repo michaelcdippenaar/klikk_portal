@@ -111,6 +111,14 @@ export async function getCostCutReport(entity, year) {
   return resp.data;
 }
 
+// Upsert a cost-behaviour override for one account. Source becomes
+// "user_override" server-side. Returns the updated row.
+export async function saveCostBehaviour(payload) {
+  const client = await getClient();
+  const resp = await client.post(API_ENDPOINTS.PA_COST_BEHAVIOUR, payload);
+  return resp.data;
+}
+
 export async function getKpiTargets(entity, year) {
   const client = await getClient();
   const resp = await client.get(API_ENDPOINTS.PA_KPI_TARGETS, {

@@ -66,6 +66,7 @@ export const API_ENDPOINTS = {
   PA_TRACKING_MAPPING: '/api/planning-analytics/tm1/tracking-mapping/',
   PA_TRACKING_MAPPING_ADD: '/api/planning-analytics/tm1/tracking-mapping/add/',
   PA_COST_CUT: '/api/planning-analytics/cost-cut/',
+  PA_COST_BEHAVIOUR: '/api/planning-analytics/cost-behaviour/',
   PA_KPI_TARGETS: '/api/planning-analytics/kpi-targets/',
 
   // AI Agent
