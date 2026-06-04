@@ -50,10 +50,17 @@
         </header>
 
         <div class="se-controls">
-          <!-- Hierarchy picker — only when the dimension HAS alternates. -->
+          <!-- Hierarchy picker — only when the dimension HAS alternates.
+               model-value is bound to the RESOLVED current hierarchy NAME
+               (default = the dimension's default hierarchy, never null), so the
+               picker (a) DISPLAYS the active hierarchy rather than a blank
+               placeholder and (b) drives Reka's SelectRoot in CONTROLLED mode —
+               a null/undefined model-value would latch SelectRoot into passive
+               (uncontrolled) state at setup, so a later selection would never
+               reflect back. See selectedHierarchy. -->
           <KSelect
             v-if="hasAlternates"
-            :model-value="activeHierarchy"
+            :model-value="selectedHierarchy"
             class="se-controls__field"
             label="Hierarchy"
             :options="hierarchyOptions"
@@ -90,6 +97,8 @@
           <span>Loading subset members…</span>
         </p>
         <p v-else-if="subsetLoadedNote" class="se-note se-note--ok">{{ subsetLoadedNote }}</p>
+
+        <p v-if="treeNote" class="se-note se-note--info" role="status">{{ treeNote }}</p>
 
         <!-- The member TREE -->
         <div class="se-tree-wrap">
@@ -466,7 +475,13 @@ const order = ref([]); // ordered visible PATHS
 const childCache = reactive({}); // member -> [{ name, type }] (drill cache, keyed by bare member; safe — TM1 children of a member are the same wherever it appears)
 const treeLoading = ref(false);
 const treeError = ref('');
+const treeNote = ref(''); // truncation / hierarchy-prune notice for the source tree.
 const drilling = ref(''); // path currently fetching children
+// Principal names KNOWN to belong to the ACTIVE hierarchy — every element the
+// last loadTree saw (capped), plus any member drilled/surfaced since. Used to
+// prune set members that don't belong to a newly-chosen hierarchy (so Apply
+// never ships members invalid for the active hierarchy).
+const knownMembers = reactive(new Set());
 
 // Checked SOURCE members (by principal name — selection is name-based, so the
 // same member under two rollups checks together, which is the intent: you pick
@@ -484,7 +499,12 @@ const memberTypeMap = reactive({});
 
 function recordTypes(members) {
   for (const m of members || []) {
-    if (m && m.name != null && m.type != null) memberTypeMap[m.name] = m.type;
+    if (m && m.name != null) {
+      // Every member we surface (root, drilled child, subset member) is known to
+      // belong to the active hierarchy — track it for the hierarchy-prune (P2-E).
+      knownMembers.add(m.name);
+      if (m.type != null) memberTypeMap[m.name] = m.type;
+    }
   }
 }
 
@@ -516,6 +536,16 @@ const sourceHierarchyLabel = computed(() => {
   const name = activeHierarchy.value || defaultHierarchy.value || props.dimension;
   return name ? `Hierarchy: ${name}` : '';
 });
+
+// The hierarchy NAME the picker should show as selected. activeHierarchy is null
+// while we're on the default (so hierarchyArg() can omit the param); for DISPLAY
+// we resolve that null to the default hierarchy's principal name, which matches a
+// real option value in hierarchyOptions. This must never be null/'' — binding a
+// nullish model-value to KSelect makes Reka's SelectRoot uncontrolled (passive),
+// after which a user selection never reflects back into the trigger or the tree.
+const selectedHierarchy = computed(
+  () => activeHierarchy.value || defaultHierarchy.value || null,
+);
 
 const subsetOptions = computed(() =>
   subsets.value.map((s) => ({
@@ -606,20 +636,40 @@ function hierarchyArg() {
 // then let the user drill (lazy children). To stay lazy we DON'T fetch every
 // member's children up front. Also re-surfaces the current set's members as
 // flat rows so they're visible/checkable even before being drilled to.
-async function loadTree() {
+// pruneSetToHierarchy: when the load follows a HIERARCHY SWITCH, drop set members
+// that don't exist in the newly-loaded hierarchy BEFORE re-surfacing the set as
+// rows (so Apply never ships members invalid for the active hierarchy — P2-E). On
+// a plain open the set is already scoped to its hierarchy, so we don't prune.
+async function loadTree({ pruneSetToHierarchy = false } = {}) {
   treeLoading.value = true;
   treeError.value = '';
+  treeNote.value = '';
   clearTree();
+  // The known-member set is hierarchy-scoped — reset it for the hierarchy we're
+  // about to load (its elements/children repopulate it below).
+  knownMembers.clear();
   try {
     const data = await getTm1DimensionElements(props.dimension, hierarchyArg());
     let elements = normaliseMemberList(data, ['elements']);
-    if (elements.length > TOP_ELEMENT_CAP) elements = elements.slice(0, TOP_ELEMENT_CAP);
+    const truncated = elements.length > TOP_ELEMENT_CAP;
+    if (truncated) elements = elements.slice(0, TOP_ELEMENT_CAP);
+    // Every element belongs to the active hierarchy — record it so the
+    // hierarchy-prune (P2-E) keeps set members that exist here and drops the rest.
+    recordTypes(elements);
     if (!elements.length) {
       order.value = [];
+      if (pruneSetToHierarchy) pruneSetMembersToHierarchy(truncated);
       return;
     }
     const roots = await pickRoots(elements);
     seedRoots(roots);
+    if (truncated) {
+      treeNote.value = `Showing the first ${TOP_ELEMENT_CAP} members — refine with the filter or a saved subset to reach the rest.`;
+    }
+    // Prune the set to the new hierarchy's members BEFORE surfacing it as rows —
+    // surfaceMembersAsRows records members into knownMembers, which would
+    // otherwise re-admit the very members we mean to drop.
+    if (pruneSetToHierarchy) pruneSetMembersToHierarchy(truncated);
     if (setMembers.value.length) {
       surfaceMembersAsRows(setMembers.value.map((m) => ({ name: m, type: null })));
     }
@@ -633,9 +683,33 @@ async function loadTree() {
   }
 }
 
-// Choose the tree roots from a flat element list. Prefer the children of a top
-// "All_/Total" consolidation (a real rollup tree); else if there are
-// consolidations, surface them; else surface all elements flat (small leaf dim).
+// Drop set members that don't belong to the active hierarchy (computed from the
+// hierarchy's real elements, in knownMembers). When the element list was CAPPED
+// (truncated) we cannot prove a member is absent — it may live past the cap — so
+// we skip the prune entirely rather than wrongly drop a valid member. Surfaces a
+// note when members are dropped (replacing the truncation note, which can't apply
+// here since we only prune on a complete list).
+function pruneSetMembersToHierarchy(truncated) {
+  if (truncated) return; // element list capped → cannot prove absence; don't prune.
+  if (!knownMembers.size) return; // load failed/empty → nothing to compare against.
+  const before = setMembers.value;
+  const kept = before.filter((m) => knownMembers.has(m));
+  const droppedCount = before.length - kept.length;
+  if (!droppedCount) return;
+  setMembers.value = kept;
+  treeNote.value = `Dropped ${droppedCount} member${droppedCount === 1 ? '' : 's'} not in this hierarchy.`;
+}
+
+// Choose the tree roots from a flat element list. Roots are derived from the
+// hierarchy's TOP-LEVEL CONSOLIDATIONS, not a name regex — alt hierarchies
+// (EBITDA, is_non_cashflow) often have NO All_/Total root, so a regex misses the
+// real rollups and falls back to a flat dump. Order of preference:
+//   1) the children of an All_/Total rollup root, when one exists (the classic
+//      default-hierarchy shape) — a real, single-rooted tree;
+//   2) otherwise the consolidations themselves (type 'C' = a parent/rollup) as
+//      top-level roots — correct for shallow alt hierarchies with several roots;
+//   3) otherwise the flat element list (a small leaf-only dimension), with a
+//      "showing first N" note surfaced by the caller when it was capped.
 async function pickRoots(elements) {
   const top = elements.find((e) => /^(all[_ ]|total)/i.test(e.name) && isConsolidation(e.type));
   if (top) {
@@ -650,6 +724,9 @@ async function pickRoots(elements) {
       // fall through to the consolidation/flat heuristic.
     }
   }
+  // No All_/Total rollup (or it resolved to nothing): surface the hierarchy's
+  // consolidations as the top-level roots. These are the rollups of the chosen
+  // hierarchy (EBIT/GROSS_PROFIT/OPERATING_EXPENSES for EBITDA), each drillable.
   const consols = elements.filter((e) => isConsolidation(e.type));
   if (consols.length && consols.length < elements.length) return consols;
   return elements;
@@ -870,13 +947,27 @@ function onAliasChange(value) {
 }
 
 // ── Hierarchy change — reload everything scoped to the new hierarchy ─────────
+// `value` is a hierarchy NAME from the picker (the picker is bound to the
+// resolved current name, so the default arrives as its principal name, e.g.
+// "account", not null). We compare against the resolved current selection so a
+// re-pick of the same hierarchy is a true no-op (no redundant reload), then store
+// activeHierarchy as null for the default (keeps hierarchyArg() omitting the
+// param) or the alternate name otherwise.
 async function onHierarchyChange(value) {
-  activeHierarchy.value = value || null;
+  const next = value || null;
+  // No-op if the resolved selection is unchanged (re-picking the current one).
+  if ((next || defaultHierarchy.value || null) === (selectedHierarchy.value || null)) return;
+  // Store null when the chosen hierarchy IS the default, else the alternate name.
+  activeHierarchy.value =
+    next && defaultHierarchy.value && next === defaultHierarchy.value ? null : next;
   checked.clear();
   subsetLoadedNote.value = '';
   search.value = '';
   for (const k of Object.keys(childCache)) delete childCache[k];
-  await Promise.all([loadTree(), loadSubsets(), loadAliases()]);
+  // Hierarchy-scoped alias labels no longer apply — clear them; aliases reload.
+  for (const k of Object.keys(aliasLabels)) delete aliasLabels[k];
+  // loadTree prunes the set to the new hierarchy's members (P2-E).
+  await Promise.all([loadTree({ pruneSetToHierarchy: true }), loadSubsets(), loadAliases()]);
 }
 
 // ── Source selection ─────────────────────────────────────────────────────────
@@ -1120,6 +1211,12 @@ if (props.modelValue && props.dimension && lastSeededDim !== props.dimension) {
 
 .se-note--ok {
   color: var(--kdl-text-secondary);
+}
+
+/* Informational "showing first N" / hierarchy-prune notice — quieter than the
+   ok note (hint tone), reusing the existing note tokens (no new colour token). */
+.se-note--info {
+  color: var(--kdl-text-hint);
 }
 
 /* ── The source tree ──────────────────────────────────────────────────────── */

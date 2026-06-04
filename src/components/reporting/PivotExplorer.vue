@@ -1098,21 +1098,27 @@ function loadBtnLabel(dim) {
 
 // Lazy-load a dimension's elements the first time its picker is opened. Large
 // dimensions are capped to MAX_MEMBER_OPTIONS for the picker; the dropdowns are
-// internally scrollable.
+// internally scrollable. Elements are loaded IN the dimension's active hierarchy
+// (dimHierarchy[dim] || default) — after the Set Editor applies an alternate, the
+// element list (and thus every seed/reseed derived from it) must come from THAT
+// hierarchy, not the default. The cache records the hierarchy it was loaded under
+// so a hierarchy change (applySet) refetches rather than serving stale members.
 async function ensureElements(dim) {
-  if (elementCache[dim] && !elementCache[dim].error) return;
-  elementCache[dim] = { loading: true, error: '', options: [] };
+  const hier = dimHierarchy[dim] || null;
+  const cached = elementCache[dim];
+  if (cached && !cached.error && cached.hierarchy === hier) return;
+  elementCache[dim] = { loading: true, error: '', options: [], hierarchy: hier };
   try {
-    const data = await getTm1DimensionElements(dim);
+    const data = await getTm1DimensionElements(dim, hier);
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
-      console.debug(`[PivotExplorer] elements(${dim}) raw:`, data);
+      console.debug(`[PivotExplorer] elements(${dim}, ${hier ?? 'default'}) raw:`, data);
     }
     let options = normaliseElements(data);
     if (options.length > MAX_MEMBER_OPTIONS) {
       options = options.slice(0, MAX_MEMBER_OPTIONS);
     }
-    elementCache[dim] = { loading: false, error: '', options };
+    elementCache[dim] = { loading: false, error: '', options, hierarchy: hier };
     recordTypes(dim, options);
     seedDefaultMember(dim, options);
   } catch (error) {
@@ -1123,6 +1129,7 @@ async function ensureElements(dim) {
         error?.message ||
         `Could not load members for ${dim}.`,
       options: [],
+      hierarchy: hier,
     };
   }
 }
@@ -1182,13 +1189,18 @@ async function seedPopulatedDefault(dim) {
     seedDefaultMember(dim, options);
     return;
   }
+  // Derive the top consolidation WITHIN the dim's active hierarchy. ensureElements
+  // already loaded `options` from dimHierarchy[dim] (or default), so topElement
+  // picks the chosen hierarchy's top — and we fetch its children in the SAME
+  // hierarchy, so a reseed after an applied alternate stays consistent (P0-B).
+  const hier = dimHierarchy[dim] || null;
   const top = topElement(options);
   if (!top) return;
   try {
-    const data = await getTm1DimensionChildren(dim, top);
+    const data = await getTm1DimensionChildren(dim, top, hier);
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
-      console.debug(`[PivotExplorer] children(${dim}, ${top}) raw:`, data);
+      console.debug(`[PivotExplorer] children(${dim}, ${top}, ${hier ?? 'default'}) raw:`, data);
     }
     const children = normaliseChildren(data);
     recordTypes(dim, children);
@@ -1231,7 +1243,14 @@ function mergePickerOptions(dim, extra) {
     }
   }
   if (next.length > MAX_MEMBER_OPTIONS) next.length = MAX_MEMBER_OPTIONS;
-  elementCache[dim] = { loading: false, error: '', options: next };
+  // Preserve the hierarchy the cache was loaded under (else the next
+  // ensureElements would see a hierarchy mismatch and needlessly refetch).
+  elementCache[dim] = {
+    loading: false,
+    error: '',
+    options: next,
+    hierarchy: cache?.hierarchy ?? dimHierarchy[dim] ?? null,
+  };
 }
 
 // ── Row expansion tree (path-keyed) ─────────────────────────────────────────
@@ -1683,9 +1702,18 @@ function openSetEditor(dim) {
 async function applySet({ dimension, hierarchy, members, types }) {
   if (!dimension) return;
   const next = Array.isArray(members) ? members.slice() : [];
+  // Did the dimension's hierarchy actually change? (null/absent === default.)
+  const prevHierarchy = dimHierarchy[dimension] || null;
+  const nextHierarchy = hierarchy || null;
+  const hierarchyChanged = prevHierarchy !== nextHierarchy;
   // Record the explicit hierarchy (null clears it back to the default).
   if (hierarchy) dimHierarchy[dimension] = hierarchy;
   else delete dimHierarchy[dimension];
+
+  // The element cache is keyed by hierarchy — when the hierarchy changed, drop
+  // the dim's cache so any later picker/seed refetches members in the NEW
+  // hierarchy rather than serving the prior hierarchy's element list.
+  if (hierarchyChanged) delete elementCache[dimension];
 
   // Learn the applied members' types (consolidation vs leaf) so the rendered
   // grid knows which rows are drillable — the editor surfaced these from the
@@ -1702,10 +1730,19 @@ async function applySet({ dimension, hierarchy, members, types }) {
   // returns here rather than to the original auto-seeded rollups.
   defaultMembers[dimension] = next.slice();
 
-  // If this is the single primary row dimension, reseed its drill tree to the
-  // new top-level members (collapsed). Other axes just carry the new member list.
-  if (assignments[dimension] === 'rows' && rowDims.value.length === 1) {
-    initRowTree(dimension, next);
+  // Reset the drill tree so no node retains children fetched under the PRIOR
+  // hierarchy (P1-C: a cached re-expand would otherwise replay stale-hierarchy
+  // children). When the applied dim is the single Rows dimension we re-seed the
+  // tree to its new top-level members (collapsed). When it's a Rows dim in a
+  // multi-dim layout (no drill tree rendered) we still WIPE any lingering nodes
+  // so a later return to single-row-dim can't surface stale-hierarchy children.
+  if (assignments[dimension] === 'rows') {
+    if (rowDims.value.length === 1) {
+      initRowTree(dimension, next);
+    } else if (hierarchyChanged) {
+      for (const k of Object.keys(rowNodes)) delete rowNodes[k];
+      rowOrder.value = [];
+    }
   }
 
   if (canRun.value) runQuery();

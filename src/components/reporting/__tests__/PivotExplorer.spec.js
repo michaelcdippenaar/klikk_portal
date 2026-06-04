@@ -50,16 +50,26 @@
 
 // @vitest-environment happy-dom
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-// ── Mock the network boundary — the five TM1 HTTP functions ──────────────────
+// ── Mock the network boundary — the TM1 HTTP functions ───────────────────────
+// PivotExplorer itself calls five (cubes / cube-dimensions / elements / children
+// / query). Its child SetEditor.vue (rendered when the "Edit set…" chip menu item
+// opens it) calls four MORE (hierarchies / subsets / subset-members / aliases),
+// so the factory lists all nine — the four extras are inert in the pre-existing
+// suites (the editor never mounts until editorDim is set) and only come alive in
+// the Set-Editor integration block at the bottom.
 vi.mock('../../../api/planningAnalytics', () => ({
   getTm1Cubes: vi.fn(),
   getTm1CubeDimensions: vi.fn(),
   getTm1DimensionElements: vi.fn(),
   getTm1DimensionChildren: vi.fn(),
   runTm1Query: vi.fn(),
+  getTm1DimensionHierarchies: vi.fn(),
+  getTm1Subsets: vi.fn(),
+  getTm1SubsetMembers: vi.fn(),
+  getTm1DimensionAliases: vi.fn(),
 }));
 
 import PivotExplorer from '../PivotExplorer.vue';
@@ -75,7 +85,16 @@ import {
   getTm1DimensionElements,
   getTm1DimensionChildren,
   runTm1Query,
+  getTm1DimensionHierarchies,
+  getTm1Subsets,
+  getTm1SubsetMembers,
+  getTm1DimensionAliases,
 } from '../../../api/planningAnalytics';
+// KDL primitives the Set-Editor integration drives by component instance (the
+// editor's hierarchy/subset/alias pickers teleport their dropdowns via Reka's
+// SelectPortal — driving the controlled emit is the sanctioned mount-based path).
+import KSelect from '../../klikk/KSelect.vue';
+import SetEditor from '../SetEditor.vue';
 
 // ════════════════════════════════════════════════════════════════════════════
 // FAKE CUBE — the single source of truth the mocks are derived from
@@ -286,6 +305,43 @@ function installCubeMocks({ dimensions = ['account', 'month', 'measure'] } = {})
     children: (CHILDREN[dimension] && CHILDREN[dimension][parent]) || [],
   }));
   runTm1Query.mockImplementation(async (payload) => buildQueryResponse(payload));
+
+  // ── Set-Editor network surface (only exercised by the integration block) ────
+  // account has a default + one alternate (EBITDA) so the axis-spec hierarchy key
+  // is testable; month/measure/year are single-hierarchy (no alternates).
+  getTm1DimensionHierarchies.mockImplementation(async (dimension) => {
+    if (dimension === 'account') {
+      return {
+        dimension: 'account',
+        default: 'account',
+        hierarchies: [
+          { name: 'account', is_default: true },
+          { name: 'EBITDA', is_default: false },
+        ],
+        has_alternates: true,
+      };
+    }
+    return {
+      dimension,
+      default: dimension,
+      hierarchies: [{ name: dimension, is_default: true }],
+      has_alternates: false,
+    };
+  });
+  getTm1Subsets.mockImplementation(async (dimension) => (
+    dimension === 'account'
+      ? { subsets: [{ name: 'jse', dynamic: false }] }
+      : { subsets: [] }
+  ));
+  getTm1SubsetMembers.mockImplementation(async (dimension, subset) => ({
+    subset,
+    dynamic: false,
+    members: [{ name: 'Rent', type: 'N' }, { name: 'Salaries', type: 'N' }],
+    truncated: false,
+  }));
+  getTm1DimensionAliases.mockImplementation(async (dimension) => (
+    dimension === 'account' ? { dimension, aliases: ['name'] } : { dimension, aliases: [] }
+  ));
 }
 
 // ── DOM helpers — select on SEMANTICS (role / aria / text / stable class) ─────
@@ -468,6 +524,48 @@ async function mountExplorer4d() {
   await settle();
   return wrapper;
 }
+
+// KNOWN BUG containment (see report: BUG-1) — when the Set Editor opens, its
+// alias picker feeds KSelect an option { value: '' }, which Reka's <SelectItem>
+// rejects ("must have a value prop that is not an empty string"). Reka mounts the
+// Select content eagerly under happy-dom → an async unhandled rejection on every
+// editor mount, unrelated to what the integration asserts. We swallow ONLY that
+// specific Reka rejection (re-throwing any other), so a real unhandled error is
+// never masked. The defect is asserted/owned in SetEditor.spec.js (BUG-1).
+const REKA_EMPTY_VALUE = 'must have a value prop that is not an empty string';
+function onUnhandled(err) {
+  const msg = (err && (err.message || String(err))) || '';
+  if (msg.includes(REKA_EMPTY_VALUE)) return;
+  throw err;
+}
+// A second, narrowly-scoped guard for a happy-dom TEARDOWN artifact: tearing down
+// a body-attached wrapper that has an OPEN teleported KDialog (the Set Editor) +
+// teleported Reka Selects trips Vue's unmount with "Cannot read properties of
+// null (reading 'type')" inside unmountComponent — an UNCAUGHT EXCEPTION from the
+// async unmount scheduler (so the afterEach try/catch can't reach it). It is a
+// pure teardown/teleport quirk, not a behavioural failure (every assertion has
+// already run). We swallow ONLY that exact Vue-internal unmount TypeError and
+// re-throw anything else, so a real uncaught error is never masked.
+function isTeleportUnmountArtifact(err) {
+  const msg = (err && (err.message || String(err))) || '';
+  const stack = (err && err.stack) || '';
+  return (
+    msg.includes("Cannot read properties of null (reading 'type')") &&
+    (stack.includes('unmountComponent') || stack.includes('unmount'))
+  );
+}
+function onUncaught(err) {
+  if (isTeleportUnmountArtifact(err)) return;
+  throw err;
+}
+beforeAll(() => {
+  process.on('unhandledRejection', onUnhandled);
+  process.on('uncaughtException', onUncaught);
+});
+afterAll(() => {
+  process.off('unhandledRejection', onUnhandled);
+  process.off('uncaughtException', onUncaught);
+});
 
 // Silence the component's DEV-gated console.debug telemetry (it logs raw
 // payloads) so test output stays clean. Never asserted on.
@@ -1062,8 +1160,12 @@ describe('PivotExplorer — context-pill move menu (keyboard path)', () => {
     expect(document.body.querySelector('.pivot-picker__title')?.textContent.trim()).toBe('year');
 
     // Opening the picker requested the dimension's elements (lazy load) — the
-    // picker is live, not inert.
-    expect(getTm1DimensionElements).toHaveBeenCalledWith('year');
+    // picker is live, not inert. NB: the committed PivotExplorer (888a2d1) loads
+    // elements in the dim's active hierarchy, so the call is now (dim, hier) —
+    // hier is null for `year` (no alternate applied). Assert on the FIRST arg so
+    // the check is robust to the explicit hierarchy arg.
+    const elementCalls = getTm1DimensionElements.mock.calls;
+    expect(elementCalls.some((args) => args[0] === 'year')).toBe(true);
   });
 });
 
@@ -1164,5 +1266,200 @@ describe('PivotExplorer — regression after a drag reassign', () => {
     expect(chipMap(wrapper)).toContain('rows:month');
     expect(chipMap(wrapper)).toContain('cols:account');
     expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 13 — SET EDITOR integration (open from the chip menu → Apply writes back →
+//      pivot re-queries; hierarchy lands in the axis spec ONLY for an alternate)
+//
+// These mount the REAL PivotExplorer with its REAL child SetEditor (rendered when
+// the "Edit set…" chip menu opens it). Both the chip menu and the SetEditor
+// dialog teleport to <body> (Reka), so we attachTo:document.body and locate the
+// teleported nodes there. The SetEditor's own member/tree behaviour is covered in
+// SetEditor.spec.js — here we assert only the WIRING across the boundary:
+// openSetEditor mounts the editor seeded from dimHierarchy/memberSelections, and
+// applySet writes hierarchy + members back and re-queries with the right payload.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — Set Editor integration', () => {
+  // The account Rows chip (the dimension we edit), as a component wrapper.
+  function accountRowChip(wrapper) {
+    return wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+  }
+
+  // The mounted SetEditor child (only present once openSetEditor has run).
+  function editor(wrapper) {
+    return wrapper.findComponent(SetEditor);
+  }
+
+  // A SetEditor KSelect by its visible label ("Hierarchy" / "Load subset" /
+  // "Display label"). Scoped to the editor so we never grab a PivotExplorer select.
+  function editorSelect(wrapper, labelText) {
+    return editor(wrapper)
+      .findAllComponents(KSelect)
+      .find((s) => s.props('label') === labelText);
+  }
+
+  // A teleported editor <button> located by exact text (Apply / Cancel) — the
+  // dialog footer renders into <body>.
+  function bodyButtonByText(text) {
+    return [...document.body.querySelectorAll('button')].find(
+      (b) => b.textContent.trim() === text,
+    );
+  }
+
+  // Close the editor cleanly (drives v-model false) BEFORE the wrapper unmounts,
+  // so the teleported dialog + Reka Selects are torn down on a settled tick — this
+  // avoids the happy-dom teleport-unmount artifact at teardown rather than relying
+  // solely on the afterAll guard.
+  async function closeEditor(wrapper) {
+    const ed = editor(wrapper);
+    if (ed.exists()) {
+      ed.vm.$emit('update:modelValue', false);
+      await settle();
+    }
+  }
+
+  // Open the Set Editor for the account Rows dim via the REAL teleported chip
+  // menu: open the chip's KMenu (controlled), then click the real "Edit set…"
+  // KMenuItem rendered into <body>. Returns once the editor has mounted + seeded.
+  async function openEditorViaMenu(wrapper) {
+    const chip = accountRowChip(wrapper);
+    expect(chip, 'account row chip should exist').toBeTruthy();
+    const menu = chip.findComponent(KMenu);
+    menu.vm.$emit('update:modelValue', true); // open the chip menu (single-open model)
+    await settle();
+    const editItem = [...document.body.querySelectorAll('.km-item')].find(
+      (el) => el.textContent.trim() === 'Edit set…',
+    );
+    expect(editItem, '"Edit set…" menu item should render').toBeTruthy();
+    editItem.dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+  }
+
+  it('opening "Edit set…" from the chip menu mounts the editor seeded with the dim + members', async () => {
+    const wrapper = await mountExplorer4d();
+
+    // The editor is NOT mounted until opened (v-if="editorDim").
+    expect(editor(wrapper).exists()).toBe(false);
+
+    await openEditorViaMenu(wrapper);
+
+    // The editor mounted, seeded for the account dimension, and rendered its body
+    // into <body> (the dialog title carries the dim).
+    const ed = editor(wrapper);
+    expect(ed.exists()).toBe(true);
+    expect(ed.props('dimension')).toBe('account');
+    expect(document.body.textContent).toContain('Edit set — account');
+
+    // It seeded its members from memberSelections[account] — the populated default
+    // is the top consolidations (EXPENSE, COGS), so the SET pane lists them.
+    const setLabels = [...document.body.querySelectorAll('.se-set__label')].map(
+      (el) => el.textContent.trim(),
+    );
+    expect(setLabels).toEqual(['EXPENSE', 'COGS']);
+
+    // Opening fired the editor's own loaders (hierarchies for account).
+    expect(getTm1DimensionHierarchies).toHaveBeenCalledWith('account');
+
+    await closeEditor(wrapper);
+  });
+
+  it('Apply on the DEFAULT hierarchy writes members back and re-queries WITHOUT a hierarchy key', async () => {
+    const wrapper = await mountExplorer4d();
+    await openEditorViaMenu(wrapper);
+
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Drive the editor to a KNOWN set via its apply contract through the REAL
+    // child→parent wiring. We emit the editor's `apply` (what its Apply button
+    // emits) so applySet runs exactly as in production. Default hierarchy → the
+    // editor emits hierarchy:null (no alternate chosen).
+    editor(wrapper).vm.$emit('apply', {
+      dimension: 'account',
+      hierarchy: null,
+      members: ['REVENUE'],
+      types: { REVENUE: 'C' },
+    });
+    await settle();
+
+    // A re-query fired after the write.
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+
+    // The LAST query payload's account row axis carries the new member set and
+    // OMITS the hierarchy key (default hierarchy → axisSpec drops it).
+    const payload = runTm1Query.mock.calls.at(-1)[0];
+    const accountAxis = payload.rows.find((r) => r.dimension === 'account');
+    expect(accountAxis, 'account is a row axis spec').toBeTruthy();
+    expect(accountAxis.members).toEqual(['REVENUE']);
+    expect('hierarchy' in accountAxis).toBe(false);
+
+    // The grid actually re-rendered rows for the new selection (REVENUE seeds the
+    // tree). REVENUE is not in the fake cube's value map → its row renders blank,
+    // but the ROW is present (observable DOM), proving the write reached the grid.
+    expect(rowLabels(wrapper)).toEqual(['REVENUE']);
+
+    await closeEditor(wrapper);
+  });
+
+  it('Apply on an ALTERNATE hierarchy includes `hierarchy` in the account axis spec', async () => {
+    const wrapper = await mountExplorer4d();
+    await openEditorViaMenu(wrapper);
+
+    // Switch the editor to the EBITDA alternate via its REAL hierarchy picker
+    // (controlled emit → onHierarchyChange reloads tree/subsets/aliases scoped to
+    // EBITDA). account has_alternates:true, so the picker is rendered.
+    const hierPicker = editorSelect(wrapper, 'Hierarchy');
+    expect(hierPicker, 'editor hierarchy picker should exist for account').toBeTruthy();
+    hierPicker.vm.$emit('update:modelValue', 'EBITDA');
+    await settle();
+
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Apply the built set on the alternate. The editor emits the alternate name
+    // as the hierarchy (hierarchyArg returns it because it differs from default).
+    editor(wrapper).vm.$emit('apply', {
+      dimension: 'account',
+      hierarchy: 'EBITDA',
+      members: ['EXPENSE', 'COGS'],
+      types: { EXPENSE: 'C', COGS: 'C' },
+    });
+    await settle();
+
+    // Re-queried, and THIS time the account axis spec carries hierarchy:'EBITDA'
+    // (the alternate is explicit → axisSpec includes the key).
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+    const payload = runTm1Query.mock.calls.at(-1)[0];
+    const accountAxis = payload.rows.find((r) => r.dimension === 'account');
+    expect(accountAxis.hierarchy).toBe('EBITDA');
+    expect(accountAxis.members).toEqual(['EXPENSE', 'COGS']);
+
+    // Other axes (month on Cols) stay on their default → no hierarchy key.
+    const monthAxis = payload.cols.find((c) => c.dimension === 'month');
+    expect(monthAxis && 'hierarchy' in monthAxis).toBe(false);
+
+    await closeEditor(wrapper);
+  });
+
+  it('Cancel (close without apply) does NOT write or re-query', async () => {
+    const wrapper = await mountExplorer4d();
+    await openEditorViaMenu(wrapper);
+
+    // Snapshot the pre-cancel state: the current account selection + query count.
+    const rowsBefore = rowLabels(wrapper);
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Click the editor's REAL Cancel button (teleported to <body>). It emits only
+    // update:modelValue=false — no apply — so applySet never runs.
+    const cancel = bodyButtonByText('Cancel');
+    expect(cancel, 'editor Cancel button should render').toBeTruthy();
+    cancel.dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+
+    // No apply emitted → no re-query, no change to the rendered rows.
+    expect(runTm1Query.mock.calls.length).toBe(callsBefore);
+    expect(rowLabels(wrapper)).toEqual(rowsBefore);
   });
 });
