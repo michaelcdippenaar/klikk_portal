@@ -131,6 +131,19 @@ export async function getTm1DimensionElements(dimension) {
   return resp.data;
 }
 
+// GET /tm1/dimension-children/?dimension=NAME&parent=ELEMENT -> the immediate
+// children of a consolidation, e.g. dimension=account&parent=All_Account ->
+// [{name:'EXPENSE',type}, {name:'ASSET',type}, …]. Used to (a) seed a populated
+// default for Rows/Cols dims (children of the top element, not the grand total)
+// and (b) drill a consolidation member down to its children in the rendered pivot.
+export async function getTm1DimensionChildren(dimension, parent) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_CHILDREN, {
+    params: { dimension, parent },
+  });
+  return resp.data;
+}
+
 // POST /tm1/query/ — body { cube, rows, cols, filters, suppress } -> pivot cellset.
 // A TM1 query can be slow on a wide slice; give it a generous timeout.
 export async function runTm1Query(payload) {

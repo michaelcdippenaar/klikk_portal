@@ -68,6 +68,7 @@ export const API_ENDPOINTS = {
   PA_TM1_CUBES: '/api/planning-analytics/tm1/cubes/',
   PA_TM1_CUBE_DIMENSIONS: '/api/planning-analytics/tm1/cube-dimensions/',
   PA_TM1_DIMENSION_ELEMENTS: '/api/planning-analytics/tm1/dimension-elements/',
+  PA_TM1_DIMENSION_CHILDREN: '/api/planning-analytics/tm1/dimension-children/',
   PA_TM1_QUERY: '/api/planning-analytics/tm1/query/',
   PA_COST_CUT: '/api/planning-analytics/cost-cut/',
   PA_COST_BEHAVIOUR: '/api/planning-analytics/cost-behaviour/',
