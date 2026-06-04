@@ -340,7 +340,7 @@
 
       <template v-else-if="result">
         <EmptyState
-          v-if="!gridRows.length"
+          v-if="!displayRows.length"
           icon="∅"
           title="No data"
           body="The query returned no rows. Try a different member, or turn off Suppress zeros."
@@ -352,16 +352,17 @@
         >
           <table
             class="pivot-grid"
-            :aria-label="`${cube} pivot — ${gridRows.length} rows by ${colHeaders.length} columns`"
+            :aria-label="`${cube} pivot — ${displayRows.length} rows by ${displayColHeaders.length} columns`"
           >
-            <caption v-if="rowDims.length > 1" class="pivot-grid__caption">
-              Drill is available with a single Rows dimension.
-            </caption>
             <thead>
               <tr>
+                <!-- The frozen row-header band shows one segment per row dim; the
+                     corner spans the whole band and labels it (e.g. "year /
+                     entity / account"). Drill twisties live on the INNERMOST
+                     (last) segment of each row's header below. -->
                 <th class="pivot-grid__corner" scope="col">{{ rowAxisLabel }}</th>
                 <th
-                  v-for="(col, ci) in colHeaders"
+                  v-for="(col, ci) in displayColHeaders"
                   :key="`col-${ci}`"
                   class="pivot-grid__col-head pivot-num"
                   scope="col"
@@ -376,7 +377,7 @@
 
             <tbody>
               <tr
-                v-for="row in gridRows"
+                v-for="row in displayRows"
                 :key="row.key"
                 class="pivot-grid__row"
                 :class="{ 'pivot-grid__row--consol': row.drillable }"
@@ -387,50 +388,62 @@
                   :class="{ 'pivot-grid__row-head--consol': row.drillable }"
                   scope="row"
                 >
-                  <span
-                    class="pivot-grid__row-head-inner"
-                    :style="{ '--row-indent': `${row.level * INDENT_PX}px` }"
-                  >
-                    <button
-                      v-if="row.drillable"
-                      type="button"
-                      class="pivot-grid__twisty"
-                      :class="{ 'pivot-grid__twisty--busy': drilling === row.drillKey }"
-                      :disabled="drilling === row.drillKey"
-                      :aria-expanded="row.expanded"
-                      :aria-label="`${row.expanded ? 'Collapse' : 'Expand'} ${row.label}`"
-                      @click="toggleRow(row)"
+                  <!-- One segment per row dim, laid horizontally inside the single
+                       frozen header column (keeps the sticky-left pane intact —
+                       no cumulative multi-column offsets). Outer dims are plain
+                       labels; the innermost segment carries the twisty + indent
+                       and is the drill affordance. -->
+                  <span class="pivot-grid__row-head-band">
+                    <span
+                      v-for="hcell in row.headerCells"
+                      :key="hcell.key"
+                      class="pivot-grid__row-seg"
+                      :class="{ 'pivot-grid__row-seg--inner': hcell.isInner }"
+                      :style="hcell.isInner ? { '--row-indent': `${hcell.level * INDENT_PX}px` } : null"
                     >
-                      <KSpinner v-if="drilling === row.drillKey" size="xs" tone="muted" />
-                      <svg
-                        v-else
-                        class="pivot-grid__twisty-icon"
-                        :class="{ 'pivot-grid__twisty-icon--open': row.expanded }"
-                        width="10"
-                        height="10"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <polyline points="9 6 15 12 9 18" />
-                      </svg>
-                    </button>
-                    <span v-else class="pivot-grid__twisty-spacer" aria-hidden="true" />
-                    <span class="pivot-grid__row-label" :title="row.label">{{ row.label }}</span>
+                      <template v-if="hcell.isInner">
+                        <button
+                          v-if="hcell.drillable"
+                          type="button"
+                          class="pivot-grid__twisty"
+                          :class="{ 'pivot-grid__twisty--busy': drilling === hcell.drillKey }"
+                          :disabled="drilling === hcell.drillKey"
+                          :aria-expanded="hcell.expanded"
+                          :aria-label="`${hcell.expanded ? 'Collapse' : 'Expand'} ${hcell.label}`"
+                          @click="toggleRow(row)"
+                        >
+                          <KSpinner v-if="drilling === hcell.drillKey" size="xs" tone="muted" />
+                          <svg
+                            v-else
+                            class="pivot-grid__twisty-icon"
+                            :class="{ 'pivot-grid__twisty-icon--open': hcell.expanded }"
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="3"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <polyline points="9 6 15 12 9 18" />
+                          </svg>
+                        </button>
+                        <span v-else class="pivot-grid__twisty-spacer" aria-hidden="true" />
+                      </template>
+                      <span class="pivot-grid__row-label" :title="hcell.label">{{ hcell.label }}</span>
+                    </span>
                   </span>
                 </th>
 
                 <td
-                  v-for="(cell, ci) in row.cells"
+                  v-for="ci in displayColIndices"
                   :key="`c-${row.key}-${ci}`"
                   class="pivot-grid__cell pivot-num"
-                  :class="cellClass(cell)"
+                  :class="cellClass(row.cells[ci])"
                 >
-                  {{ formatCell(cell) }}
+                  {{ formatCell(row.cells[ci]) }}
                 </td>
 
                 <td
@@ -468,7 +481,7 @@
       <!-- ════════════════════════════════════════════════════════════════════
            Footer — grid size + Show MDX disclosure (kept).
            ═════════════════════════════════════════════════════════════════ -->
-      <div v-if="cube && result && gridRows.length" class="pivot-footer">
+      <div v-if="cube && result && displayRows.length" class="pivot-footer">
         <span v-if="gridSizeLabel" class="pivot-footer__size">{{ gridSizeLabel }}</span>
 
         <button
@@ -885,11 +898,22 @@ const canRun = computed(() => rowDims.value.length > 0 && colDims.value.length >
 // Swap is meaningful only with exactly one dim on each axis (v1 single-dim axes).
 const canSwap = computed(() => rowDims.value.length === 1 && colDims.value.length === 1);
 
-// The single dimension whose members head the rows — drives the drill tree.
-// Drill is a single-row-dimension affordance.
-const primaryRowDim = computed(() =>
-  rowDims.value.length === 1 ? rowDims.value[0] : null,
+// The INNERMOST (last) row dimension — the drill target. TM1/PAW subset-drill
+// semantics: with rows = year × entity × account, the crossjoin varies the
+// innermost dim (account) fastest, so expanding a consolidation expands ITS
+// members for that dimension and the crossjoin with the outer dims produces the
+// rows. The drill tree (rowNodes/rowOrder) holds the innermost dim's MEMBER SET;
+// the query crossjoins the outer dims × that set automatically. Exists whenever
+// there is at least one row dim (single-row-dim is the degenerate case: no outer
+// dims, the tree IS the rows).
+const innerRowDim = computed(() =>
+  rowDims.value.length ? rowDims.value[rowDims.value.length - 1] : null,
 );
+
+// The OUTER row dimensions — every row dim except the innermost, in axis order.
+// These fan the crossjoin (one block of the inner tree per outer tuple); drill
+// is UNIFORM across them (expanding the inner dim applies to every outer tuple).
+const outerRowDims = computed(() => rowDims.value.slice(0, -1));
 
 // The corner-cell label (row-axis dimension name(s)).
 const rowAxisLabel = computed(() => rowDims.value.join(' / ') || 'Rows');
@@ -912,46 +936,41 @@ const pivot = computed(() =>
 
 const colHeaders = computed(() => pivot.value.colHeaders);
 
-// Cell lookup, duplicate-safe. The query is sent per member tuple in rowOrder
-// order, and the backend returns one row per requested tuple. A member can
-// legitimately appear MORE THAN ONCE in rowOrder (the same leaf under two
-// expanded consolidations — overlapping rollups), so a plain name→row map would
-// collide and hand the wrong cells to the 2nd occurrence. Instead we key by the
-// full member TUPLE and bucket every matching backend row into a QUEUE; each
-// rendered node dequeues the next row for its tuple (first occurrence gets the
-// first returned row, second gets the second, …). `suppress` dropping an empty
-// row simply leaves that tuple's queue short → the node renders blank cells,
-// which is correct. Lookup is reset each render pass (see takeBackendRow).
+// Duplicate-safe row assembly is handled by GROUPING the backend rows by their
+// OUTER tuple (the row tuple minus its innermost member) and walking each group
+// positionally against the inner tree's visible order (rowOrder). A member can
+// legitimately appear MORE THAN ONCE within a group (the same inner leaf under
+// two expanded consolidations — overlapping rollups); positional de-queue inside
+// the group hands each occurrence its OWN backend row, in request order. A
+// suppressed inner tuple simply leaves the group short → that node renders blank.
+// tupleKey joins members with a NUL separator that cannot occur in a TM1 name.
 const TUPLE_SEP = '\u0000'; // NUL — cannot occur inside a TM1 member name.
 
 function tupleKey(members) {
   return (members || []).join(TUPLE_SEP);
 }
 
-const rowQueuesByTuple = computed(() => {
-  const map = new Map();
-  for (const r of pivot.value.rows) {
-    const key = tupleKey(r.members);
-    const q = map.get(key);
-    if (q) q.push(r);
-    else map.set(key, [r]);
-  }
-  return map;
-});
-
-// THE RENDERED GRID ROWS. When we have a single row dimension we render the
-// expansion tree (indented, drillable). For multi-dim rows we render the flat
-// backend tuples (no drill — drill is single-dim). Each row carries: key,
-// label, level, drillable, expanded, drillKey, path, cells, rowTotal.
+// THE RENDERED GRID ROWS (pre-suppression). The drill tree always owns the
+// INNERMOST row dim's member set; the rendered rows are the crossjoin of the
+// OUTER row dims × that inner tree, in TM1/PAW order (outer dims slowest, inner
+// dim fastest). Each row carries: key, headerCells (one per row dim, the inner
+// one drillable), label, level, drillable, expanded, drillKey, path, cells,
+// rowTotal. Drill (twisty) lives on the inner-dim header cell — expanding it
+// augments the inner member set and re-queries; the crossjoin handles the outer
+// tuples. Single-row-dim is the degenerate case (no outer dims → one block).
 const gridRows = computed(() => {
-  const dim = primaryRowDim.value;
+  const dim = innerRowDim.value;
 
-  // Multi-dim (or no-tree) fallback: render the backend rows flat.
+  // No tree yet (cube still seeding, or no row dim) → render whatever backend
+  // rows exist flat, with one header cell per tuple member (no drill).
   if (!dim || !rowOrder.value.length) {
     return pivot.value.rows.map((r, i) => {
       const { sum, has } = sumCells(r.cells);
       return {
         key: `flat-${i}`,
+        headerCells: (r.members.length ? r.members : [`Row ${i + 1}`]).map(
+          (m, hi) => ({ label: m, level: 0, drillable: false, isInner: false, key: `h-${i}-${hi}` }),
+        ),
         label: r.members.join(' / ') || `Row ${i + 1}`,
         level: 0,
         drillable: false,
@@ -964,46 +983,100 @@ const gridRows = computed(() => {
     });
   }
 
-  // Single-dim: walk the ordered expansion tree by PATH, resolving each node's
-  // cells from the tuple-queue so duplicate members (same leaf under two
-  // expanded rollups) each pull their OWN backend row. Cursors track how many
-  // of each tuple we've consumed within this render pass.
-  const queues = rowQueuesByTuple.value;
-  const cursors = new Map();
-  const takeBackendRow = (members) => {
-    const key = tupleKey(members);
-    const q = queues.get(key);
-    if (!q || !q.length) return null;
-    const at = cursors.get(key) || 0;
-    cursors.set(key, at + 1);
-    return q[at] || null; // out of rows for this tuple → blank (e.g. suppressed)
-  };
+  // The visible inner-dim sequence (tree order; duplicates preserved for
+  // overlapping rollups). Every outer tuple repeats THIS sequence.
+  const innerPaths = rowOrder.value;
 
-  return rowOrder.value.map((path) => {
-    const node = rowNodes[path] || {
-      member: path,
-      path,
-      level: 0,
-      expanded: false,
-    };
-    const member = node.member ?? path;
-    // Single row dimension → the cell tuple is just this node's member.
-    const backendRow = takeBackendRow([member]);
-    const cells = backendRow ? backendRow.cells : [];
-    const { sum, has } = sumCells(cells);
-    const drillable = isConsolidation(memberType(dim, member));
-    return {
-      key: path,
-      label: member,
-      level: node.level || 0,
-      drillable,
-      expanded: !!node.expanded,
-      drillKey: drillable ? path : null,
-      path,
-      cells,
-      rowTotal: has ? sum : null,
-    };
+  // Group the backend rows by OUTER tuple (the tuple minus its last/inner
+  // member), preserving first-appearance order. Suppression (the server-side
+  // NON EMPTY that's always on the MDX) may drop inner tuples, so we read the
+  // groups from what the backend actually returned rather than recomputing the
+  // cartesian product on the client. WITHIN a group we bucket rows into a QUEUE
+  // keyed by the inner MEMBER name (not by raw position), then de-queue per inner
+  // path's member: this is robust to a dropped inner tuple (its queue is empty →
+  // that node renders blank) AND hands each occurrence of a duplicate inner
+  // member (overlapping rollups — the same leaf under two expanded parents) its
+  // OWN backend row in request order. This mirrors the proven single-dim tuple-
+  // queue de-queue, generalised across the outer crossjoin fan.
+  const outerCount = outerRowDims.value.length;
+  const groupsOrder = []; // outer-tuple keys, first-seen order
+  const groups = new Map(); // outerKey -> { outerTuple, queues:Map<member,row[]> }
+  for (const r of pivot.value.rows) {
+    const outerTuple = outerCount ? r.members.slice(0, outerCount) : [];
+    const outerKey = tupleKey(outerTuple);
+    let bucket = groups.get(outerKey);
+    if (!bucket) {
+      bucket = { outerTuple, queues: new Map() };
+      groups.set(outerKey, bucket);
+      groupsOrder.push(outerKey);
+    }
+    const innerMember = r.members.length ? r.members[r.members.length - 1] : '';
+    const q = bucket.queues.get(innerMember);
+    if (q) q.push(r);
+    else bucket.queues.set(innerMember, [r]);
+  }
+  // Single row dim → exactly one (empty-outer) group so the tree drives the rows
+  // even before the first response settles.
+  if (!groupsOrder.length) {
+    groupsOrder.push('');
+    groups.set('', { outerTuple: [], queues: new Map() });
+  }
+
+  const out = [];
+  groupsOrder.forEach((outerKey, gi) => {
+    const { outerTuple, queues } = groups.get(outerKey);
+    // Per-group cursors track how many rows of each inner member we've consumed
+    // this render pass, so duplicate inner members de-queue in request order.
+    const cursors = new Map();
+    // Walk this group's inner tree in order. A missing/short queue → blank cells.
+    innerPaths.forEach((path, j) => {
+      const node = rowNodes[path] || { member: path, path, level: 0, expanded: false };
+      const member = node.member ?? path;
+      const q = queues.get(member);
+      const at = cursors.get(member) || 0;
+      const backendRow = q && q.length ? q[at] || null : null;
+      if (q) cursors.set(member, at + 1);
+      const cells = backendRow ? backendRow.cells : [];
+      const { sum, has } = sumCells(cells);
+      const drillable = isConsolidation(memberType(dim, member));
+      // Header cells: one per row dim. Outer dims show their tuple member (no
+      // twisty); the inner dim shows this tree node (drillable + indented).
+      const headerCells = [
+        ...outerTuple.map((om, oi) => ({
+          label: om,
+          level: 0,
+          drillable: false,
+          isInner: false,
+          key: `o-${gi}-${oi}`,
+        })),
+        {
+          label: member,
+          level: node.level || 0,
+          drillable,
+          expanded: !!node.expanded,
+          drillKey: drillable ? path : null,
+          isInner: true,
+          key: `i-${gi}-${path}`,
+        },
+      ];
+      out.push({
+        // Unique per (outer-group index, inner occurrence index) — never collides
+        // even with overlapping rollups (same path under two parents) because the
+        // group index + the positional index j disambiguate.
+        key: `g${gi}::${path}::${j}`,
+        headerCells,
+        label: member,
+        level: node.level || 0,
+        drillable,
+        expanded: !!node.expanded,
+        drillKey: drillable ? path : null,
+        path,
+        cells,
+        rowTotal: has ? sum : null,
+      });
+    });
   });
+  return out;
 });
 
 function sumCells(cells) {
@@ -1019,39 +1092,106 @@ function sumCells(cells) {
   return { sum, has };
 }
 
-// Rows that contribute to a column / grand total: ONE level only. TM1 returns a
-// consolidation's rolled-up value on the consolidation's own row, so summing an
-// EXPANDED parent AND its children double-counts (EXPENSE 100 + Rent 60 +
-// Salaries 40 = 200). An expanded parent is represented by its children in the
-// grid, so we EXCLUDE it; a collapsed consolidation correctly contributes its
-// own rolled value; leaves always contribute. Net: sum rows that are NOT
-// currently expanded.
+// ── PAW-style "Suppress Zeroes" (the client suppression layer) ───────────────
+// NON EMPTY (server-side, always on the MDX) only drops EMPTY (null) tuples, but
+// the cube has STORED 0.00 values that NON EMPTY KEEPS — so all-zero rows/cells
+// survive. PAW's "Suppress Zeroes" additionally drops anything that is zero OR
+// empty. When the toggle is ON we layer that on top of NON EMPTY: a cell counts
+// as suppressible when it is null/empty OR rounds to zero (|value| < EPS); a row
+// is dropped when EVERY data cell is suppressible; a column is dropped when EVERY
+// surviving row is suppressible at that column. Totals then recompute over the
+// SURVIVING rows/cols only. This is a VIEW filter over gridRows — the drill tree
+// (rowNodes/rowOrder) is untouched, so expand/collapse still work and re-query
+// re-suppresses. When the toggle is OFF nothing is dropped (current behaviour).
+const ZERO_EPS = 0.005; // rounds-to-zero at 2dp (matches the 2dp cell formatter).
+
+function isCellZeroish(cell) {
+  if (cell == null) return true;
+  const n = cellNumber(cell);
+  if (n == null) {
+    // Non-numeric: blank/empty is zeroish; a real string member value is not.
+    const v = cell.value;
+    if (v === null || v === undefined || v === '') return true;
+    const f = cell.formatted;
+    return !(f && String(f).trim()) && !(typeof v === 'string' && v.trim());
+  }
+  return Math.abs(n) < ZERO_EPS;
+}
+
+// The display set: rows + the surviving column indices, after suppression. When
+// suppress is OFF this is the identity (all rows, every column index).
+const suppressed = computed(() => {
+  const allRows = gridRows.value;
+  const colCount = colHeaders.value.length;
+  const allColIndices = Array.from({ length: colCount }, (_, i) => i);
+  if (!suppressEmpty.value) {
+    return { rows: allRows, colIndices: allColIndices };
+  }
+  // 1) Drop rows whose every data cell is zero/empty. Two rows are KEPT
+  //    regardless: a row with NO cells yet (pre-response structural row, nothing
+  //    to suppress), and an EXPANDED consolidation — it is a structural rollup
+  //    whose (possibly non-zero) children are shown beneath it, so dropping it
+  //    would orphan those children and strip the collapse twisty. PAW keeps the
+  //    expanded parent and suppresses its zero CHILDREN individually; a COLLAPSED
+  //    all-zero consolidation (its rolled value is the row) is dropped.
+  const rows = allRows.filter((r) => {
+    if (r.drillable && r.expanded) return true;
+    const cells = r.cells || [];
+    if (!cells.length) return true;
+    return cells.some((c) => !isCellZeroish(c));
+  });
+  // 2) Drop columns where every SURVIVING row is zero/empty at that index.
+  const colIndices = allColIndices.filter((ci) =>
+    rows.some((r) => !isCellZeroish(r.cells?.[ci])),
+  );
+  return { rows, colIndices };
+});
+
+// The rows actually rendered (post-suppression when the toggle is on).
+const displayRows = computed(() => suppressed.value.rows);
+// The surviving column indices (drives header + cell + total column selection).
+const displayColIndices = computed(() => suppressed.value.colIndices);
+// The column headers actually rendered, in surviving order.
+const displayColHeaders = computed(() =>
+  displayColIndices.value.map((ci) => colHeaders.value[ci]),
+);
+
+// Rows that contribute to a column / grand total: ONE level only, over the
+// SURVIVING rows. TM1 returns a consolidation's rolled-up value on the
+// consolidation's own row, so summing an EXPANDED parent AND its children
+// double-counts (EXPENSE 100 + Rent 60 + Salaries 40 = 200). An expanded parent
+// is represented by its children in the grid, so we EXCLUDE it; a collapsed
+// consolidation correctly contributes its own rolled value; leaves always
+// contribute. Net: sum surviving rows that are NOT currently expanded.
 //   After expanding EXPENSE: column total = Rent + Salaries + (every OTHER top
 //   row) — and crucially NOT EXPENSE itself. The per-row rowTotal is unaffected.
-const totalRows = computed(() => gridRows.value.filter((r) => !r.expanded));
+const totalRows = computed(() => displayRows.value.filter((r) => !r.expanded));
 
-// Column totals (one per column header) + grand total, over the one-level set.
+// Column totals (one per SURVIVING column) + grand total, over the one-level set.
+// Indexed by the surviving column indices so a suppressed column contributes
+// nothing and the footer aligns with the rendered header band.
 const colTotals = computed(() => {
-  const count = colHeaders.value.length;
-  const totals = Array.from({ length: count }, () => ({ sum: 0, has: false }));
+  const cols = displayColIndices.value;
+  const totals = cols.map(() => ({ sum: 0, has: false }));
   for (const row of totalRows.value) {
-    for (let ci = 0; ci < count; ci += 1) {
+    cols.forEach((ci, k) => {
       const n = cellNumber(row.cells[ci]);
       if (n != null) {
-        totals[ci].sum += n;
-        totals[ci].has = true;
+        totals[k].sum += n;
+        totals[k].has = true;
       }
-    }
+    });
   }
   return totals.map((t) => (t.has ? t.sum : null));
 });
 
 const grandTotal = computed(() => {
+  const cols = displayColIndices.value;
   let sum = 0;
   let has = false;
   for (const row of totalRows.value) {
-    for (const cell of row.cells) {
-      const n = cellNumber(cell);
+    for (const ci of cols) {
+      const n = cellNumber(row.cells[ci]);
       if (n != null) {
         sum += n;
         has = true;
@@ -1066,11 +1206,11 @@ const hasExpansions = computed(() =>
   Object.values(rowNodes).some((n) => n.expanded),
 );
 
-// "6 rows × 12 cols" badge.
+// "6 rows × 12 cols" badge — counts the RENDERED (post-suppression) grid.
 const gridSizeLabel = computed(() => {
   if (!result.value) return '';
-  const r = gridRows.value.length;
-  const c = colHeaders.value.length;
+  const r = displayRows.value.length;
+  const c = displayColHeaders.value.length;
   if (!r && !c) return '';
   return `${r} ${r === 1 ? 'row' : 'rows'} × ${c} ${c === 1 ? 'col' : 'cols'}`;
 });
@@ -1209,9 +1349,11 @@ async function seedPopulatedDefault(dim) {
       memberSelections[dim] = members;
       defaultMembers[dim] = members.slice();
       mergePickerOptions(dim, children);
-      // Seed the row expansion tree for the primary row dim so the rendered
-      // hierarchy starts at these top-level rollups (level 0, collapsed).
-      if (assignments[dim] === 'rows' && rowDims.value.length === 1) {
+      // Seed the row expansion tree for the INNERMOST row dim so the rendered
+      // hierarchy starts at these top-level rollups (level 0, collapsed). The
+      // tree always owns the innermost dim's member set; outer row dims fan the
+      // crossjoin and don't get a tree of their own.
+      if (dim === innerRowDim.value) {
         initRowTree(dim, members);
       }
       return;
@@ -1225,7 +1367,7 @@ async function seedPopulatedDefault(dim) {
   // Fallback: top element is a leaf (or children unavailable) → single-top.
   memberSelections[dim] = [top];
   defaultMembers[dim] = [top];
-  if (assignments[dim] === 'rows' && rowDims.value.length === 1) {
+  if (dim === innerRowDim.value) {
     initRowTree(dim, [top]);
   }
 }
@@ -1576,7 +1718,8 @@ async function ensureSeeded(dim) {
 const drilling = ref(''); // member currently being fetched (shows a spinner).
 
 function toggleRow(row) {
-  const dim = primaryRowDim.value;
+  // Drill always targets the INNERMOST row dim (its member set is the tree).
+  const dim = innerRowDim.value;
   if (!dim || !row.drillable || !row.path || drilling.value) return;
   if (row.expanded) collapseRow(dim, row.path);
   else expandRow(dim, row.path);
@@ -1584,11 +1727,11 @@ function toggleRow(row) {
 
 // Collapse every expansion back to the populated default rollups and re-run.
 async function resetToDefault() {
-  const dim = primaryRowDim.value;
+  const dim = innerRowDim.value;
   if (dim && defaultMembers[dim]?.length) {
     initRowTree(dim, defaultMembers[dim].slice());
   }
-  // Restore any non-primary row/col dims to their defaults too.
+  // Restore any OTHER row/col dims (outer row dims + cols) to their defaults too.
   for (const d of [...rowDims.value, ...colDims.value]) {
     if (d === dim) continue;
     if (defaultMembers[d]?.length) memberSelections[d] = defaultMembers[d].slice();
@@ -1732,16 +1875,17 @@ async function applySet({ dimension, hierarchy, members, types }) {
 
   // Reset the drill tree so no node retains children fetched under the PRIOR
   // hierarchy (P1-C: a cached re-expand would otherwise replay stale-hierarchy
-  // children). When the applied dim is the single Rows dimension we re-seed the
-  // tree to its new top-level members (collapsed). When it's a Rows dim in a
-  // multi-dim layout (no drill tree rendered) we still WIPE any lingering nodes
-  // so a later return to single-row-dim can't surface stale-hierarchy children.
+  // children). The tree owns the INNERMOST row dim's member set: when the applied
+  // dim IS the innermost row dim, re-seed the tree to its new top-level members
+  // (collapsed). When an OUTER row dim's hierarchy changed, re-seed the inner
+  // tree from its (unchanged) members so any stale nodes are dropped while the
+  // inner drill state resets cleanly alongside the new outer fan.
   if (assignments[dimension] === 'rows') {
-    if (rowDims.value.length === 1) {
+    if (dimension === innerRowDim.value) {
       initRowTree(dimension, next);
     } else if (hierarchyChanged) {
-      for (const k of Object.keys(rowNodes)) delete rowNodes[k];
-      rowOrder.value = [];
+      const inner = innerRowDim.value;
+      if (inner) initRowTree(inner, (memberSelections[inner] || []).slice());
     }
   }
 
@@ -1755,23 +1899,36 @@ const numberFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
 });
 
-// Render a normalised cell { value, formatted }. Prefer the backend's formatted
-// string; else thousands-format the numeric; blank for null / empty / 0.
+// Render a normalised cell { value, formatted }. Blank for null / empty always.
+// ZERO is suppress-aware (PAW parity): under Suppress Zeroes ON, a zeroish cell
+// renders BLANK (PAW shows blanks, not 0.00); with suppress OFF, zero stays
+// VISIBLE (the cube's stored 0.00). When showing a value we prefer the backend's
+// formatted string verbatim, else thousands-format the numeric.
 function formatCell(cell) {
   if (cell == null) return '';
+  // Suppress ON → blank any zeroish cell (incl. a backend-formatted "0.00"),
+  // BEFORE preferring the formatted string (else "0.00" would leak through).
+  if (suppressEmpty.value && isCellZeroish(cell)) return '';
   if (cell.formatted != null && cell.formatted !== '') return cell.formatted;
   const v = cell.value;
   if (v === null || v === undefined || v === '') return '';
   const n = Number(v);
-  if (Number.isFinite(n)) return n === 0 ? '' : numberFormatter.format(n);
+  if (Number.isFinite(n)) {
+    // Suppress OFF → zero is visible; suppress ON never reaches here for a zero
+    // (handled above).
+    if (n === 0 && suppressEmpty.value) return '';
+    return numberFormatter.format(n);
+  }
   return String(v); // non-numeric cell (string member) — show as-is.
 }
 
-// Format a raw numeric total (column/row/grand). Blank for null / 0.
+// Format a raw numeric total (column/row/grand). Blank for null. Zero is
+// suppress-aware to match the cells: blank under suppress ON, visible when OFF.
 function formatTotal(value) {
   if (value === null || value === undefined) return '';
   const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return '';
+  if (!Number.isFinite(n)) return '';
+  if (n === 0 && suppressEmpty.value) return '';
   return numberFormatter.format(n);
 }
 
@@ -1802,6 +1959,15 @@ watch(cube, (next, prev) => {
   result.value = null;
   runError.value = '';
   loadDimensions(next);
+});
+
+// Toggling "Suppress zeros" re-runs the query so the server-side NON EMPTY flag
+// (payload.suppress) is re-applied; the client suppression layer then drops any
+// stored-zero rows/cols NON EMPTY kept. Without this the toggle changed only the
+// NEXT payload and nothing re-queried. Guarded on canRun so an unconfigured grid
+// doesn't fire an early-returning query.
+watch(suppressEmpty, () => {
+  if (canRun.value) runQuery();
 });
 
 // First load.
@@ -2265,16 +2431,6 @@ loadCubes();
   border-spacing: 0;
 }
 
-/* Multi-dim explanation — sits with the now-flat (no-drill) grid. */
-.pivot-grid__caption {
-  caption-side: top;
-  padding: 0 0 8px;
-  text-align: left;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--kdl-text-secondary);
-}
-
 .pivot-grid th,
 .pivot-grid td {
   height: 32px;
@@ -2348,15 +2504,42 @@ loadCubes();
   font-weight: 600;
 }
 
-.pivot-grid__row-head-inner {
+/* The row-header BAND: one horizontal segment per row dimension, all inside the
+   single frozen header column (so the sticky-left pane stays one column — no
+   cumulative multi-column offsets). The innermost segment flexes to fill and
+   carries the twisty + indent; outer segments are fixed-content labels with a
+   hairline divider so year | entity | account read as sub-columns. */
+.pivot-grid__row-head-band {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  min-width: 0;
+}
+
+.pivot-grid__row-seg {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 100%;
-  /* The per-level indent is a data-driven runtime value, but routed through a
-     custom property (--row-indent, set inline) rather than an inline padding —
-     the house no-inline-style-for-design-values pattern. */
-  padding: 0 14px 0 calc(14px + var(--row-indent, 0px));
+  min-width: 0;
+  padding: 0 14px;
+}
+
+/* Outer-dim segments: fixed to their content, divided by a hairline, quieter
+   than the inner (drillable) segment so the hierarchy column reads as the focus. */
+.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) {
+  flex: 0 0 auto;
+  max-width: 160px;
+  border-right: 1px solid var(--kdl-border-subtle);
+  color: var(--kdl-text-muted);
+  font-weight: 500;
+}
+
+/* Innermost-dim segment: the drill column. Flexes to fill, indents per level via
+   a data-driven custom property (set inline) rather than inline padding — the
+   house no-inline-style-for-design-values pattern. */
+.pivot-grid__row-seg--inner {
+  flex: 1 1 auto;
+  padding-left: calc(14px + var(--row-indent, 0px));
 }
 
 .pivot-grid__row-label {

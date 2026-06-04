@@ -94,6 +94,7 @@ import {
 // editor's hierarchy/subset/alias pickers teleport their dropdowns via Reka's
 // SelectPortal — driving the controlled emit is the sanctioned mount-based path).
 import KSelect from '../../klikk/KSelect.vue';
+import KToggle from '../../klikk/KToggle.vue';
 import SetEditor from '../SetEditor.vue';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -426,6 +427,65 @@ async function collapse(wrapper, label) {
   await settle();
 }
 
+// Flip the "Suppress zeros" KToggle and settle. The toggle is a Reka SwitchRoot
+// (button[role="switch"]) whose internal click does NOT fire under happy-dom —
+// the SAME limitation the suite already documents for the teleporting KMenu /
+// KPopover / KSelect primitives, all of which are driven via their controlled
+// update emit. So we mount the REAL KToggle and drive its v-model the sanctioned
+// way (the consumer's @update:modelValue handler — watch(suppressEmpty) — then
+// re-runs exactly as in production). Observable DOM (dropped cols, blanked cells,
+// re-query) is what every caller asserts. `on` is the desired new state.
+async function setSuppress(wrapper, on) {
+  const toggle = wrapper.findComponent(KToggle);
+  expect(toggle.exists(), 'the Suppress zeros toggle should be mounted').toBe(true);
+  expect(toggle.props('label')).toBe('Suppress zeros');
+  toggle.vm.$emit('update:modelValue', on);
+  await settle();
+}
+
+// ── Multi-dim row-header helpers (the INNER drill segment) ───────────────────
+// With >1 row dim the row-header band holds one segment per row dim: the OUTER
+// dims are plain labels and the INNERMOST segment (.pivot-grid__row-seg--inner)
+// carries the twisty + indent. twistyFor() above keys on the FIRST .row-label in
+// a row, which is the OUTER label under multi-dim — so these helpers target the
+// inner segment specifically.
+
+// The inner-segment label text of a body row (the drill member name).
+function innerLabelOf(tr) {
+  const seg = tr.find('.pivot-grid__row-seg--inner .pivot-grid__row-label');
+  return seg.exists() ? seg.text().trim() : null;
+}
+
+// Body rows whose INNER-segment label === member (a member repeats once per outer
+// block across the crossjoin fan).
+function rowsByInner(wrapper, member) {
+  return bodyRows(wrapper).filter((tr) => innerLabelOf(tr) === member);
+}
+
+// The twisty <button> on the INNER segment of the first row whose inner label
+// === member. undefined when that inner member is a non-drillable leaf.
+function innerTwistyFor(wrapper, member) {
+  const row = bodyRows(wrapper).find((tr) => innerLabelOf(tr) === member);
+  if (!row) return undefined;
+  const btn = row.find('.pivot-grid__row-seg--inner button.pivot-grid__twisty');
+  return btn.exists() ? btn : undefined;
+}
+
+// Expand/collapse a multi-dim INNER consolidation (clicks its inner-segment
+// twisty), then settle. Drives the real toggleRow → expand/collapse path.
+async function expandInner(wrapper, member) {
+  const t = innerTwistyFor(wrapper, member);
+  expect(t, `inner twisty for "${member}" should exist`).toBeTruthy();
+  await t.trigger('click');
+  await settle();
+}
+async function collapseInner(wrapper, member) {
+  const t = innerTwistyFor(wrapper, member);
+  expect(t, `inner twisty for "${member}" should exist`).toBeTruthy();
+  await t.trigger('click');
+  await settle();
+}
+
 // ── DRAG-AND-DROP helpers (the drag/move suites) ─────────────────────────────
 // jsdom/happy-dom cannot perform a REAL HTML5 drag — there is no native drag
 // image and no auto-populated DataTransfer. So we test the WIRING: we dispatch
@@ -525,6 +585,83 @@ async function mountExplorer4d() {
   return wrapper;
 }
 
+// ── MULTI-DIM (year × account) row drill — the crossjoin response builder ─────
+// The multi-dimension row drill puts `account` as the INNERMOST row dim and
+// `year` as the OUTER fan. For that, account must come AFTER year in the cube's
+// dimension list (rowDims preserves declaration order; innerRowDim = last). So
+// this layout declares dimensions as [year, account, month, measure]: the default
+// assignment then puts account on Rows (the only /account/ match), month on Cols,
+// year + measure on Filters — and dragging year onto Rows makes rowDims
+// [year, account] → account innermost. The default 3-dim buildQueryResponse only
+// models the single-row-dim path; here we model the REAL crossjoin the component
+// sends once year is on rows: rows=[{year, …}, {account, …}], outer-slowest.
+//
+// For each OUTER (year) member we re-walk the inner (account) member list — which
+// already arrives depth-first from the drill tree (e.g. [EXPENSE, Rent, Salaries,
+// COGS] once EXPENSE is open) — tracking the enclosing account consolidation scope
+// (reset per outer block) so every occurrence (incl. the shared "Rent" under two
+// rollups) gets ITS OWN contextual value, exactly as TM1 returns positionally.
+// Year is a pure fan (factor 1), so each year block repeats the same account
+// values — keeping the arithmetic transparent and the drill structure the focus.
+function buildMultiDimResponse(payload) {
+  const rowDims = payload.rows || [];
+  const colMembers = (payload.cols?.[0]?.members || []).slice();
+  const columns = colMembers.map((m) => [m]);
+  const colFactor = (cm) => (cm === 'Jul' ? 1 : 0);
+  const cellsFor = (scalar) =>
+    colMembers.map((cm) => ({ value: scalar * colFactor(cm), formatted: null }));
+
+  // Only the 2-row-dim (year outer × account inner) shape is modelled here.
+  if (rowDims.length !== 2) {
+    return { columns, rows: [], mdx: `SELECT FROM [${payload.cube}]` };
+  }
+  const [outer, inner] = rowDims;
+  const outerMembers = outer.members || [];
+  const innerMembers = inner.members || [];
+
+  const rows = [];
+  for (const om of outerMembers) {
+    let scope = null; // account consolidation scope, reset per outer block.
+    for (const im of innerMembers) {
+      const { value, scope: nextScope } = leafValueFor(im, scope);
+      scope = nextScope;
+      rows.push({ members: [om, im], cells: cellsFor(value) });
+    }
+  }
+  return { columns, rows, mdx: `SELECT FROM [${payload.cube}]` };
+}
+
+// Mount with account as the INNERMOST row dim by declaring [year, account,
+// month, measure] and wiring runTm1Query to the multi-dim crossjoin builder once
+// >1 row dim is requested (it falls back to the single-dim builder before the
+// year→rows drag, so the auto-open grid is identical to the 3-dim suites). Used
+// by the multi-dim drill / shared-member / a11y blocks below.
+async function mountExplorerMultiDim() {
+  installCubeMocks({ dimensions: ['year', 'account', 'month', 'measure'] });
+  runTm1Query.mockImplementation(async (payload) =>
+    (payload.rows || []).length > 1
+      ? buildMultiDimResponse(payload)
+      : buildQueryResponse(payload),
+  );
+  const wrapper = mount(PivotExplorer, { attachTo: document.body });
+  attachedWrappers.push(wrapper);
+  await settle();
+  return wrapper;
+}
+
+// Put `year` on Rows (as a SECOND row dim, account staying innermost) via the
+// proven drag WIRING — the real draggable grip + real role="group" Rows zone +
+// stubbed dataTransfer. After this rowDims === [year, account]. Returns nothing;
+// the caller asserts the resulting multi-dim grid.
+async function dragYearToRows(wrapper) {
+  const dt = makeDataTransfer('year');
+  const rowsWell = zone(wrapper, 'rows');
+  fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
+  fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
+  fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
+  await settle();
+}
+
 // KNOWN BUG containment (see report: BUG-1) — when the Set Editor opens, its
 // alias picker feeds KSelect an option { value: '' }, which Reka's <SelectItem>
 // rejects ("must have a value prop that is not an empty string"). Reka mounts the
@@ -608,6 +745,16 @@ describe('PivotExplorer — populated default', () => {
     const table = wrapper.find('table.pivot-grid');
     expect(table.exists()).toBe(true);
 
+    // REALIGNED for the suppress-zeros feature. This test's point is the MATRIX
+    // shape — two row consolidations × the column members, decisively not a 1×1
+    // grand total. The Aug column is all-zero in the fake cube (every value lands
+    // in Jul), so with Suppress zeros ON (now the default) Aug is CORRECTLY
+    // dropped — which would make a "full Jul+Aug matrix" assertion vacuous. We
+    // turn Suppress OFF here so the full two-data-column matrix is visible and the
+    // not-1×1 claim stays meaningful; column-DROP under suppress is asserted in a
+    // dedicated test below ("suppress drops all-zero COLUMNS").
+    await setSuppress(wrapper, false);
+
     // ROWS: the two top consolidations (children of All_Account), NOT one
     // grand-total row.
     const labels = rowLabels(wrapper);
@@ -623,12 +770,13 @@ describe('PivotExplorer — populated default', () => {
     expect(colHeads).toContain('Aug');
     expect(colHeads).toContain('Total');
 
-    // Each top row carries its rolled value in Jul (EXPENSE 100, COGS 40).
+    // Each top row carries its rolled value in Jul (EXPENSE 100, COGS 40). With
+    // suppress OFF the stored zero in Aug is VISIBLE as "0" (not blanked).
     const expenseRow = bodyRows(wrapper).find(
       (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
     );
     expect(cellTexts(expenseRow)[0]).toBe('100'); // Jul
-    expect(cellTexts(expenseRow)[1]).toBe(''); //    Aug (0 → blank)
+    expect(cellTexts(expenseRow)[1]).toBe('0'); //   Aug (suppress OFF → 0 shown)
   });
 });
 
@@ -759,7 +907,9 @@ describe('PivotExplorer — re-entry / double expand', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 5 — Multi-dim rows: drill caption + no twisties; single-dim: no caption + twisties
+// 5 — Single- vs multi-dim rows. BOTH cases now drill: there is NO "single Rows
+//     dimension" caption any more, and with two row dims the twisty moves onto
+//     the INNERMOST row dim's segment (the multi-dim row-drill feature).
 // ════════════════════════════════════════════════════════════════════════════
 describe('PivotExplorer — single vs multi-dim rows', () => {
   it('single Rows dim: NO drill caption, twisties present on consolidations', async () => {
@@ -771,49 +921,54 @@ describe('PivotExplorer — single vs multi-dim rows', () => {
     expect(twistyFor(wrapper, 'COGS')).toBeTruthy();
   });
 
-  it('two Rows dims: the "single Rows dimension" caption renders and twisties are absent', async () => {
-    // Use the FOUR-dim layout (account rows, month cols, year + measure filters)
-    // so we can put a SECOND dimension on Rows while a Cols dim REMAINS — moving
-    // the only Cols dim instead would empty the Columns axis (canRun → false),
-    // which now correctly clears the grid to the needs-config empty state (the
-    // P2-C fix). Adding `year` to Rows keeps month on Cols, so canRun stays true
-    // and the multi-dim caption renders over a STILL-POPULATED grid — exactly the
-    // state this test means to exercise.
-    const wrapper = await mountExplorer4d();
+  it('two Rows dims: NO caption, and a twisty IS present on the inner (account) segment', async () => {
+    // REALIGNED for the multi-dimension row-drill feature. The old behaviour was
+    // a "single Rows dimension" caption + zero twisties when >1 dim sat on Rows;
+    // the caption is now REMOVED and drill works across the crossjoin, with the
+    // twisty living on the INNERMOST row dim's segment.
+    //
+    // We use the [year, account, …] layout (mountExplorerMultiDim) so account is
+    // the innermost row dim: dragging year onto Rows yields rowDims [year, account]
+    // (declaration order; innerRowDim = last = account). month stays on Cols so
+    // canRun stays true and the grid renders over a live crossjoin, not the
+    // needs-config empty state.
+    const wrapper = await mountExplorerMultiDim();
 
     // Baseline: account on Rows, month on Cols, year a draggable Context pill.
     expect(chipMap(wrapper)).toEqual(['rows:account', 'cols:month']);
 
-    // Drag the year filter pill onto the Rows well (the proven WIRING path: real
-    // draggable token + real role="group" zone + stubbed dataTransfer). This adds
-    // year as a SECOND Rows dim — account + year on Rows, month staying on Cols.
-    const yearPill = filterToken(wrapper, 'year');
-    expect(yearPill, 'year should be a draggable Context pill').toBeTruthy();
-    const dt = makeDataTransfer('year');
-    const rowsWell = zone(wrapper, 'rows');
-    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
-    fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
-    fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
-    await settle();
+    await dragYearToRows(wrapper);
 
-    // Two Rows dims now (account + year), month still on Cols → canRun stays true,
-    // and the rows render as the flat multi-dim cartesian tuples (no drill tree).
+    // Two Rows dims now — year OUTER, account INNER — month still on Cols.
     expect(chipMap(wrapper)).toContain('rows:account');
     expect(chipMap(wrapper)).toContain('rows:year');
     expect(chipMap(wrapper)).toContain('cols:month');
 
-    // The multi-dim caption renders (rowDims.length > 1).
-    const caption = wrapper.find('caption.pivot-grid__caption');
-    expect(caption.exists()).toBe(true);
-    expect(caption.text()).toContain('single Rows dimension');
+    // The "single Rows dimension" caption is GONE (the feature removed it).
+    expect(wrapper.find('caption.pivot-grid__caption').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('single Rows dimension');
 
-    // No twisties anywhere — drill is a single-row-dimension affordance only.
-    expect(wrapper.findAll('button.pivot-grid__twisty').length).toBe(0);
+    // A twisty IS present on the INNER (account) segment — EXPENSE / COGS are the
+    // inner consolidations and each carries a drill twisty on its inner segment.
+    expect(innerTwistyFor(wrapper, 'EXPENSE'), 'inner EXPENSE twisty').toBeTruthy();
+    expect(innerTwistyFor(wrapper, 'COGS'), 'inner COGS twisty').toBeTruthy();
 
-    // canRun stayed true → the grid still rendered rows (the flat cartesian
-    // tuples), NOT the needs-config empty state — proving the multi-dim caption
-    // sits over a live grid, not over a cleared/stale one.
+    // The OUTER (year) segments are plain labels — the twisty lives on the inner
+    // segment only, never on an outer one. Assert no twisty sits inside an outer
+    // (non-inner) segment anywhere in the grid.
+    const outerTwisties = wrapper.findAll(
+      '.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) button.pivot-grid__twisty',
+    );
+    expect(outerTwisties.length, 'no twisty on an outer-dim segment').toBe(0);
+
+    // The grid rendered the crossjoin (year × account), proving the caption sits
+    // over a live grid — and the OUTER year members head the row band.
     expect(bodyRows(wrapper).length).toBeGreaterThan(0);
+    const outerLabels = bodyRows(wrapper).map((tr) =>
+      tr.find('.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) .pivot-grid__row-label').text(),
+    );
+    expect(outerLabels).toContain('FY24');
+    expect(outerLabels).toContain('FY25');
   });
 });
 
@@ -1377,11 +1532,20 @@ describe('PivotExplorer — Set Editor integration', () => {
     // child→parent wiring. We emit the editor's `apply` (what its Apply button
     // emits) so applySet runs exactly as in production. Default hierarchy → the
     // editor emits hierarchy:null (no alternate chosen).
+    //
+    // REALIGNED for the suppress-zeros feature: the old set was ['REVENUE'], a
+    // member that is NOT in the fake cube's value map → its row is all-zero, which
+    // Suppress zeros (ON by default) now correctly DROPS, so the "row present"
+    // assertion would fail for the wrong reason. We apply EXPENSE instead — a real
+    // consolidation carrying a non-zero value (rolled 100) — so the written row
+    // SURVIVES suppression and the grid genuinely re-renders it. The payload-spec
+    // assertions (members written, hierarchy key omitted on the default) are
+    // unchanged in meaning.
     editor(wrapper).vm.$emit('apply', {
       dimension: 'account',
       hierarchy: null,
-      members: ['REVENUE'],
-      types: { REVENUE: 'C' },
+      members: ['EXPENSE'],
+      types: { EXPENSE: 'C' },
     });
     await settle();
 
@@ -1393,13 +1557,17 @@ describe('PivotExplorer — Set Editor integration', () => {
     const payload = runTm1Query.mock.calls.at(-1)[0];
     const accountAxis = payload.rows.find((r) => r.dimension === 'account');
     expect(accountAxis, 'account is a row axis spec').toBeTruthy();
-    expect(accountAxis.members).toEqual(['REVENUE']);
+    expect(accountAxis.members).toEqual(['EXPENSE']);
     expect('hierarchy' in accountAxis).toBe(false);
 
-    // The grid actually re-rendered rows for the new selection (REVENUE seeds the
-    // tree). REVENUE is not in the fake cube's value map → its row renders blank,
-    // but the ROW is present (observable DOM), proving the write reached the grid.
-    expect(rowLabels(wrapper)).toEqual(['REVENUE']);
+    // The grid actually re-rendered rows for the new selection (EXPENSE seeds the
+    // tree). The row is present AND carries its rolled value (Jul 100) — surviving
+    // suppression — proving the write reached the grid as observable DOM.
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE']);
+    const expenseRow = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    expect(cellTexts(expenseRow)[0]).toBe('100');
 
     await closeEditor(wrapper);
   });
@@ -1461,5 +1629,453 @@ describe('PivotExplorer — Set Editor integration', () => {
     // No apply emitted → no re-query, no change to the rendered rows.
     expect(runTm1Query.mock.calls.length).toBe(callsBefore);
     expect(rowLabels(wrapper)).toEqual(rowsBefore);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 14 — SUPPRESS ZEROS (the client suppression layer + re-query on toggle)
+//
+// Suppress zeros is ON by default. NON EMPTY (server-side, always on the MDX)
+// only drops EMPTY (null) tuples; the cube STORES 0.00 values that NON EMPTY
+// keeps, so PAW's "Suppress Zeros" additionally drops anything zero-OR-empty:
+//   • a ROW whose every data cell is zeroish is dropped (an EXPANDED drillable
+//     parent is KEPT — its non-zero children show beneath it);
+//   • a COLUMN where every SURVIVING row is zeroish is dropped;
+//   • a surviving zero CELL renders BLANK (incl. a backend-formatted "0.00");
+//   • totals recompute over the SURVIVORS only (still excluding expanded parents);
+//   • toggling RE-QUERIES (the watch on suppressEmpty re-runs the query).
+// In the fake cube every value lands in Jul (Aug is stored 0), so Aug is the
+// canonical all-zero column and arithmetic stays transparent.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — suppress zeros', () => {
+  it('drops all-zero COLUMNS under suppress ON; keeps them under OFF', async () => {
+    const wrapper = await mountExplorer();
+
+    // Suppress ON (default): Aug is zero for EVERY row → the Aug column header AND
+    // its cells are dropped. Only Jul (+ the Total band) remains.
+    let colHeads = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim());
+    expect(colHeads).toContain('Jul');
+    expect(colHeads).not.toContain('Aug');
+
+    // Each surviving data row has exactly ONE data cell (Jul) + the per-row Total.
+    const expenseRow = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    expect(cellTexts(expenseRow)).toEqual(['100', '100']); // Jul + row Total only.
+
+    // Suppress OFF: the Aug column re-appears (a re-query brings it back), with
+    // its stored zeros now VISIBLE.
+    await setSuppress(wrapper, false);
+    colHeads = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim());
+    expect(colHeads).toContain('Jul');
+    expect(colHeads).toContain('Aug');
+    const expenseRowOff = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    expect(cellTexts(expenseRowOff)).toEqual(['100', '0', '100']); // Jul, Aug, Total.
+  });
+
+  it('drops all-zero ROWS but KEEPS an expanded all-zero parent whose children are non-zero', async () => {
+    const wrapper = await mountExplorer();
+
+    // Re-shape the backend: BOTH top consolidations' OWN rows are reported all-zero
+    // (their rolled cells are 0), while EXPENSE's CHILDREN Rent (60) + Salaries (40)
+    // stay non-zero. This is the structural case from the suppression rule: a
+    // COLLAPSED all-zero consolidation is dropped, but an EXPANDED drillable parent
+    // is KEPT even when its own row is all-zero (so its non-zero children are not
+    // orphaned and the collapse twisty survives). Fresh object per call (re-query on
+    // expand asks again). The parent's own row is forced zero; children unchanged.
+    runTm1Query.mockImplementation(async (payload) => {
+      const resp = buildQueryResponse(payload);
+      resp.rows = resp.rows.map((r) => {
+        const inner = r.members[r.members.length - 1];
+        if (inner === 'EXPENSE' || inner === 'COGS') {
+          return { members: r.members, cells: r.cells.map(() => ({ value: 0, formatted: null })) };
+        }
+        return r;
+      });
+      return resp;
+    });
+
+    // Re-query under the new shape (toggle off→on round-trip), suppress staying ON.
+    await setSuppress(wrapper, false);
+    await setSuppress(wrapper, true);
+
+    // Both top rows are COLLAPSED & all-zero → both dropped, leaving "No data".
+    expect(bodyRows(wrapper).length).toBe(0);
+    expect(wrapper.text()).toContain('No data');
+
+    // Now turn suppress OFF so EXPENSE renders (and is drillable), expand it, then
+    // turn suppress back ON: the EXPANDED EXPENSE parent must SURVIVE (its non-zero
+    // children Rent/Salaries are shown beneath it) even though its own row is zero.
+    await setSuppress(wrapper, false);
+    expect(rowLabels(wrapper)).toContain('EXPENSE');
+    await expand(wrapper, 'EXPENSE');
+    await setSuppress(wrapper, true);
+
+    const labels = rowLabels(wrapper);
+    // EXPENSE (expanded, all-zero) is KEPT; its non-zero children survive.
+    expect(labels).toContain('EXPENSE');
+    expect(labels).toContain('Rent');
+    expect(labels).toContain('Salaries');
+    // COGS (collapsed, all-zero) is still suppressed.
+    expect(labels).not.toContain('COGS');
+
+    // The kept EXPENSE parent renders BLANK in its data cell (zeroish under ON)
+    // while its children carry their values.
+    const expenseRow = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    expect(cellTexts(expenseRow)[0]).toBe(''); // parent zero → blank under suppress.
+    const rentRow = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'Rent',
+    );
+    expect(cellTexts(rentRow)[0]).toBe('60');
+  });
+
+  it('toggling suppress RE-QUERIES (runTm1Query call count increments on each toggle)', async () => {
+    const wrapper = await mountExplorer();
+
+    // One query ran on auto-open.
+    const afterLoad = runTm1Query.mock.calls.length;
+    expect(afterLoad).toBeGreaterThanOrEqual(1);
+
+    // Each toggle re-runs the query (the watch on suppressEmpty, guarded on canRun).
+    await setSuppress(wrapper, false);
+    const afterOff = runTm1Query.mock.calls.length;
+    expect(afterOff).toBe(afterLoad + 1);
+
+    await setSuppress(wrapper, true);
+    const afterOn = runTm1Query.mock.calls.length;
+    expect(afterOn).toBe(afterOff + 1);
+
+    // And the payload reflects the toggle state (suppress flag threaded through).
+    expect(runTm1Query.mock.calls.at(-1)[0].suppress).toBe(true);
+    expect(runTm1Query.mock.calls.at(-2)[0].suppress).toBe(false);
+  });
+
+  it('suppress-aware blanks: a zero cell and a backend "0.00" blank under ON, show under OFF', async () => {
+    const wrapper = await mountExplorer();
+
+    // Give EXPENSE's Aug cell a backend-FORMATTED "0.00" (value 0, formatted set)
+    // and leave COGS's Aug a plain numeric 0. Both are zeroish. Jul stays the real
+    // value so each row survives row-suppression and we can read its cells.
+    runTm1Query.mockImplementation(async (payload) => {
+      const resp = buildQueryResponse(payload);
+      const colMembers = (payload.cols?.[0]?.members || []);
+      const augIdx = colMembers.indexOf('Aug');
+      resp.rows = resp.rows.map((r) => {
+        const inner = r.members[r.members.length - 1];
+        if (inner === 'EXPENSE' && augIdx >= 0) {
+          const cells = r.cells.slice();
+          cells[augIdx] = { value: 0, formatted: '0.00' }; // backend pre-formatted zero.
+          return { members: r.members, cells };
+        }
+        return r;
+      });
+      return resp;
+    });
+
+    // Suppress OFF first → Aug column survives so we can observe the cells. The
+    // re-query under the new shape gives EXPENSE a formatted "0.00" in Aug.
+    await setSuppress(wrapper, false);
+    const augIdx = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim())
+      .indexOf('Aug');
+    expect(augIdx).toBeGreaterThanOrEqual(0);
+
+    const expenseOff = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    const cogsOff = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'COGS',
+    );
+    // Suppress OFF: the backend "0.00" is shown VERBATIM; the plain numeric 0 as "0".
+    expect(cellTexts(expenseOff)[augIdx]).toBe('0.00');
+    expect(cellTexts(cogsOff)[augIdx]).toBe('0');
+
+    // Suppress ON: the whole Aug column is now all-zero across survivors → it is
+    // DROPPED. To observe the per-cell BLANKING (independent of column-drop), give
+    // COGS a NON-zero Aug so the Aug column survives, then assert EXPENSE's
+    // formatted "0.00" cell blanks while COGS's real Aug shows.
+    runTm1Query.mockImplementation(async (payload) => {
+      const resp = buildQueryResponse(payload);
+      const colMembers = (payload.cols?.[0]?.members || []);
+      const aIdx = colMembers.indexOf('Aug');
+      resp.rows = resp.rows.map((r) => {
+        const inner = r.members[r.members.length - 1];
+        if (aIdx < 0) return r;
+        const cells = r.cells.slice();
+        if (inner === 'EXPENSE') cells[aIdx] = { value: 0, formatted: '0.00' }; // zeroish.
+        if (inner === 'COGS') cells[aIdx] = { value: 7, formatted: null }; //     non-zero.
+        return { members: r.members, cells };
+      });
+      return resp;
+    });
+
+    await setSuppress(wrapper, true);
+    const colHeadsOn = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim());
+    expect(colHeadsOn).toContain('Aug'); // COGS keeps the column alive.
+    const augOn = colHeadsOn.indexOf('Aug');
+
+    const expenseOn = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    const cogsOn = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'COGS',
+    );
+    // Suppress ON: the backend-formatted "0.00" is BLANKED (does not leak through),
+    // while the genuine non-zero Aug renders.
+    expect(cellTexts(expenseOn)[augOn]).toBe('');
+    expect(cellTexts(cogsOn)[augOn]).toBe('7');
+  });
+
+  it('totals recompute over SURVIVORS; a column drops only when ALL surviving rows are zero there', async () => {
+    const wrapper = await mountExplorer();
+
+    // Shape: EXPENSE (Jul 100, Aug 0), COGS (Jul 40, Aug 0), plus a THIRD all-zero
+    // top row ZEROACC (Jul 0, Aug 0) that suppression must drop. Totals must then
+    // be computed over the SURVIVORS only (EXPENSE + COGS), and Aug — zero across
+    // every survivor — is dropped.
+    runTm1Query.mockImplementation(async (payload) => {
+      const colMembers = (payload.cols?.[0]?.members || []);
+      const cells = (jul, aug) => colMembers.map((cm) => ({
+        value: cm === 'Jul' ? jul : cm === 'Aug' ? aug : 0,
+        formatted: null,
+      }));
+      return {
+        columns: colMembers.map((m) => [m]),
+        rows: [
+          { members: ['EXPENSE'], cells: cells(100, 0) },
+          { members: ['COGS'], cells: cells(40, 0) },
+          { members: ['ZEROACC'], cells: cells(0, 0) },
+        ],
+        mdx: 'X',
+      };
+    });
+    // Re-query under the new shape (suppress stays ON via an off→on round trip).
+    await setSuppress(wrapper, false);
+    await setSuppress(wrapper, true);
+
+    // The all-zero ZEROACC row is dropped; only EXPENSE + COGS survive.
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE', 'COGS']);
+    // Aug is zero across both survivors → dropped; Jul survives.
+    let colHeads = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim());
+    expect(colHeads).toContain('Jul');
+    expect(colHeads).not.toContain('Aug');
+    // Column + grand total are the sum of SURVIVORS only: 100 + 40 = 140 (the
+    // dropped ZEROACC contributes nothing — it would have been 0 anyway, but the
+    // point is totals run over the survivor set).
+    expect(colTotalTexts(wrapper)[0]).toBe('140');
+    expect(grandTotalText(wrapper)).toBe('140');
+
+    // Now make COGS's Aug NON-zero (5). Aug is no longer all-zero across survivors,
+    // so the column must SURVIVE — a column drops ONLY when EVERY surviving row is
+    // zero there. Totals recompute: Jul 140, Aug 5.
+    runTm1Query.mockImplementation(async (payload) => {
+      const colMembers = (payload.cols?.[0]?.members || []);
+      const cells = (jul, aug) => colMembers.map((cm) => ({
+        value: cm === 'Jul' ? jul : cm === 'Aug' ? aug : 0,
+        formatted: null,
+      }));
+      return {
+        columns: colMembers.map((m) => [m]),
+        rows: [
+          { members: ['EXPENSE'], cells: cells(100, 0) },
+          { members: ['COGS'], cells: cells(40, 5) },
+          { members: ['ZEROACC'], cells: cells(0, 0) },
+        ],
+        mdx: 'X',
+      };
+    });
+    await setSuppress(wrapper, false);
+    await setSuppress(wrapper, true);
+
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE', 'COGS']); // ZEROACC still dropped.
+    colHeads = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim());
+    expect(colHeads).toContain('Jul');
+    expect(colHeads).toContain('Aug'); // survives — COGS is non-zero there.
+    // Column totals over survivors: Jul 140, Aug 5; grand 145.
+    expect(colTotalTexts(wrapper)[0]).toBe('140'); // Jul
+    expect(colTotalTexts(wrapper)[1]).toBe('5'); //   Aug
+    expect(grandTotalText(wrapper)).toBe('145');
+  });
+
+  it('after expanding a parent, the column/grand totals still EXCLUDE it and run over survivors', async () => {
+    const wrapper = await mountExplorer();
+
+    // Suppress ON. Expand EXPENSE: its children Rent 60 + Salaries 40 show. The
+    // EXPANDED parent is excluded from totals (it is represented by its children),
+    // and survivors are summed ONE level: Rent 60 + Salaries 40 + COGS 40 = 140,
+    // NOT 240 (the parent+children double-count). Aug stays dropped (all-zero).
+    await expand(wrapper, 'EXPENSE');
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE', 'Rent', 'Salaries', 'COGS']);
+    expect(colTotalTexts(wrapper)[0]).toBe('140');
+    expect(colTotalTexts(wrapper)[0]).not.toBe('240');
+    expect(grandTotalText(wrapper)).toBe('140');
+
+    // Aug remains suppressed (no survivor is non-zero there).
+    const colHeads = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .map((th) => th.text().trim());
+    expect(colHeads).not.toContain('Aug');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 15 — MULTI-DIMENSION ROW DRILL (year OUTER × account INNER)
+//
+// With two row dims the drill targets the INNERMOST dim's member set across the
+// crossjoin: the row-header is one frozen column with one segment per row dim, the
+// twisty lives on the INNERMOST (account) segment, and the inner tree is SHARED
+// across every outer (year) block — so expanding a consolidation expands it for
+// EVERY outer tuple in one action and re-queries. These mount the [year, account,
+// month, measure] layout so account is innermost, then drag year onto Rows.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — multi-dimension row drill', () => {
+  it('expanding the inner EXPENSE expands it in EVERY outer (year) block, re-queries; collapse removes it everywhere', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper);
+
+    // Two row dims, account innermost. The crossjoin gives one inner block per
+    // year: (FY24·EXPENSE),(FY24·COGS),(FY25·EXPENSE),(FY25·COGS). All non-zero in
+    // Jul → all survive suppression. There are therefore TWO EXPENSE inner rows.
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(2);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
+
+    // The twisty is on the INNER (account) segment, on each EXPENSE row.
+    const innerExpense = innerTwistyFor(wrapper, 'EXPENSE');
+    expect(innerExpense, 'inner EXPENSE twisty').toBeTruthy();
+
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Expand EXPENSE once (click either occurrence's inner twisty). The inner tree
+    // is shared, so EXPENSE expands for BOTH year blocks in one action.
+    await expandInner(wrapper, 'EXPENSE');
+
+    // Re-queried.
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+
+    // EXPENSE's children now appear UNDER EXPENSE in EVERY year block → two Rent +
+    // two Salaries rows (one set per year). COGS stays collapsed (still two rows).
+    expect(rowsByInner(wrapper, 'Rent').length).toBe(2);
+    expect(rowsByInner(wrapper, 'Salaries').length).toBe(2);
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(2); // both parents still shown.
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2); //    collapsed in both blocks.
+
+    // Each Rent inner row carries EXPENSE/Rent = 60 (its contextual value), proving
+    // the crossjoin de-queued the inner tuples correctly per outer block.
+    rowsByInner(wrapper, 'Rent').forEach((tr) => {
+      expect(cellTexts(tr)[0]).toBe('60');
+    });
+
+    // Collapse EXPENSE → its subtree is removed from EVERY year block.
+    await collapseInner(wrapper, 'EXPENSE');
+    expect(rowsByInner(wrapper, 'Rent').length).toBe(0);
+    expect(rowsByInner(wrapper, 'Salaries').length).toBe(0);
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(2); // parents remain, collapsed.
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
+  });
+
+  it('a duplicated inner member (overlapping rollups) de-queues to its OWN cells per outer block; a backend-dropped inner tuple in one block renders blank without shifting others', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper);
+
+    // Expand BOTH inner consolidations so "Rent" appears TWICE per year block (once
+    // under EXPENSE = 60, once under COGS = 25). The shared inner tree drives both
+    // year blocks identically.
+    await expandInner(wrapper, 'EXPENSE');
+    await expandInner(wrapper, 'COGS');
+
+    // Per year block the inner order is EXPENSE, Rent(60), Salaries(40), COGS,
+    // Rent(25), Materials(15). Across two year blocks there are FOUR Rent rows.
+    const rents = rowsByInner(wrapper, 'Rent');
+    expect(rents.length).toBe(4);
+    // Their contextual values are the two distinct Rent values, repeated per block:
+    // [60, 25, 60, 25] — each occurrence de-queued to ITS OWN backend row, never a
+    // shared/leaked cell.
+    expect(rents.map((tr) => cellTexts(tr)[0])).toEqual(['60', '25', '60', '25']);
+
+    // Now DROP exactly one inner tuple in ONE outer block — (FY24, Salaries) — at
+    // the backend, while keeping every other tuple. The dropped node must render
+    // BLANK in FY24 and NOT shift any sibling (Rent's de-queue is keyed by member,
+    // so it is unaffected), and FY25's Salaries must still carry its value.
+    runTm1Query.mockImplementation(async (payload) => {
+      const resp = buildMultiDimResponse(payload);
+      resp.rows = resp.rows.filter(
+        (r) => !(r.members[0] === 'FY24' && r.members[r.members.length - 1] === 'Salaries'),
+      );
+      return resp;
+    });
+    // Re-query under the dropped-tuple shape (toggle round-trip; suppress stays ON).
+    await setSuppress(wrapper, false);
+    await setSuppress(wrapper, true);
+
+    // The grid still renders; collect the Salaries inner rows grouped by their
+    // OUTER (year) segment so we can check FY24 vs FY25 independently.
+    const salaryRows = rowsByInner(wrapper, 'Salaries');
+    const outerOf = (tr) =>
+      tr.find('.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) .pivot-grid__row-label').text();
+    const fy24Salary = salaryRows.find((tr) => outerOf(tr) === 'FY24');
+    const fy25Salary = salaryRows.find((tr) => outerOf(tr) === 'FY25');
+
+    // FY24's Salaries node still EXISTS structurally (the inner tree is shared) but
+    // its backend row was dropped → its data cell is BLANK.
+    expect(fy24Salary, 'FY24 Salaries row still present structurally').toBeTruthy();
+    expect(cellTexts(fy24Salary)[0]).toBe('');
+    // FY25's Salaries is intact (40) — the drop did not shift or blank it.
+    expect(fy25Salary, 'FY25 Salaries row present').toBeTruthy();
+    expect(cellTexts(fy25Salary)[0]).toBe('40');
+
+    // The two Rent occurrences in FY24 are UNSHIFTED by the dropped Salaries — they
+    // still read 60 (EXPENSE/Rent) then 25 (COGS/Rent), proving member-keyed
+    // de-queue is robust to a hole elsewhere in the block.
+    const fy24Rents = rowsByInner(wrapper, 'Rent').filter((tr) => outerOf(tr) === 'FY24');
+    expect(fy24Rents.map((tr) => cellTexts(tr)[0])).toEqual(['60', '25']);
+  });
+
+  it('a11y: aria-expanded on the inner twisty toggles; aria-level reflects INNER depth; table is not role=treegrid', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper);
+
+    // The table is a plain data table, never a treegrid — even in the multi-dim
+    // crossjoin shape.
+    const table = wrapper.find('table.pivot-grid');
+    expect(table.exists()).toBe(true);
+    expect(table.attributes('role')).not.toBe('treegrid');
+
+    // aria-expanded lives on the INNER twisty BUTTON, not on the row.
+    const expenseRow = bodyRows(wrapper).find((tr) => innerLabelOf(tr) === 'EXPENSE');
+    expect(expenseRow, 'an EXPENSE inner row exists').toBeTruthy();
+    expect(expenseRow.attributes('aria-expanded')).toBeUndefined();
+    expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('false');
+
+    // aria-level reflects the INNER node's depth: a top inner consolidation is
+    // level 0 → aria-level 1 (the outer year segment does not change the row's
+    // declared depth — depth tracks the drill hierarchy).
+    expect(expenseRow.attributes('aria-level')).toBe('1');
+
+    // Expand EXPENSE → its twisty flips to expanded, and its children sit one level
+    // deeper (aria-level 2).
+    await expandInner(wrapper, 'EXPENSE');
+    expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('true');
+    const rentRow = bodyRows(wrapper).find((tr) => innerLabelOf(tr) === 'Rent');
+    expect(rentRow, 'a Rent inner row exists after expand').toBeTruthy();
+    expect(rentRow.attributes('aria-level')).toBe('2');
+
+    // Collapse → aria-expanded returns to false.
+    await collapseInner(wrapper, 'EXPENSE');
+    expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('false');
   });
 });
