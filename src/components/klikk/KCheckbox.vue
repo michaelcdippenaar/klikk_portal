@@ -21,9 +21,9 @@
         'kcheckbox-box--checked': modelValue,
         'kcheckbox-box--disabled': disabled,
       }"
-      :checked="modelValue"
+      :model-value="modelValue"
       :disabled="disabled"
-      @update:checked="$emit('update:modelValue', $event)"
+      @update:model-value="$emit('update:modelValue', $event)"
     >
       <CheckboxIndicator class="kcheckbox-indicator">
         <!-- Lucide check icon at 10px -->
