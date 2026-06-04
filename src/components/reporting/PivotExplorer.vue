@@ -1,148 +1,223 @@
 <template>
   <SectionCard
     title="Slice &amp; Dice (TM1)"
-    description="Pivot any TM1 cube — drag dimensions onto rows, columns and filters, then run a live query. A PAW-lite explorer; nothing here writes back to TM1."
+    description="Pivot any TM1 cube as a live exploration grid. A PAW-lite explorer; nothing here writes back to TM1."
   >
     <div class="pivot">
-      <!-- ── Cube picker ──────────────────────────────────────────────── -->
-      <div class="pivot__cube-row">
-        <KSelect
-          v-model="cube"
-          class="pivot__cube-select"
-          label="Cube"
-          placeholder="Select a TM1 cube…"
-          :options="cubeOptions"
-          :disabled="cubesLoading || !!cubesError"
-          aria-label="TM1 cube"
-        />
-        <div v-if="cubesLoading" class="pivot__inline-status" role="status">
-          <KSpinner size="sm" tone="muted" label="Loading cubes" />
-          <span>Loading cubes…</span>
-        </div>
-        <p v-else-if="cubesError" class="pivot__inline-status pivot__inline-status--error">
-          {{ cubesError }}
-        </p>
-      </div>
-
-      <!-- ── Dimension assignment grid ────────────────────────────────── -->
-      <div v-if="cube && dimsLoading" class="pivot__status">
-        <KSpinner size="sm" tone="accent" label="Loading dimensions" />
-        <span>Loading dimensions for {{ cube }}…</span>
-      </div>
-
-      <p v-else-if="cube && dimsError" class="pivot__status pivot__status--error">
-        {{ dimsError }}
-      </p>
-
-      <div v-else-if="cube && dimensions.length" class="pivot__assign">
-        <div class="pivot__assign-head">
-          <h3 class="pivot__assign-title">Dimensions</h3>
-          <p class="pivot__assign-hint">
-            Assign each dimension to Rows, Columns or Filter. Rows / Columns take one
-            or more members; a Filter pins a single member.
-          </p>
+      <!-- ════════════════════════════════════════════════════════════════════
+           1 ── TOOLBAR — cube picker + actions, one compact row.
+           ═════════════════════════════════════════════════════════════════ -->
+      <div class="pivot-toolbar">
+        <div class="pivot-toolbar__cube">
+          <KSelect
+            v-model="cube"
+            class="pivot-toolbar__cube-select"
+            placeholder="Select a TM1 cube…"
+            :options="cubeOptions"
+            :disabled="cubesLoading || !!cubesError"
+            aria-label="TM1 cube"
+          />
         </div>
 
-        <ul class="pivot__dim-list">
-          <li
-            v-for="dim in dimensions"
-            :key="dim"
-            class="pivot__dim"
-            :class="`pivot__dim--${assignments[dim]}`"
-          >
-            <div class="pivot__dim-name" :title="dim">{{ dim }}</div>
+        <div class="pivot-toolbar__actions">
+          <KToggle v-model="suppressEmpty" label="Suppress zeros" />
 
-            <KSelect
-              v-model="assignments[dim]"
-              class="pivot__dim-role"
-              :options="ROLE_OPTIONS"
-              :aria-label="`Role for dimension ${dim}`"
-            />
-
-            <!-- Rows / Columns → multi-member picker (lazy-loaded) -->
-            <div
-              v-if="assignments[dim] === 'rows' || assignments[dim] === 'cols'"
-              class="pivot__dim-members"
-            >
-              <KMultiSelect
-                v-if="elementCache[dim] && !elementCache[dim].error"
-                v-model="memberSelections[dim]"
-                class="pivot__member-select"
-                :options="elementOptions(dim)"
-                :placeholder="memberPlaceholder(dim)"
-                :aria-label="`Members for ${dim}`"
-              />
-              <button
-                v-else
-                type="button"
-                class="pivot__load-btn"
-                :disabled="isElementsLoading(dim)"
-                @click="ensureElements(dim)"
-              >
-                <KSpinner v-if="isElementsLoading(dim)" size="xs" tone="muted" />
-                <span>{{ loadBtnLabel(dim) }}</span>
-              </button>
-              <p v-if="elementError(dim)" class="pivot__dim-error">{{ elementError(dim) }}</p>
-            </div>
-
-            <!-- Filter → single-member picker (lazy-loaded) -->
-            <div v-else-if="assignments[dim] === 'filter'" class="pivot__dim-members">
-              <KSelect
-                v-if="elementCache[dim] && !elementCache[dim].error"
-                v-model="filterSelections[dim]"
-                class="pivot__member-select"
-                :options="elementOptions(dim)"
-                :placeholder="memberPlaceholder(dim)"
-                :aria-label="`Filter member for ${dim}`"
-              />
-              <button
-                v-else
-                type="button"
-                class="pivot__load-btn"
-                :disabled="isElementsLoading(dim)"
-                @click="ensureElements(dim)"
-              >
-                <KSpinner v-if="isElementsLoading(dim)" size="xs" tone="muted" />
-                <span>{{ loadBtnLabel(dim) }}</span>
-              </button>
-              <p v-if="elementError(dim)" class="pivot__dim-error">{{ elementError(dim) }}</p>
-            </div>
-
-            <div v-else class="pivot__dim-members pivot__dim-members--muted">
-              Not used in this view
-            </div>
-          </li>
-        </ul>
-
-        <!-- ── Run controls ───────────────────────────────────────────── -->
-        <div class="pivot__controls">
-          <KToggle v-model="suppressEmpty" label="Suppress empty rows / columns" />
-          <div class="pivot__controls-spacer" />
           <button
             type="button"
-            class="btn btn-primary btn-sm pivot__run"
+            class="pivot-toolbar__btn"
+            :disabled="!canSwap || running"
+            title="Swap rows and columns"
+            aria-label="Swap rows and columns"
+            @click="swapAxes"
+          >
+            <svg
+              class="pivot-toolbar__btn-icon"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="16 3 20 7 16 11" />
+              <line x1="20" y1="7" x2="4" y2="7" />
+              <polyline points="8 21 4 17 8 13" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+            <span>Swap</span>
+          </button>
+
+          <button
+            type="button"
+            class="pivot-toolbar__btn"
             :disabled="!canRun || running"
             @click="runQuery"
           >
-            <KSpinner v-if="running" size="xs" tone="muted" label="Querying" />
-            <span>{{ running ? 'Querying TM1…' : 'Run query' }}</span>
+            <svg
+              class="pivot-toolbar__btn-icon"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            <span>Refresh</span>
           </button>
-        </div>
 
-        <p v-if="!canRun" class="pivot__hint">
-          Put at least one dimension on Rows and one on Columns to run a query.
-        </p>
+          <span v-if="running" class="pivot-toolbar__busy" role="status">
+            <KSpinner size="xs" tone="accent" label="Querying TM1" />
+            <span>Running…</span>
+          </span>
+        </div>
       </div>
 
-      <!-- Empty: no cube chosen yet -->
+      <!-- Cube-load / dimension-load status (thin, inline). -->
+      <p v-if="cubesError" class="pivot-banner pivot-banner--error">{{ cubesError }}</p>
+      <p v-else-if="cubesLoading" class="pivot-banner">
+        <KSpinner size="xs" tone="muted" label="Loading cubes" />
+        <span>Loading cubes…</span>
+      </p>
+      <p v-else-if="cube && dimsLoading" class="pivot-banner">
+        <KSpinner size="xs" tone="accent" label="Loading dimensions" />
+        <span>Loading dimensions for {{ cube }}…</span>
+      </p>
+      <p v-else-if="cube && dimsError" class="pivot-banner pivot-banner--error">{{ dimsError }}</p>
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           2 ── CONTEXT BAR — filter dimensions as dropdown pills.
+                Each reads "Dimension: Member"; clicking opens its member picker.
+           ═════════════════════════════════════════════════════════════════ -->
+      <div
+        v-if="cube && !dimsLoading && !dimsError && filterDims.length"
+        class="pivot-context"
+        role="group"
+        aria-label="Filter context"
+      >
+        <span class="pivot-context__label">Context</span>
+        <div class="pivot-context__pills">
+          <KPopover
+            v-for="dim in filterDims"
+            :key="`ctx-${dim}`"
+            :model-value="openPicker === `filter:${dim}`"
+            @update:model-value="(o) => togglePicker(`filter:${dim}`, o, dim)"
+          >
+            <template #trigger>
+              <button
+                type="button"
+                class="pivot-pill"
+                :aria-label="`${dim}: ${filterSelections[dim] || 'none'} — change member`"
+              >
+                <span class="pivot-pill__dim">{{ dim }}</span>
+                <span class="pivot-pill__sep" aria-hidden="true">:</span>
+                <span class="pivot-pill__member">{{ filterSelections[dim] || '—' }}</span>
+                <svg
+                  class="pivot-pill__chevron"
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+            </template>
+
+            <div class="pivot-picker">
+              <p class="pivot-picker__title">{{ dim }}</p>
+              <KSelect
+                v-if="elementCache[dim] && !elementCache[dim].error"
+                :model-value="filterSelections[dim]"
+                class="pivot-picker__control"
+                :options="elementOptions(dim)"
+                :placeholder="memberPlaceholder(dim)"
+                :aria-label="`Filter member for ${dim}`"
+                @update:model-value="(v) => setFilterMember(dim, v)"
+              />
+              <button
+                v-else
+                type="button"
+                class="pivot-picker__load"
+                :disabled="isElementsLoading(dim)"
+                @click="ensureElements(dim)"
+              >
+                <KSpinner v-if="isElementsLoading(dim)" size="xs" tone="muted" />
+                <span>{{ loadBtnLabel(dim) }}</span>
+              </button>
+              <p v-if="elementError(dim)" class="pivot-picker__error">{{ elementError(dim) }}</p>
+            </div>
+          </KPopover>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           3 ── AXIS WELLS — Rows / Columns zones, each showing its dimension
+                chips. A chip menu moves the dimension between axes / filter.
+           ═════════════════════════════════════════════════════════════════ -->
+      <div
+        v-if="cube && !dimsLoading && !dimsError && dimensions.length"
+        class="pivot-wells"
+      >
+        <div class="pivot-well">
+          <span class="pivot-well__label">Rows</span>
+          <div class="pivot-well__chips">
+            <PivotAxisChip
+              v-for="dim in rowDims"
+              :key="`row-${dim}`"
+              :dim="dim"
+              axis="rows"
+              :open="openChipMenu === `rows:${dim}`"
+              @toggle="(o) => toggleChipMenu(`rows:${dim}`, o)"
+              @move="(target) => moveDimension(dim, target)"
+            />
+            <span v-if="!rowDims.length" class="pivot-well__empty">none</span>
+          </div>
+        </div>
+
+        <div class="pivot-well">
+          <span class="pivot-well__label">Columns</span>
+          <div class="pivot-well__chips">
+            <PivotAxisChip
+              v-for="dim in colDims"
+              :key="`col-${dim}`"
+              :dim="dim"
+              axis="cols"
+              :open="openChipMenu === `cols:${dim}`"
+              @toggle="(o) => toggleChipMenu(`cols:${dim}`, o)"
+              @move="(target) => moveDimension(dim, target)"
+            />
+            <span v-if="!colDims.length" class="pivot-well__empty">none</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           4 ── THE PIVOT GRID — the hero. Frozen row-header column + frozen
+                column-header band; drillable indented row hierarchy; totals.
+           ═════════════════════════════════════════════════════════════════ -->
+      <p v-if="cube && runError" class="pivot-banner pivot-banner--error">{{ runError }}</p>
+
       <EmptyState
         v-else-if="!cube && !cubesLoading && !cubesError"
         icon="▦"
         title="Choose a cube to begin"
-        body="Pick a TM1 cube above. Its dimensions load automatically — then assign them to rows, columns and filters."
+        body="Pick a TM1 cube above. Its dimensions load automatically and the grid opens populated."
       />
 
-      <!-- Empty: cube has no dimensions -->
       <EmptyState
         v-else-if="cube && !dimsLoading && !dimsError && !dimensions.length"
         icon="∅"
@@ -150,132 +225,78 @@
         :body="`The cube ${cube} returned no dimensions.`"
       />
 
-      <!-- ── Resolved slice summary ─────────────────────────────────────── -->
-      <div v-if="cube && (result || running || runError)" class="pivot__summary">
-        <div class="pivot__summary-row">
-          <span class="pivot__summary-label">Slice</span>
-          <code class="pivot__summary-code">{{ sliceSummary }}</code>
-          <span v-if="gridSizeLabel" class="pivot__grid-size">{{ gridSizeLabel }}</span>
-        </div>
-
-        <!-- Collapsible: the literal MDX the backend ran for this slice. -->
-        <div v-if="mdxText" class="pivot__mdx">
-          <button
-            type="button"
-            class="pivot__mdx-toggle"
-            :aria-expanded="showMdx"
-            aria-controls="pivot-mdx-body"
-            @click="showMdx = !showMdx"
-          >
-            <svg
-              class="pivot__mdx-chevron"
-              :class="{ 'pivot__mdx-chevron--open': showMdx }"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="9 6 15 12 9 18" />
-            </svg>
-            <span>{{ showMdx ? 'Hide MDX' : 'Show MDX' }}</span>
-          </button>
-          <pre v-show="showMdx" id="pivot-mdx-body" class="pivot__mdx-code">{{ mdxText }}</pre>
-        </div>
-      </div>
-
-      <!-- ── Drill breadcrumb / reset ───────────────────────────────────── -->
-      <div v-if="cube && result && (drillPath.length || hasDrillableRows)" class="pivot__drill-bar">
-        <span class="pivot__drill-label">Drill path</span>
-        <ol v-if="drillPath.length" class="pivot__drill-trail">
-          <li class="pivot__drill-crumb pivot__drill-crumb--root">All</li>
-          <li
-            v-for="(step, i) in drillPath"
-            :key="`drill-${i}`"
-            class="pivot__drill-crumb"
-          >
-            <span class="pivot__drill-sep" aria-hidden="true">›</span>
-            {{ step.parent }}
-          </li>
-        </ol>
-        <span v-else class="pivot__drill-hint">Click a ▶ row to drill into its children.</span>
-        <button
-          v-if="drillPath.length"
-          type="button"
-          class="pivot__drill-reset"
-          @click="resetToDefault"
-        >
-          Reset to default
-        </button>
-      </div>
-
-      <!-- ── Run state: loading / error / result ───────────────────────── -->
-      <div v-if="running" class="pivot__status">
-        <KSpinner size="sm" tone="accent" label="Querying TM1" />
-        <span>Querying TM1…</span>
-      </div>
-
-      <p v-else-if="runError" class="pivot__status pivot__status--error">{{ runError }}</p>
+      <p v-else-if="cube && !canRun && !running && !result" class="pivot-banner">
+        Put at least one dimension on Rows and one on Columns to run a query.
+      </p>
 
       <template v-else-if="result">
         <EmptyState
-          v-if="!pivotView.rows.length"
+          v-if="!gridRows.length"
           icon="∅"
           title="No data"
-          body="The query returned no rows. Try widening the members, or turn off Suppress empty rows / columns."
+          body="The query returned no rows. Try a different member, or turn off Suppress zeros."
         />
-        <div v-else class="pivot__table-wrap">
-          <table class="pivot-table">
+        <div
+          v-else
+          class="pivot-grid-wrap"
+          :class="{ 'pivot-grid-wrap--busy': running }"
+        >
+          <table
+            class="pivot-grid"
+            :aria-label="`${cube} pivot — ${gridRows.length} rows by ${colHeaders.length} columns`"
+          >
+            <caption v-if="rowDims.length > 1" class="pivot-grid__caption">
+              Drill is available with a single Rows dimension.
+            </caption>
             <thead>
               <tr>
+                <th class="pivot-grid__corner" scope="col">{{ rowAxisLabel }}</th>
                 <th
-                  v-for="(rh, i) in pivotView.rowHeaders"
-                  :key="`rh-${i}`"
-                  class="pivot-table__corner"
-                  scope="col"
-                >
-                  {{ rh }}
-                </th>
-                <th
-                  v-for="(col, ci) in pivotView.colHeaders"
+                  v-for="(col, ci) in colHeaders"
                   :key="`col-${ci}`"
-                  class="pivot-table__col-head"
+                  class="pivot-grid__col-head pivot-num"
                   scope="col"
                 >
                   {{ col }}
                 </th>
-                <th class="pivot-table__col-head pivot-table__total-head" scope="col">
+                <th class="pivot-grid__col-head pivot-grid__total-head pivot-num" scope="col">
                   Total
                 </th>
               </tr>
             </thead>
+
             <tbody>
-              <tr v-for="(row, ri) in pivotView.rows" :key="`row-${ri}`">
+              <tr
+                v-for="row in gridRows"
+                :key="row.key"
+                class="pivot-grid__row"
+                :class="{ 'pivot-grid__row--consol': row.drillable }"
+                :aria-level="row.level + 1"
+              >
                 <th
-                  v-for="(member, mi) in row.members"
-                  :key="`rm-${ri}-${mi}`"
-                  class="pivot-table__row-head"
-                  :class="{ 'pivot-table__row-head--drillable': mi === 0 && row.drillable }"
+                  class="pivot-grid__row-head"
+                  :class="{ 'pivot-grid__row-head--consol': row.drillable }"
                   scope="row"
                 >
-                  <span v-if="mi === 0 && row.drillable" class="pivot-table__row-head-inner">
+                  <span
+                    class="pivot-grid__row-head-inner"
+                    :style="{ '--row-indent': `${row.level * INDENT_PX}px` }"
+                  >
                     <button
+                      v-if="row.drillable"
                       type="button"
-                      class="pivot-table__drill"
-                      :class="{ 'pivot-table__drill--busy': drilling === row.drillMember }"
-                      :disabled="drilling === row.drillMember"
-                      :aria-expanded="false"
-                      :aria-label="`Drill into ${member}`"
-                      @click="drillRow(row.drillMember)"
+                      class="pivot-grid__twisty"
+                      :class="{ 'pivot-grid__twisty--busy': drilling === row.drillKey }"
+                      :disabled="drilling === row.drillKey"
+                      :aria-expanded="row.expanded"
+                      :aria-label="`${row.expanded ? 'Collapse' : 'Expand'} ${row.label}`"
+                      @click="toggleRow(row)"
                     >
-                      <KSpinner v-if="drilling === row.drillMember" size="xs" tone="muted" />
+                      <KSpinner v-if="drilling === row.drillKey" size="xs" tone="muted" />
                       <svg
                         v-else
-                        class="pivot-table__drill-icon"
+                        class="pivot-grid__twisty-icon"
+                        :class="{ 'pivot-grid__twisty-icon--open': row.expanded }"
                         width="10"
                         height="10"
                         viewBox="0 0 24 24"
@@ -289,46 +310,103 @@
                         <polyline points="9 6 15 12 9 18" />
                       </svg>
                     </button>
-                    <span>{{ member }}</span>
+                    <span v-else class="pivot-grid__twisty-spacer" aria-hidden="true" />
+                    <span class="pivot-grid__row-label" :title="row.label">{{ row.label }}</span>
                   </span>
-                  <span v-else>{{ member }}</span>
                 </th>
+
                 <td
                   v-for="(cell, ci) in row.cells"
-                  :key="`cell-${ri}-${ci}`"
-                  class="pivot-table__cell pivot-num"
+                  :key="`c-${row.key}-${ci}`"
+                  class="pivot-grid__cell pivot-num"
+                  :class="cellClass(cell)"
                 >
                   {{ formatCell(cell) }}
                 </td>
-                <td class="pivot-table__cell pivot-table__total-cell pivot-num">
+
+                <td
+                  class="pivot-grid__cell pivot-grid__total-cell pivot-num"
+                  :class="totalClass(row.rowTotal)"
+                >
                   {{ formatTotal(row.rowTotal) }}
                 </td>
               </tr>
             </tbody>
+
             <tfoot>
-              <tr class="pivot-table__total-row">
-                <th
-                  class="pivot-table__row-head pivot-table__total-corner"
-                  :colspan="pivotView.rowHeaders.length"
-                  scope="row"
-                >
-                  Total
-                </th>
+              <tr class="pivot-grid__total-row">
+                <th class="pivot-grid__row-head pivot-grid__total-corner" scope="row">Total</th>
                 <td
-                  v-for="(total, ci) in pivotView.colTotals"
+                  v-for="(total, ci) in colTotals"
                   :key="`ctot-${ci}`"
-                  class="pivot-table__cell pivot-table__total-cell pivot-num"
+                  class="pivot-grid__cell pivot-grid__total-cell pivot-num"
+                  :class="totalClass(total)"
                 >
                   {{ formatTotal(total) }}
                 </td>
-                <td class="pivot-table__cell pivot-table__grand-total pivot-num">
-                  {{ formatTotal(pivotView.grandTotal) }}
+                <td
+                  class="pivot-grid__cell pivot-grid__grand-total pivot-num"
+                  :class="totalClass(grandTotal)"
+                >
+                  {{ formatTotal(grandTotal) }}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
       </template>
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           Footer — grid size + Show MDX disclosure (kept).
+           ═════════════════════════════════════════════════════════════════ -->
+      <div v-if="cube && result && gridRows.length" class="pivot-footer">
+        <span v-if="gridSizeLabel" class="pivot-footer__size">{{ gridSizeLabel }}</span>
+
+        <button
+          v-if="hasExpansions"
+          type="button"
+          class="pivot-footer__reset"
+          @click="resetToDefault"
+        >
+          Collapse all
+        </button>
+
+        <div class="pivot-footer__spacer" />
+
+        <div v-if="mdxText" class="pivot-mdx">
+          <button
+            type="button"
+            class="pivot-mdx__toggle"
+            :aria-expanded="showMdx"
+            aria-controls="pivot-mdx-body"
+            @click="showMdx = !showMdx"
+          >
+            <svg
+              class="pivot-mdx__chevron"
+              :class="{ 'pivot-mdx__chevron--open': showMdx }"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="9 6 15 12 9 18" />
+            </svg>
+            <span>{{ showMdx ? 'Hide MDX' : 'Show MDX' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <pre
+        v-if="mdxText"
+        v-show="showMdx"
+        id="pivot-mdx-body"
+        class="pivot-mdx__code"
+      >{{ mdxText }}</pre>
     </div>
   </SectionCard>
 </template>
@@ -337,10 +415,11 @@
 import { computed, reactive, ref, watch } from 'vue';
 import SectionCard from '../klikk/SectionCard.vue';
 import KSelect from '../klikk/KSelect.vue';
-import KMultiSelect from '../klikk/KMultiSelect.vue';
 import KToggle from '../klikk/KToggle.vue';
 import KSpinner from '../klikk/KSpinner.vue';
+import KPopover from '../klikk/KPopover.vue';
 import EmptyState from '../klikk/EmptyState.vue';
+import PivotAxisChip from './PivotAxisChip.vue';
 import {
   getTm1Cubes,
   getTm1CubeDimensions,
@@ -351,13 +430,7 @@ import {
 
 const DEFAULT_CUBE = 'gl_src_trial_balance';
 const MAX_MEMBER_OPTIONS = 500; // cap the picker for very large dimensions.
-
-const ROLE_OPTIONS = [
-  { value: 'rows', label: 'Rows' },
-  { value: 'cols', label: 'Columns' },
-  { value: 'filter', label: 'Filter' },
-  { value: 'unused', label: '(unused)' },
-];
+const INDENT_PX = 16; // per-level row-header indent (PAW exploration hallmark).
 
 // ── Defensive normalisers — backend lives in a separate repo, so every shape
 // is coerced and the raw payload is logged once for easy adjustment. ─────────
@@ -535,16 +608,40 @@ const elementCache = reactive({});
 // payloads, so the rendered pivot knows which members are drillable (type 'C').
 const memberTypes = reactive({});
 // dim -> string[] — the populated default members resolved on cube load (children
-// of the top consolidation). "Reset to default" restores Rows/Cols to these.
+// of the top consolidation). "Collapse all" restores Rows to these.
 const defaultMembers = reactive({});
-// Drill breadcrumb: ordered list of { dim, parent } drill-downs the user applied
-// to Rows. Lets us show a trail and pop back / reset.
-const drillPath = ref([]);
+
+// ── Row-axis EXPANSION TREE (PAW drill-in-place) ────────────────────────────
+// The backend returns a FLAT member list on the row axis. To render a real
+// PAW-style indented hierarchy with expand/collapse IN PLACE, we maintain a
+// client-side tree keyed by ANCESTRY PATH (not bare member name), because the
+// account hierarchy has OVERLAPPING ROLLUPS — the same member can appear under
+// two different consolidations. A bare-name key would collapse those into one
+// node (2nd parent renders missing the child; collapsing the 1st parent strips
+// the shared child from under the 2nd). The path key disambiguates them:
+//   path = parentPath ? `${parentPath}::${member}` : member
+//   rowNodes[path] = { member, path, level, parentPath, expanded, children:[childPath,…] }
+// `rowOrder` is the flattened, ordered list of visible PATHS that drives both
+// the query's row member list (mapped path→member) AND the rendered rows.
+// Expanding a node fetches its children (once), inserts their paths after the
+// parent at level+1, and flips expanded=true. Collapsing removes the whole
+// descendant subtree (by path prefix) from the query without a re-fetch
+// (children stay cached on the node for re-expand).
+const rowNodes = reactive({}); // path -> node
+const rowOrder = ref([]); // ordered visible PATHS (the row axis)
+
+// Build a node's ancestry path from its parent's path + its bare member name.
+function makePath(parentPath, member) {
+  return parentPath ? `${parentPath}::${member}` : member;
+}
 
 const suppressEmpty = ref(true);
-// Collapsible "show MDX" toggle under the slice summary — a TM1 person wants to
-// see the literal query the backend ran.
+// Collapsible "show MDX" — a TM1 person wants to see the literal query.
 const showMdx = ref(false);
+
+// Which context-pill popover / axis-chip menu is open (single-open model).
+const openPicker = ref('');
+const openChipMenu = ref('');
 
 const result = ref(null);
 const running = ref(false);
@@ -561,29 +658,19 @@ const colDims = computed(() => dimensions.value.filter((d) => assignments[d] ===
 const filterDims = computed(() => dimensions.value.filter((d) => assignments[d] === 'filter'));
 
 const canRun = computed(() => rowDims.value.length > 0 && colDims.value.length > 0);
+// Swap is meaningful only with exactly one dim on each axis (v1 single-dim axes).
+const canSwap = computed(() => rowDims.value.length === 1 && colDims.value.length === 1);
 
-const sliceSummary = computed(() => {
-  if (!cube.value) return '';
-  const fmt = (dims, picker) =>
-    dims
-      .map((d) => {
-        const m = picker(d);
-        const list = Array.isArray(m) ? m : m ? [m] : [];
-        return list.length ? `${d}[${list.join(', ')}]` : `${d}[—]`;
-      })
-      .join(' × ') || '—';
-  const rows = fmt(rowDims.value, (d) => memberSelections[d]);
-  const cols = fmt(colDims.value, (d) => memberSelections[d]);
-  const filters =
-    filterDims.value
-      .map((d) => `${d}=${filterSelections[d] || '—'}`)
-      .join(', ') || 'none';
-  return `${cube.value}  ·  ROWS ${rows}  ·  COLS ${cols}  ·  FILTERS ${filters}  ·  suppress=${suppressEmpty.value ? 'on' : 'off'}`;
-});
+// The single dimension whose members head the rows — drives the drill tree.
+// Drill is a single-row-dimension affordance.
+const primaryRowDim = computed(() =>
+  rowDims.value.length === 1 ? rowDims.value[0] : null,
+);
+
+// The corner-cell label (row-axis dimension name(s)).
+const rowAxisLabel = computed(() => rowDims.value.join(' / ') || 'Rows');
 
 // The literal MDX the backend executed for the current result, if returned.
-// Surfaced under the slice summary (collapsible) — catnip for a TM1 user and a
-// trust signal that this is a real query, not a mock.
 const mdxText = computed(() => {
   const m = result.value?.mdx ?? result.value?.MDX ?? result.value?.query ?? null;
   return typeof m === 'string' && m.trim() ? m.trim() : '';
@@ -599,82 +686,167 @@ const pivot = computed(() =>
     : { rows: [], colHeaders: [], rowHeaders: [] },
 );
 
-// The single dimension whose members head the rows — used for row-header drill.
-// Drill is a single-row-dimension affordance; with multiple row dims we still
-// render, but the ▶ only appears when there's exactly one row dimension.
-const primaryRowDim = computed(() =>
-  rowDims.value.length === 1 ? rowDims.value[0] : null,
-);
+const colHeaders = computed(() => pivot.value.colHeaders);
 
-// Augment the normalised pivot with a column-total row and a row-total column so
-// the grid reads like a real PAW pivot. Totals sum the raw numeric cell value;
-// non-numeric cells are skipped. A column total is blank when no numeric cells
-// contributed (keeps an all-string axis clean).
-const pivotView = computed(() => {
-  const base = pivot.value;
-  const colCount = base.colHeaders.length;
+// Cell lookup, duplicate-safe. The query is sent per member tuple in rowOrder
+// order, and the backend returns one row per requested tuple. A member can
+// legitimately appear MORE THAN ONCE in rowOrder (the same leaf under two
+// expanded consolidations — overlapping rollups), so a plain name→row map would
+// collide and hand the wrong cells to the 2nd occurrence. Instead we key by the
+// full member TUPLE and bucket every matching backend row into a QUEUE; each
+// rendered node dequeues the next row for its tuple (first occurrence gets the
+// first returned row, second gets the second, …). `suppress` dropping an empty
+// row simply leaves that tuple's queue short → the node renders blank cells,
+// which is correct. Lookup is reset each render pass (see takeBackendRow).
+const TUPLE_SEP = '\u0000'; // NUL — cannot occur inside a TM1 member name.
 
-  const rows = base.rows.map((row) => {
-    let rowSum = 0;
-    let rowHasNum = false;
-    for (const cell of row.cells) {
-      const n = cellNumber(cell);
-      if (n != null) {
-        rowSum += n;
-        rowHasNum = true;
-      }
-    }
-    // Mark the leading row member as drillable when it's a consolidation and we
-    // have a single row dimension (so its children replace it on drill).
-    const leadMember = row.members[0] ?? null;
-    const drillable =
-      !!primaryRowDim.value &&
-      leadMember != null &&
-      isConsolidation(memberType(primaryRowDim.value, leadMember));
+function tupleKey(members) {
+  return (members || []).join(TUPLE_SEP);
+}
+
+const rowQueuesByTuple = computed(() => {
+  const map = new Map();
+  for (const r of pivot.value.rows) {
+    const key = tupleKey(r.members);
+    const q = map.get(key);
+    if (q) q.push(r);
+    else map.set(key, [r]);
+  }
+  return map;
+});
+
+// THE RENDERED GRID ROWS. When we have a single row dimension we render the
+// expansion tree (indented, drillable). For multi-dim rows we render the flat
+// backend tuples (no drill — drill is single-dim). Each row carries: key,
+// label, level, drillable, expanded, drillKey, path, cells, rowTotal.
+const gridRows = computed(() => {
+  const dim = primaryRowDim.value;
+
+  // Multi-dim (or no-tree) fallback: render the backend rows flat.
+  if (!dim || !rowOrder.value.length) {
+    return pivot.value.rows.map((r, i) => {
+      const { sum, has } = sumCells(r.cells);
+      return {
+        key: `flat-${i}`,
+        label: r.members.join(' / ') || `Row ${i + 1}`,
+        level: 0,
+        drillable: false,
+        expanded: false,
+        drillKey: null,
+        path: null,
+        cells: r.cells,
+        rowTotal: has ? sum : null,
+      };
+    });
+  }
+
+  // Single-dim: walk the ordered expansion tree by PATH, resolving each node's
+  // cells from the tuple-queue so duplicate members (same leaf under two
+  // expanded rollups) each pull their OWN backend row. Cursors track how many
+  // of each tuple we've consumed within this render pass.
+  const queues = rowQueuesByTuple.value;
+  const cursors = new Map();
+  const takeBackendRow = (members) => {
+    const key = tupleKey(members);
+    const q = queues.get(key);
+    if (!q || !q.length) return null;
+    const at = cursors.get(key) || 0;
+    cursors.set(key, at + 1);
+    return q[at] || null; // out of rows for this tuple → blank (e.g. suppressed)
+  };
+
+  return rowOrder.value.map((path) => {
+    const node = rowNodes[path] || {
+      member: path,
+      path,
+      level: 0,
+      expanded: false,
+    };
+    const member = node.member ?? path;
+    // Single row dimension → the cell tuple is just this node's member.
+    const backendRow = takeBackendRow([member]);
+    const cells = backendRow ? backendRow.cells : [];
+    const { sum, has } = sumCells(cells);
+    const drillable = isConsolidation(memberType(dim, member));
     return {
-      ...row,
-      rowTotal: rowHasNum ? rowSum : null,
+      key: path,
+      label: member,
+      level: node.level || 0,
       drillable,
-      drillMember: drillable ? leadMember : null,
+      expanded: !!node.expanded,
+      drillKey: drillable ? path : null,
+      path,
+      cells,
+      rowTotal: has ? sum : null,
     };
   });
+});
 
-  // Column totals (one per column header) + a grand total.
-  const colTotals = Array.from({ length: colCount }, () => ({ sum: 0, has: false }));
-  let grand = 0;
-  let grandHas = false;
-  for (const row of base.rows) {
-    for (let ci = 0; ci < colCount; ci += 1) {
+function sumCells(cells) {
+  let sum = 0;
+  let has = false;
+  for (const cell of cells || []) {
+    const n = cellNumber(cell);
+    if (n != null) {
+      sum += n;
+      has = true;
+    }
+  }
+  return { sum, has };
+}
+
+// Rows that contribute to a column / grand total: ONE level only. TM1 returns a
+// consolidation's rolled-up value on the consolidation's own row, so summing an
+// EXPANDED parent AND its children double-counts (EXPENSE 100 + Rent 60 +
+// Salaries 40 = 200). An expanded parent is represented by its children in the
+// grid, so we EXCLUDE it; a collapsed consolidation correctly contributes its
+// own rolled value; leaves always contribute. Net: sum rows that are NOT
+// currently expanded.
+//   After expanding EXPENSE: column total = Rent + Salaries + (every OTHER top
+//   row) — and crucially NOT EXPENSE itself. The per-row rowTotal is unaffected.
+const totalRows = computed(() => gridRows.value.filter((r) => !r.expanded));
+
+// Column totals (one per column header) + grand total, over the one-level set.
+const colTotals = computed(() => {
+  const count = colHeaders.value.length;
+  const totals = Array.from({ length: count }, () => ({ sum: 0, has: false }));
+  for (const row of totalRows.value) {
+    for (let ci = 0; ci < count; ci += 1) {
       const n = cellNumber(row.cells[ci]);
       if (n != null) {
-        colTotals[ci].sum += n;
-        colTotals[ci].has = true;
-        grand += n;
-        grandHas = true;
+        totals[ci].sum += n;
+        totals[ci].has = true;
       }
     }
   }
-
-  return {
-    rows,
-    colHeaders: base.colHeaders,
-    rowHeaders: base.rowHeaders,
-    colTotals: colTotals.map((c) => (c.has ? c.sum : null)),
-    grandTotal: grandHas ? grand : null,
-    rowCount: rows.length,
-    colCount,
-  };
+  return totals.map((t) => (t.has ? t.sum : null));
 });
 
-// True when at least one visible row can be drilled (a single-row-dim
-// consolidation) — gates the drill breadcrumb hint.
-const hasDrillableRows = computed(() => pivotView.value.rows.some((r) => r.drillable));
+const grandTotal = computed(() => {
+  let sum = 0;
+  let has = false;
+  for (const row of totalRows.value) {
+    for (const cell of row.cells) {
+      const n = cellNumber(cell);
+      if (n != null) {
+        sum += n;
+        has = true;
+      }
+    }
+  }
+  return has ? sum : null;
+});
 
-// "6 rows × 12 cols" badge for the slice summary — the density signal.
+// True when at least one row is expanded — gates the "Collapse all" control.
+const hasExpansions = computed(() =>
+  Object.values(rowNodes).some((n) => n.expanded),
+);
+
+// "6 rows × 12 cols" badge.
 const gridSizeLabel = computed(() => {
   if (!result.value) return '';
-  const r = pivotView.value.rowCount;
-  const c = pivotView.value.colCount;
+  const r = gridRows.value.length;
+  const c = colHeaders.value.length;
   if (!r && !c) return '';
   return `${r} ${r === 1 ? 'row' : 'rows'} × ${c} ${c === 1 ? 'col' : 'cols'}`;
 });
@@ -691,7 +863,7 @@ function elementError(dim) {
 }
 function memberPlaceholder(dim) {
   if (!elementCache[dim] || !elementCache[dim].options.length) return 'No members';
-  return 'Select members…';
+  return 'Select member…';
 }
 
 function loadBtnLabel(dim) {
@@ -701,15 +873,17 @@ function loadBtnLabel(dim) {
 }
 
 // Lazy-load a dimension's elements the first time its picker is opened. Large
-// dimensions (hundreds of elements) are capped to MAX_MEMBER_OPTIONS for the
-// picker; the KMultiSelect / KSelect dropdowns are internally scrollable.
+// dimensions are capped to MAX_MEMBER_OPTIONS for the picker; the dropdowns are
+// internally scrollable.
 async function ensureElements(dim) {
   if (elementCache[dim] && !elementCache[dim].error) return;
   elementCache[dim] = { loading: true, error: '', options: [] };
   try {
     const data = await getTm1DimensionElements(dim);
-    // eslint-disable-next-line no-console
-    console.debug(`[PivotExplorer] elements(${dim}) raw:`, data);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(`[PivotExplorer] elements(${dim}) raw:`, data);
+    }
     let options = normaliseElements(data);
     if (options.length > MAX_MEMBER_OPTIONS) {
       options = options.slice(0, MAX_MEMBER_OPTIONS);
@@ -730,16 +904,14 @@ async function ensureElements(dim) {
 }
 
 // Default a dimension to its top consolidation ("All_*" / "All …" / "Total*"),
-// else the first element. Rows/cols seed only if nothing is chosen yet; a Filter
-// always needs exactly one member, so seed if empty.
+// else the first element.
 function topElement(options) {
   if (!options.length) return null;
   const byPrefix = options.find((o) => /^(all[_ ]|total)/i.test(o.value));
   return (byPrefix || options[0]).value;
 }
 
-// Learn member -> type for a dimension from any element/children option list, so
-// the rendered pivot can tell which row/col members are drillable consolidations.
+// Learn member -> type for a dimension from any element/children option list.
 function recordTypes(dim, options) {
   if (!options?.length) return;
   if (!memberTypes[dim]) memberTypes[dim] = {};
@@ -753,10 +925,7 @@ function memberType(dim, name) {
 }
 
 // Measure-aware seed for a Filter dimension. For a trial-balance / GL cube the
-// meaningful measure is the balance — "amount" — so we prefer it when present
-// (account-children × months × amount is the intended populated default). Returns
-// null when there's no obvious measure member, so the caller falls back to the
-// normal top-consolidation seed.
+// meaningful measure is the balance — "amount" — so we prefer it when present.
 function pickMeasureMember(options) {
   if (!options?.length) return null;
   const amount = options.find((o) => /^amount$/i.test(o.value));
@@ -778,10 +947,9 @@ function seedDefaultMember(dim, options) {
 }
 
 // POPULATED DEFAULT (the core fix). For a Rows/Cols dim, resolve the top element
-// (the All_*/total seed) then fetch its CHILDREN and use those as the default
-// members — so the cube opens as a real matrix (account-rollups × months) rather
-// than a 1×1 grand-total cell. Falls back to [top] when the top element is
-// already a leaf (no children). Filter dims keep the single-top default.
+// then fetch its CHILDREN and use those as the default members — so the cube
+// opens as a real matrix (account-rollups × months) rather than a 1×1 grand
+// total. Falls back to [top] when the top element is a leaf.
 async function seedPopulatedDefault(dim) {
   await ensureElements(dim);
   const options = elementOptions(dim);
@@ -794,28 +962,36 @@ async function seedPopulatedDefault(dim) {
   if (!top) return;
   try {
     const data = await getTm1DimensionChildren(dim, top);
-    // eslint-disable-next-line no-console
-    console.debug(`[PivotExplorer] children(${dim}, ${top}) raw:`, data);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(`[PivotExplorer] children(${dim}, ${top}) raw:`, data);
+    }
     const children = normaliseChildren(data);
     recordTypes(dim, children);
     if (children.length) {
       const members = children.map((c) => c.value);
       memberSelections[dim] = members;
       defaultMembers[dim] = members.slice();
-      // Surface the children in the picker too, so the member chips show the
-      // populated default (EXPENSE/ASSET/…) rather than only "All_X".
       mergePickerOptions(dim, children);
+      // Seed the row expansion tree for the primary row dim so the rendered
+      // hierarchy starts at these top-level rollups (level 0, collapsed).
+      if (assignments[dim] === 'rows' && rowDims.value.length === 1) {
+        initRowTree(dim, members);
+      }
       return;
     }
   } catch (error) {
-    // Children fetch failed — fall back to the single-top default below so the
-    // view still runs. The picker/load-members path can recover specific members.
-    // eslint-disable-next-line no-console
-    console.debug(`[PivotExplorer] children(${dim}, ${top}) failed:`, error);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(`[PivotExplorer] children(${dim}, ${top}) failed:`, error);
+    }
   }
   // Fallback: top element is a leaf (or children unavailable) → single-top.
   memberSelections[dim] = [top];
   defaultMembers[dim] = [top];
+  if (assignments[dim] === 'rows' && rowDims.value.length === 1) {
+    initRowTree(dim, [top]);
+  }
 }
 
 // Ensure the lazy picker for a dim includes these option rows (children/drill
@@ -834,14 +1010,163 @@ function mergePickerOptions(dim, extra) {
   elementCache[dim] = { loading: false, error: '', options: next };
 }
 
+// ── Row expansion tree (path-keyed) ─────────────────────────────────────────
+// (Re)seed the tree with a set of top-level members (level 0, collapsed). At
+// the top level path === member (no ancestry), so duplicate top-level members
+// would still collide — but the seed comes from a single consolidation's
+// children, which TM1 guarantees unique, so top-level paths are unique.
+function initRowTree(dim, members) {
+  for (const k of Object.keys(rowNodes)) delete rowNodes[k];
+  const paths = [];
+  for (const m of members) {
+    const path = makePath(null, m);
+    rowNodes[path] = {
+      member: m,
+      path,
+      level: 0,
+      parentPath: null,
+      expanded: false,
+      children: [],
+    };
+    paths.push(path);
+  }
+  rowOrder.value = paths;
+  syncRowMembersToSelection(dim);
+}
+
+// Mirror the visible row tree into memberSelections[dim] so the query asks for
+// exactly the members currently shown. rowOrder holds PATHS; the backend wants
+// bare member NAMES, in the same order (duplicates preserved — two occurrences
+// of a member under different parents send the member twice, and the backend
+// returns two rows we then de-queue positionally in gridRows).
+function syncRowMembersToSelection(dim) {
+  memberSelections[dim] = rowOrder.value.map((p) => rowNodes[p]?.member ?? p);
+}
+
+// Expand a consolidation row in place: fetch (once) + insert children after the
+// parent at level+1, then re-query. Children stay cached on the node. Keyed by
+// PATH so the same member under two different parents expands independently.
+// Re-entry guarded: if already expanded (or its children are already inserted),
+// no-op — a fast double-click cannot duplicate children.
+async function expandRow(dim, path) {
+  const node = rowNodes[path];
+  if (!node || node.expanded) return; // already open → no-op (re-entry guard).
+  if (node.children && node.children.length) {
+    // Already fetched — re-show the cached subtree (collapse had removed it).
+    // Set the spinner on this branch too, then re-query.
+    drilling.value = path;
+    try {
+      reinsertChildren(node);
+      node.expanded = true;
+      syncRowMembersToSelection(dim);
+      await runQuery();
+    } finally {
+      drilling.value = '';
+    }
+    return;
+  }
+  drilling.value = path;
+  try {
+    const data = await getTm1DimensionChildren(dim, node.member);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(`[PivotExplorer] drill children(${dim}, ${node.member}) raw:`, data);
+    }
+    const children = normaliseChildren(data);
+    recordTypes(dim, children);
+    if (!children.length) {
+      node.expanded = false;
+      return; // leaf — nothing to expand.
+    }
+    // Each child is a DISTINCT node under THIS path — so a member appearing
+    // under two parents has two independent nodes (overlapping rollups).
+    const childPaths = [];
+    for (const child of children) {
+      const childPath = makePath(node.path, child.value);
+      if (!rowNodes[childPath]) {
+        rowNodes[childPath] = {
+          member: child.value,
+          path: childPath,
+          level: node.level + 1,
+          parentPath: node.path,
+          expanded: false,
+          children: [],
+        };
+      }
+      childPaths.push(childPath);
+    }
+    node.children = childPaths;
+    node.expanded = true;
+    insertAfter(node.path, childPaths);
+    mergePickerOptions(dim, children);
+    syncRowMembersToSelection(dim);
+    await runQuery();
+  } catch (error) {
+    node.expanded = false;
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(`[PivotExplorer] expand(${dim}, ${node.member}) failed:`, error);
+    }
+  } finally {
+    drilling.value = '';
+  }
+}
+
+// Collapse a row: remove ITS descendant subtree from the visible order (matched
+// by path prefix, so only the descendants of THIS occurrence are removed — a
+// shared member under another parent is untouched). Nodes remain registered +
+// cached for fast re-expand. Then re-query.
+function collapseRow(dim, path) {
+  const node = rowNodes[path];
+  if (!node) return;
+  const toRemove = new Set();
+  const stack = [...(node.children || [])];
+  while (stack.length) {
+    const childPath = stack.pop();
+    toRemove.add(childPath);
+    const child = rowNodes[childPath];
+    if (child?.children?.length) stack.push(...child.children);
+    if (child) child.expanded = false;
+  }
+  rowOrder.value = rowOrder.value.filter((p) => !toRemove.has(p));
+  node.expanded = false;
+  syncRowMembersToSelection(dim);
+  runQuery();
+}
+
+// Re-insert a previously-collapsed node's direct children after it (their own
+// sub-expansions stay collapsed — re-expanding is a fresh, shallow reveal).
+// Guarded against double-insertion: skip any child path already in rowOrder.
+function reinsertChildren(node) {
+  if (!node?.children?.length) return;
+  const present = new Set(rowOrder.value);
+  const missing = node.children.filter((p) => !present.has(p));
+  if (missing.length) insertAfter(node.path, missing);
+}
+
+// Insert `paths` into rowOrder immediately after `anchor` (a path). Idempotent:
+// any path already present is skipped so re-entry cannot duplicate rows.
+function insertAfter(anchor, paths) {
+  const present = new Set(rowOrder.value);
+  const toAdd = paths.filter((p) => !present.has(p));
+  if (!toAdd.length) return;
+  const idx = rowOrder.value.indexOf(anchor);
+  const next = rowOrder.value.slice();
+  const at = idx < 0 ? next.length : idx + 1;
+  next.splice(at, 0, ...toAdd);
+  rowOrder.value = next;
+}
+
 // ── Loaders ────────────────────────────────────────────────────────────────
 async function loadCubes() {
   cubesLoading.value = true;
   cubesError.value = '';
   try {
     const data = await getTm1Cubes();
-    // eslint-disable-next-line no-console
-    console.debug('[PivotExplorer] cubes raw:', data);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug('[PivotExplorer] cubes raw:', data);
+    }
     cubes.value = normaliseCubes(data);
     if (!cube.value) {
       cube.value = cubes.value.includes(DEFAULT_CUBE)
@@ -863,8 +1188,10 @@ async function loadDimensions(cubeName) {
   dimensions.value = [];
   try {
     const data = await getTm1CubeDimensions(cubeName);
-    // eslint-disable-next-line no-console
-    console.debug(`[PivotExplorer] dimensions(${cubeName}) raw:`, data);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(`[PivotExplorer] dimensions(${cubeName}) raw:`, data);
+    }
     dimensions.value = normaliseDimensions(data);
     applyDefaultAssignments(dimensions.value);
     await seedAllDefaults();
@@ -878,10 +1205,9 @@ async function loadDimensions(cubeName) {
   }
 }
 
-// On cube load, resolve a sensible populated default for every assigned
-// dimension: Rows/Cols → children of the top consolidation (a real grid);
-// Filter → its single top member (measure-aware). Then auto-run so the explorer
-// opens populated without the user touching anything.
+// On cube load, resolve a populated default for every assigned dimension:
+// Rows/Cols → children of the top consolidation (a real grid); Filter → its
+// single top member. Then auto-run so the explorer opens populated.
 async function seedAllDefaults() {
   await Promise.all([
     ...rowDims.value.map((d) => seedPopulatedDefault(d)),
@@ -892,7 +1218,7 @@ async function seedAllDefaults() {
 }
 
 // Sensible default layout: 'account'-ish on Rows, 'month'/'period' on Columns,
-// everything else on Filter. Matching is fuzzy because cube dimension names vary.
+// everything else on Filter. Matching is fuzzy because dimension names vary.
 function applyDefaultAssignments(dims) {
   for (const k of Object.keys(assignments)) delete assignments[k];
   for (const k of Object.keys(memberSelections)) delete memberSelections[k];
@@ -900,7 +1226,8 @@ function applyDefaultAssignments(dims) {
   for (const k of Object.keys(elementCache)) delete elementCache[k];
   for (const k of Object.keys(memberTypes)) delete memberTypes[k];
   for (const k of Object.keys(defaultMembers)) delete defaultMembers[k];
-  drillPath.value = [];
+  for (const k of Object.keys(rowNodes)) delete rowNodes[k];
+  rowOrder.value = [];
 
   let rowsAssigned = false;
   let colsAssigned = false;
@@ -935,9 +1262,8 @@ function applyDefaultAssignments(dims) {
 async function runQuery() {
   if (!canRun.value) return;
 
-  // Make sure every axis/filter dimension still has a member — load (if not yet
-  // loaded) + seed a default for any that are empty before querying. This covers
-  // both "never opened a picker" and "switched a dimension's role after loading".
+  // Make sure every axis/filter dimension still has a member — load + seed any
+  // empties before querying (covers "never opened a picker" and role changes).
   await Promise.all(
     [...rowDims.value, ...colDims.value, ...filterDims.value]
       .filter((d) => needsSeed(d))
@@ -968,8 +1294,10 @@ async function runQuery() {
   try {
     const data = await runTm1Query(payload);
     if (seq !== querySeq) return;
-    // eslint-disable-next-line no-console
-    console.debug('[PivotExplorer] query raw:', data);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug('[PivotExplorer] query raw:', data);
+    }
     result.value = data;
   } catch (error) {
     if (seq !== querySeq) return;
@@ -987,76 +1315,95 @@ function needsSeed(dim) {
 }
 
 // Ensure a dimension has elements loaded AND a default member seeded for its
-// CURRENT role — used right before a query. Unlike ensureElements (which
-// early-returns once cached), this always re-seeds the empty selection, so a
-// dimension whose role changed after loading still gets a sensible default.
+// CURRENT role — used right before a query.
 async function ensureSeeded(dim) {
   await ensureElements(dim);
   seedDefaultMember(dim, elementOptions(dim));
 }
 
-// ── Drill-down ──────────────────────────────────────────────────────────────
-// Click a consolidation row-header member → replace the current row members with
-// that member's children, push a breadcrumb, and re-run. Drilling operates on the
-// single primary row dimension. The clicked member is swapped for its children so
-// the drilled level sits in place of its parent.
-const drilling = ref(''); // member currently being drilled (shows a spinner).
+// ── Drill (expand / collapse a row in place) ────────────────────────────────
+const drilling = ref(''); // member currently being fetched (shows a spinner).
 
-async function drillRow(member) {
+function toggleRow(row) {
   const dim = primaryRowDim.value;
-  if (!dim || !member || drilling.value) return;
-  drilling.value = member;
-  try {
-    const data = await getTm1DimensionChildren(dim, member);
-    // eslint-disable-next-line no-console
-    console.debug(`[PivotExplorer] drill children(${dim}, ${member}) raw:`, data);
-    const children = normaliseChildren(data);
-    recordTypes(dim, children);
-    if (!children.length) return; // leaf — nothing to expand.
-    const current = memberSelections[dim] || [];
-    const idx = current.indexOf(member);
-    const childNames = children.map((c) => c.value);
-    // Replace the parent in place with its children (de-dupe against existing).
-    const without = current.filter((m) => m !== member);
-    const merged = [];
-    const seen = new Set();
-    const insertAt = idx < 0 ? without.length : idx;
-    for (let i = 0; i < without.length; i += 1) {
-      if (i === insertAt) {
-        for (const c of childNames) if (!seen.has(c)) { merged.push(c); seen.add(c); }
-      }
-      if (!seen.has(without[i])) { merged.push(without[i]); seen.add(without[i]); }
-    }
-    if (insertAt >= without.length) {
-      for (const c of childNames) if (!seen.has(c)) { merged.push(c); seen.add(c); }
-    }
-    memberSelections[dim] = merged;
-    mergePickerOptions(dim, children);
-    drillPath.value = [...drillPath.value, { dim, parent: member }];
-    runQuery();
-  } catch (error) {
-    // Non-fatal: leave the current grid; the run-error surface stays for query
-    // failures. A failed drill just doesn't expand.
-    // eslint-disable-next-line no-console
-    console.debug(`[PivotExplorer] drill(${dim}, ${member}) failed:`, error);
-  } finally {
-    drilling.value = '';
-  }
+  if (!dim || !row.drillable || !row.path || drilling.value) return;
+  if (row.expanded) collapseRow(dim, row.path);
+  else expandRow(dim, row.path);
 }
 
-// Restore Rows (and Cols) to the populated defaults resolved on cube load and
-// re-run. Clears the drill breadcrumb.
+// Collapse every expansion back to the populated default rollups and re-run.
 async function resetToDefault() {
-  for (const d of [...rowDims.value, ...colDims.value]) {
-    if (defaultMembers[d]?.length) {
-      memberSelections[d] = defaultMembers[d].slice();
-    }
+  const dim = primaryRowDim.value;
+  if (dim && defaultMembers[dim]?.length) {
+    initRowTree(dim, defaultMembers[dim].slice());
   }
-  drillPath.value = [];
+  // Restore any non-primary row/col dims to their defaults too.
+  for (const d of [...rowDims.value, ...colDims.value]) {
+    if (d === dim) continue;
+    if (defaultMembers[d]?.length) memberSelections[d] = defaultMembers[d].slice();
+  }
   if (canRun.value) runQuery();
 }
 
-// ── Number formatting (generic — thousands-separated, no forced currency) ────
+// ── Context-pill / axis-chip interactions ───────────────────────────────────
+function togglePicker(key, open, dim) {
+  openPicker.value = open ? key : '';
+  if (open && dim) ensureElements(dim);
+}
+
+function setFilterMember(dim, value) {
+  filterSelections[dim] = value;
+  openPicker.value = '';
+  runQuery();
+}
+
+function toggleChipMenu(key, open) {
+  openChipMenu.value = open ? key : '';
+}
+
+// Move a dimension between Rows / Columns / Filter from a chip menu. Re-seeds
+// the moved dimension's members for its new role and re-runs.
+async function moveDimension(dim, target) {
+  if (assignments[dim] === target) {
+    openChipMenu.value = '';
+    return;
+  }
+  assignments[dim] = target;
+  openChipMenu.value = '';
+
+  // Reset the row tree when the primary row dimension changes.
+  for (const k of Object.keys(rowNodes)) delete rowNodes[k];
+  rowOrder.value = [];
+
+  // Re-seed members appropriately for the (possibly new) axis roles.
+  await Promise.all([
+    ...rowDims.value.map((d) => seedPopulatedDefault(d)),
+    ...colDims.value.map((d) => seedPopulatedDefault(d)),
+    ...filterDims.value.map((d) => ensureSeeded(d)),
+  ]);
+  if (canRun.value) runQuery();
+}
+
+// Swap the single row dim and single column dim (toolbar button). Re-seeds both
+// for their new axes and re-runs.
+async function swapAxes() {
+  if (!canSwap.value) return;
+  const r = rowDims.value[0];
+  const c = colDims.value[0];
+  assignments[r] = 'cols';
+  assignments[c] = 'rows';
+
+  for (const k of Object.keys(rowNodes)) delete rowNodes[k];
+  rowOrder.value = [];
+
+  await Promise.all([
+    seedPopulatedDefault(c), // now on Rows
+    seedPopulatedDefault(r), // now on Cols
+  ]);
+  if (canRun.value) runQuery();
+}
+
+// ── Number formatting (finance: thousands-separated, negatives in red) ───────
 // Locale-grouped figures; we don't force ZAR. When the backend supplies a
 // `formatted` string we prefer it verbatim.
 const numberFormatter = new Intl.NumberFormat(undefined, {
@@ -1083,6 +1430,27 @@ function formatTotal(value) {
   return numberFormatter.format(n);
 }
 
+// Negative figures read red (finance cost-direction convention). A cell is
+// negative if its raw numeric is < 0 (falls back to parsing the formatted
+// string — leading "-" or wrapping "(…)" — when only a formatted string exists).
+function cellClass(cell) {
+  return { 'pivot-grid__cell--neg': isNegativeCell(cell) };
+}
+
+function totalClass(value) {
+  const n = Number(value);
+  return { 'pivot-grid__cell--neg': Number.isFinite(n) && n < 0 };
+}
+
+function isNegativeCell(cell) {
+  if (!cell) return false;
+  const n = Number(cell.value);
+  if (Number.isFinite(n)) return n < 0;
+  const f = cell.formatted;
+  if (typeof f === 'string') return /^\s*[-(]/.test(f.trim());
+  return false;
+}
+
 // ── Reactions ──────────────────────────────────────────────────────────────
 watch(cube, (next, prev) => {
   if (next === prev) return;
@@ -1098,220 +1466,117 @@ loadCubes();
 <style scoped>
 .pivot {
   display: grid;
-  gap: 16px;
-}
-
-/* ── Cube row ─────────────────────────────────────────────────────────────── */
-.pivot__cube-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
   gap: 12px;
 }
 
-.pivot__cube-select {
-  min-width: 280px;
-}
-
-.pivot__inline-status {
+/* ════════════════════════════════════════════════════════════════════════════
+   1 ── TOOLBAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pivot-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
-  font-size: 13px;
-  color: var(--kdl-text-secondary);
-}
-
-.pivot__inline-status--error {
-  color: var(--kdl-danger, #b42318);
-}
-
-/* ── Status (loading / error) ─────────────────────────────────────────────── */
-.pivot__status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
+  gap: 12px;
+  padding: 8px 10px;
   border: 1px solid var(--kdl-border-subtle);
   border-radius: 8px;
   background: var(--kdl-page-bg);
-  color: var(--kdl-text-secondary);
-  font-size: 13px;
 }
 
-.pivot__status--error {
-  color: var(--kdl-danger, #b42318);
+.pivot-toolbar__cube {
+  flex: 0 1 280px;
+  min-width: 200px;
 }
 
-/* ── Assignment grid ──────────────────────────────────────────────────────── */
-.pivot__assign {
-  display: grid;
-  gap: 12px;
+.pivot-toolbar__cube-select {
+  width: 100%;
 }
 
-.pivot__assign-head {
-  display: grid;
-  gap: 4px;
-}
-
-.pivot__assign-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--kdl-text-primary);
-}
-
-.pivot__assign-hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--kdl-text-muted);
-}
-
-.pivot__dim-list {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.pivot__dim {
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) 132px minmax(220px, 2.4fr);
+.pivot-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--kdl-border-subtle);
-  border-left: 3px solid var(--kdl-border);
-  border-radius: 6px;
-  background: var(--kdl-card-bg);
+  gap: 12px;
+  margin-left: auto;
 }
 
-/* Left accent encodes the role at a glance (neutral hues — not RAG tones). */
-.pivot__dim--rows {
-  border-left-color: var(--kdl-accent);
-}
-.pivot__dim--cols {
-  border-left-color: var(--kdl-brand-navy);
-}
-.pivot__dim--filter {
-  border-left-color: var(--kdl-text-hint);
-}
-.pivot__dim--unused {
-  border-left-color: var(--kdl-border);
-  opacity: 0.75;
-}
-
-.pivot__dim-name {
-  align-self: center;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--kdl-text-primary);
-}
-
-.pivot__dim-members {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.pivot__dim-members--muted {
-  align-self: center;
-  font-size: 12px;
-  color: var(--kdl-text-hint);
-}
-
-.pivot__member-select {
-  min-width: 0;
-}
-
-.pivot__load-btn {
+.pivot-toolbar__btn {
   display: inline-flex;
   align-items: center;
-  justify-self: start;
   gap: 6px;
-  padding: 4px 10px;
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--kdl-border);
   border-radius: 6px;
   background: var(--kdl-card-bg);
   color: var(--kdl-text-secondary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
               color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .pivot__load-btn {
-    transition: none;
-  }
-}
-
-.pivot__load-btn:hover:not(:disabled) {
+.pivot-toolbar__btn:hover:not(:disabled) {
   border-color: var(--kdl-text-muted);
   color: var(--kdl-text-primary);
 }
 
-.pivot__load-btn:disabled {
-  opacity: 0.6;
+.pivot-toolbar__btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.pivot__dim-error {
-  margin: 0;
-  font-size: 12px;
-  color: var(--kdl-danger, #b42318);
+.pivot-toolbar__btn-icon {
+  flex: 0 0 auto;
+  color: var(--kdl-text-hint);
 }
 
-/* ── Controls ─────────────────────────────────────────────────────────────── */
-.pivot__controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding-top: 4px;
-}
-
-.pivot__controls-spacer {
-  flex: 1 1 0;
-}
-
-.pivot__run {
+.pivot-toolbar__busy {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.pivot__hint {
-  margin: 0;
   font-size: 12px;
-  color: var(--kdl-text-muted);
+  font-weight: 500;
+  color: var(--kdl-text-secondary);
 }
 
-/* ── Slice summary ────────────────────────────────────────────────────────── */
-.pivot__summary {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 8px;
-  background: var(--kdl-page-bg);
-}
-
-.pivot__summary-row {
+/* ── Thin status banners ──────────────────────────────────────────────────── */
+.pivot-banner {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
+  background: var(--kdl-page-bg);
+  color: var(--kdl-text-secondary);
+  font-size: 13px;
 }
 
-.pivot__summary-label {
+.pivot-banner--error {
+  color: #dc2626; /* danger-600 — documented cost-direction / error red (KDL gap) */
+  border-color: #dc2626;
+}
+
+:root[data-theme="dark"] .pivot-banner--error {
+  color: #f87171;
+  border-color: #f87171;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   2 ── CONTEXT BAR (filter pills)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pivot-context {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pivot-context__label {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 700;
@@ -1320,18 +1585,472 @@ loadCubes();
   color: var(--kdl-text-hint);
 }
 
-.pivot__summary-code {
-  min-width: 0;
-  flex: 1 1 240px;
-  font-family: var(--kdl-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--kdl-text-secondary);
-  word-break: break-word;
+.pivot-context__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.pivot__grid-size {
+.pivot-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--kdl-border);
+  border-radius: 999px;
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-pill:hover {
+  border-color: var(--kdl-text-muted);
+  background: var(--kdl-hover-bg);
+}
+
+.pivot-pill__dim {
+  color: var(--kdl-text-muted);
+  font-weight: 500;
+}
+
+.pivot-pill__sep {
+  color: var(--kdl-text-hint);
+}
+
+.pivot-pill__member {
+  color: var(--kdl-text-primary);
+  font-weight: 600;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pivot-pill__chevron {
+  flex: 0 0 auto;
+  margin-left: 1px;
+  color: var(--kdl-text-hint);
+}
+
+/* Popover body (the member picker) — rendered inside teleported .kp-content. */
+.pivot-picker {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.pivot-picker__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kdl-text-hint);
+}
+
+.pivot-picker__control {
+  width: 100%;
+}
+
+.pivot-picker__load {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--kdl-border);
+  border-radius: 6px;
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pivot-picker__load:hover:not(:disabled) {
+  border-color: var(--kdl-text-muted);
+  color: var(--kdl-text-primary);
+}
+
+.pivot-picker__load:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pivot-picker__error {
+  margin: 0;
+  font-size: 12px;
+  color: #dc2626; /* danger-600 — documented error red (KDL gap) */
+}
+
+:root[data-theme="dark"] .pivot-picker__error {
+  color: #f87171;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   3 ── AXIS WELLS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pivot-wells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pivot-well {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--kdl-border);
+  border-radius: 6px;
+  background: var(--kdl-page-bg);
+}
+
+.pivot-well__label {
   flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kdl-text-hint);
+}
+
+.pivot-well__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pivot-well__empty {
+  font-size: 12px;
+  color: var(--kdl-text-hint);
+  font-style: italic;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   4 ── THE PIVOT GRID (hero)
+   The grid is the dominant element: a tall self-scrolling viewport so the
+   sticky column-header band + sticky first column engage against THIS container
+   (not the page), and a wide month grid scrolls on both axes within a framed
+   region. The chrome above is deliberately compact so the grid owns the space.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pivot-grid-wrap {
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid var(--kdl-border);
+  border-radius: 8px;
+  background: var(--kdl-card-bg);
+  transition: opacity var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+/* While re-querying, dim the stale grid slightly (kept legible). */
+.pivot-grid-wrap--busy {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-grid-wrap {
+    transition: none;
+  }
+}
+
+.pivot-grid {
+  /* Local layout tokens — widths constrain the grid so drilling (longer labels)
+     and few-column slices don't reflow the whole table. Spacing scale only. */
+  --pivot-rowhead-min: 220px;
+  --pivot-rowhead-max: 360px;
+  --pivot-num-min: 96px;
+  /* Total band tints — derived from the brand-navy token via color-mix (the
+     house pattern, see KTable / EmptyState). The band is a real navy FILL, not
+     a near-white grey, so it reads as a band distinct from the zebra. */
+  --pivot-total-tint: color-mix(in srgb, var(--kdl-brand-navy) 8%, transparent);
+  --pivot-total-fill: var(--kdl-brand-navy);
+
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Multi-dim explanation — sits with the now-flat (no-drill) grid. */
+.pivot-grid__caption {
+  caption-side: top;
+  padding: 0 0 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--kdl-text-secondary);
+}
+
+.pivot-grid th,
+.pivot-grid td {
+  height: 32px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--kdl-border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* Numeric columns get a sensible min-width so a few-column slice doesn't let a
+   single column stretch across the viewport. */
+.pivot-grid__col-head,
+.pivot-grid__cell {
+  min-width: var(--pivot-num-min);
+}
+
+/* ── Column-header band (frozen on vertical scroll) ───────────────────────── */
+.pivot-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 34px;
+  background: var(--kdl-page-bg);
+  /* 11px uppercase header → small text, so it must clear AA 4.5:1. The muted
+     token (#6B7280 on #F5F5F8 ≈ 4.3:1) fell short; secondary (#4B5563 ≈ 7:1)
+     clears it. */
+  color: var(--kdl-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--kdl-border);
+}
+
+.pivot-grid__col-head {
+  text-align: right;
+}
+
+/* Corner cell — row/col intersection: highest stack, frozen on both axes. */
+.pivot-grid__corner {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  min-width: var(--pivot-rowhead-min);
+  max-width: var(--pivot-rowhead-max);
+  color: var(--kdl-text-secondary);
+  background: var(--kdl-page-bg);
+  border-right: 1px solid var(--kdl-border);
+}
+
+/* ── Row-header column (frozen on horizontal scroll) ──────────────────────── */
+.pivot-grid__row-head {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  /* Constrain the row-header column so drilling (deeper, longer labels) and
+     "Collapse all" don't reflow the data columns. Overflow ellipsises (title
+     carries the full label). */
+  min-width: var(--pivot-rowhead-min);
+  max-width: var(--pivot-rowhead-max);
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--kdl-text-primary);
+  background: var(--kdl-card-bg);
+  border-right: 1px solid var(--kdl-border);
+}
+
+.pivot-grid__row-head--consol {
+  font-weight: 600;
+}
+
+.pivot-grid__row-head-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  /* The per-level indent is a data-driven runtime value, but routed through a
+     custom property (--row-indent, set inline) rather than an inline padding —
+     the house no-inline-style-for-design-values pattern. */
+  padding: 0 14px 0 calc(14px + var(--row-indent, 0px));
+}
+
+.pivot-grid__row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Expand / collapse twisty ─────────────────────────────────────────────── */
+.pivot-grid__twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--kdl-text-muted);
+  cursor: pointer;
+  transition: color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-grid__twisty:hover:not(:disabled) {
+  color: var(--kdl-accent);
+  background: var(--kdl-hover-bg);
+}
+
+.pivot-grid__twisty:disabled {
+  cursor: progress;
+}
+
+.pivot-grid__twisty-icon {
+  display: block;
+  transition: transform var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-grid__twisty-icon--open {
+  transform: rotate(90deg);
+}
+
+.pivot-grid__twisty-spacer {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-grid__twisty,
+  .pivot-grid__twisty-icon {
+    transition: none;
+  }
+}
+
+/* ── Cells ────────────────────────────────────────────────────────────────── */
+.pivot-grid__cell {
+  font-size: 13px;
+  text-align: right;
+  color: var(--kdl-text-primary);
+}
+
+.pivot-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Negative figures read red — finance cost-direction convention. #dc2626 is the
+   documented danger-600 / cost-direction hex (KDL exposes no semantic
+   --kdl-danger var yet — same gap noted in CostCutRow / MetricTile). */
+.pivot-grid__cell--neg {
+  color: #dc2626;
+}
+
+:root[data-theme="dark"] .pivot-grid__cell--neg {
+  color: #f87171;
+}
+
+/* ── Three distinguishable surfaces: zebra · hover · total ────────────────────
+   Resting data cells sit on the card; even rows get a QUIET neutral zebra; row
+   hover steps to a PERCEPTIBLY darker neutral. The total band (below) is a navy
+   tint — a different hue entirely — so the three never read as the same grey. */
+.pivot-grid tbody tr:nth-child(even) .pivot-grid__cell,
+.pivot-grid tbody tr:nth-child(even) .pivot-grid__row-head {
+  background: var(--kdl-hover-bg); /* quiet neutral zebra */
+}
+
+.pivot-grid tbody tr:hover .pivot-grid__cell,
+.pivot-grid tbody tr:hover .pivot-grid__row-head {
+  background: var(--kdl-border-subtle); /* a step darker than zebra */
+}
+
+/* Consolidation rows carry a faint navy tint so rollups read as structure. */
+.pivot-grid__row--consol .pivot-grid__row-head {
+  color: var(--kdl-brand-navy);
+}
+
+:root[data-theme="dark"] .pivot-grid__row--consol .pivot-grid__row-head {
+  color: var(--kdl-text-primary);
+}
+
+/* ── Totals — a genuine NAVY BAND, not grey-on-grey ───────────────────────────
+   The row-total column (per-row) gets a navy TINT; the column-total footer +
+   grand-total cell get a solid navy FILL with white text. Column-total and
+   row-total share the navy hue so the band reads as one continuous frame around
+   the data, unmistakably distinct from the neutral zebra/hover surfaces. */
+.pivot-grid__total-head {
+  border-left: 2px solid var(--kdl-brand-navy);
+}
+
+.pivot-grid tbody .pivot-grid__total-cell {
+  border-left: 2px solid var(--kdl-brand-navy);
+  font-weight: 600;
+  background: var(--pivot-total-tint);
+}
+
+/* Hovering a data row must NOT lighten its total cell (the old inversion). The
+   row-hover rule above would repaint the total cell neutral; re-assert a navy
+   tint — a touch deeper — so hover steps the SAME direction, never lighter. */
+.pivot-grid tbody tr:hover .pivot-grid__total-cell {
+  background: color-mix(in srgb, var(--kdl-brand-navy) 14%, transparent);
+}
+
+/* Column-total footer row — pinned to the bottom of the scroll viewport, solid
+   navy fill so it anchors the band. */
+.pivot-grid__total-row th,
+.pivot-grid__total-row td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  border-top: 2px solid var(--kdl-brand-navy);
+  border-bottom: none;
+  background: var(--pivot-total-fill);
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* The footer's leading "Total" cell is bottom- AND left-pinned (sits in the
+   frozen first column), so it needs the combined stacking of both. It keeps the
+   solid navy fill, so its label reverses to white too. */
+.pivot-grid__total-row .pivot-grid__total-corner {
+  left: 0;
+  z-index: 3;
+  padding: 0 14px;
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: var(--pivot-total-fill);
+  border-right: 1px solid var(--kdl-brand-navy);
+}
+
+/* Grand total — the band's corner; solid navy, divider continues the frame. */
+.pivot-grid__grand-total {
+  border-left: 2px solid var(--kdl-brand-navy);
+  background: var(--pivot-total-fill);
+}
+
+/* Negative figures inside the solid-navy footer/grand-total need a light red
+   that reads on navy (the #dc2626 data-cell red is too dark on the fill). */
+.pivot-grid__total-row .pivot-grid__cell--neg,
+.pivot-grid__grand-total.pivot-grid__cell--neg {
+  color: #fca5a5;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Footer — size badge, collapse-all, Show MDX
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pivot-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.pivot-footer__size {
   padding: 2px 8px;
   border: 1px solid var(--kdl-border);
   border-radius: 999px;
@@ -1344,127 +2063,7 @@ loadCubes();
   white-space: nowrap;
 }
 
-/* ── Show-MDX disclosure ──────────────────────────────────────────────────── */
-.pivot__mdx {
-  display: grid;
-  gap: 6px;
-}
-
-.pivot__mdx-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  gap: 6px;
-  padding: 2px 6px;
-  margin-left: -6px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--kdl-text-muted);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.pivot__mdx-toggle:hover {
-  color: var(--kdl-text-primary);
-}
-
-.pivot__mdx-toggle:focus-visible {
-  outline: 2px solid var(--kdl-accent);
-  outline-offset: 1px;
-}
-
-.pivot__mdx-chevron {
-  flex: 0 0 auto;
-  color: var(--kdl-text-hint);
-  transition: transform var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
-}
-
-.pivot__mdx-chevron--open {
-  transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pivot__mdx-chevron {
-    transition: none;
-  }
-}
-
-.pivot__mdx-code {
-  margin: 0;
-  padding: 10px 12px;
-  max-height: 220px;
-  overflow: auto;
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 6px;
-  background: var(--kdl-card-bg);
-  color: var(--kdl-text-secondary);
-  font-family: var(--kdl-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* ── Drill breadcrumb ─────────────────────────────────────────────────────── */
-.pivot__drill-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 8px;
-  background: var(--kdl-page-bg);
-}
-
-.pivot__drill-label {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--kdl-text-hint);
-}
-
-.pivot__drill-trail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.pivot__drill-crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--kdl-text-secondary);
-}
-
-.pivot__drill-crumb--root {
-  color: var(--kdl-text-muted);
-}
-
-.pivot__drill-sep {
-  color: var(--kdl-text-hint);
-}
-
-.pivot__drill-hint {
-  font-size: 12px;
-  color: var(--kdl-text-muted);
-}
-
-.pivot__drill-reset {
-  margin-left: auto;
+.pivot-footer__reset {
   padding: 4px 10px;
   border: 1px solid var(--kdl-border);
   border-radius: 6px;
@@ -1478,211 +2077,88 @@ loadCubes();
               color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .pivot__drill-reset {
-    transition: none;
-  }
-}
-
-.pivot__drill-reset:hover {
+.pivot-footer__reset:hover {
   border-color: var(--kdl-text-muted);
   color: var(--kdl-text-primary);
 }
 
-/* ── Pivot table ──────────────────────────────────────────────────────────── */
-/* The result is the hero: a tall, self-scrolling viewport so the sticky header
-   row + sticky first column engage against this container (not the page), and a
-   wide month grid scrolls on both axes within a contained, framed region. */
-.pivot__table-wrap {
-  max-height: 62vh;
-  overflow: auto;
-  border: 1px solid var(--kdl-border-subtle);
-  border-radius: 8px;
-}
-
-.pivot-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.pivot-table th,
-.pivot-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--kdl-border-subtle);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.pivot-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--kdl-page-bg);
-  color: var(--kdl-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.pivot-table__col-head,
-.pivot-table__cell {
-  text-align: right;
-}
-
-.pivot-table__corner {
-  color: var(--kdl-text-hint);
-}
-
-/* Sticky first column — the leading row-header stays pinned while a wide month
-   grid scrolls horizontally. The corner header is the row/col intersection, so
-   it gets the highest stacking + sticks on both axes. */
-.pivot-table__corner:first-child {
-  left: 0;
-  z-index: 3;
-}
-
-.pivot-table__row-head {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--kdl-text-primary);
-  background: var(--kdl-card-bg);
-}
-
-.pivot-table__row-head:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  border-right: 1px solid var(--kdl-border-subtle);
-}
-
-.pivot-table__corner:first-child {
-  border-right: 1px solid var(--kdl-border-subtle);
-}
-
-.pivot-table__cell {
-  font-size: 13px;
-  color: var(--kdl-text-primary);
-}
-
-.pivot-num {
-  font-variant-numeric: tabular-nums;
-}
-
-.pivot-table tbody tr:hover .pivot-table__cell,
-.pivot-table tbody tr:hover .pivot-table__row-head {
-  background: var(--kdl-hover-bg);
-}
-
-/* ── Drill affordance on consolidation row headers ───────────────────────── */
-.pivot-table__row-head-inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pivot-table__drill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--kdl-border);
-  border-radius: 4px;
-  background: var(--kdl-card-bg);
-  color: var(--kdl-text-muted);
-  cursor: pointer;
-  transition: border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
-              color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
-              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .pivot-table__drill {
+  .pivot-footer__reset {
     transition: none;
   }
 }
 
-.pivot-table__drill:hover:not(:disabled) {
-  border-color: var(--kdl-accent);
-  color: var(--kdl-accent);
-  background: var(--kdl-hover-bg);
+.pivot-footer__spacer {
+  flex: 1 1 0;
 }
 
-.pivot-table__drill:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.pivot-table__drill-icon {
-  display: block;
-}
-
-/* ── Totals row / column ─────────────────────────────────────────────────── */
-.pivot-table__total-head {
-  border-left: 2px solid var(--kdl-border);
-}
-
-.pivot-table__total-cell {
-  font-weight: 600;
-  color: var(--kdl-text-primary);
-  background: var(--kdl-hover-bg);
-}
-
-/* Row-total column — the last cell in each body row. */
-.pivot-table tbody .pivot-table__total-cell,
-.pivot-table thead .pivot-table__total-head {
-  border-left: 2px solid var(--kdl-border);
-}
-
-/* Column-total footer row — pinned to the bottom of the scroll viewport so the
-   margins stay in view while the body scrolls. */
-.pivot-table__total-row th,
-.pivot-table__total-row td {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  border-top: 2px solid var(--kdl-border);
-  border-bottom: none;
-  background: var(--kdl-page-bg);
-  font-weight: 700;
-  color: var(--kdl-text-primary);
-}
-
-/* The footer's leading "Total" cell is both bottom- and left-pinned (it sits in
-   the sticky first column), so it needs the combined stacking of both. */
-.pivot-table__total-row .pivot-table__total-corner {
-  left: 0;
-  z-index: 3;
-  border-right: 1px solid var(--kdl-border-subtle);
-}
-
-.pivot-table__total-corner {
-  text-align: right;
+/* ── Show-MDX disclosure ──────────────────────────────────────────────────── */
+.pivot-mdx__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kdl-text-muted);
+  font-family: inherit;
   font-size: 11px;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--kdl-text-secondary);
+  cursor: pointer;
 }
 
-.pivot-table__grand-total {
-  border-left: 2px solid var(--kdl-border);
+.pivot-mdx__toggle:hover {
+  color: var(--kdl-text-primary);
 }
 
-.pivot-table tfoot tr:hover th,
-.pivot-table tfoot tr:hover td {
+.pivot-mdx__toggle:focus-visible {
+  outline: 2px solid var(--kdl-accent);
+  outline-offset: 1px;
+}
+
+.pivot-mdx__chevron {
+  flex: 0 0 auto;
+  color: var(--kdl-text-hint);
+  transition: transform var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-mdx__chevron--open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-mdx__chevron {
+    transition: none;
+  }
+}
+
+.pivot-mdx__code {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--kdl-border-subtle);
+  border-radius: 6px;
   background: var(--kdl-page-bg);
+  color: var(--kdl-text-secondary);
+  font-family: var(--kdl-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
+/* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 860px) {
-  .pivot__dim {
-    grid-template-columns: 1fr;
+  .pivot-toolbar__actions {
+    margin-left: 0;
   }
 
-  .pivot__dim-name {
-    white-space: normal;
+  .pivot-grid-wrap {
+    max-height: 60vh;
   }
 }
 </style>
