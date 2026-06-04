@@ -426,11 +426,22 @@ function zone(wrapper, which) {
 }
 
 // A Context-bar filter TOKEN (the draggable pill-group) for dimension `dim`,
-// located via its title ("<dim> — drag to Rows or Columns…").
+// located via its title ("<dim> — drag to Rows or Columns…"). The token GROUP +
+// its inner buttons are draggable=false; the dragging-cue class still lands on
+// this group, so it remains the right element for classes()/title assertions.
 function filterToken(wrapper, dim) {
   return wrapper
     .findAll('.pivot-context .pivot-token')
     .find((t) => (t.attributes('title') || '').startsWith(`${dim} `));
+}
+
+// The GRIP HANDLE inside a Context-bar filter token — the SOLE drag-initiation
+// surface (the only element carrying dragstart/dragend). The token group + its
+// buttons are draggable=false, so dragstart/dragend MUST be dispatched on the
+// grip; events bubble UP and the grip is the token's first child, so the moved
+// handler only fires when the grip is the dispatch target.
+function filterGrip(wrapper, dim) {
+  return filterToken(wrapper, dim).find('.pivot-grip');
 }
 
 // True when a zone currently shows its active drop-target highlight.
@@ -682,7 +693,7 @@ describe('PivotExplorer — single vs multi-dim rows', () => {
     expect(yearPill, 'year should be a draggable Context pill').toBeTruthy();
     const dt = makeDataTransfer('year');
     const rowsWell = zone(wrapper, 'rows');
-    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
     fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
     fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
     await settle();
@@ -815,9 +826,10 @@ describe('PivotExplorer — drag reassign (Context → Rows)', () => {
     const callsBefore = runTm1Query.mock.calls.length;
     const dt = makeDataTransfer('year');
 
-    // dragstart on the year token — the component records the dragged dim and
-    // dims the source token.
-    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    // dragstart on the year GRIP (the sole drag surface) — the component records
+    // the dragged dim and dims the source TOKEN (the dragging class lands on the
+    // group, so the classes() assertion still reads the token, not the grip).
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
     await flushPromises();
     expect(
       yearPill.classes(),
@@ -862,15 +874,14 @@ describe('PivotExplorer — drag reassign (Context → Rows)', () => {
 describe('PivotExplorer — drop-zone highlight lifecycle', () => {
   it('dragenter/over activates a zone; dragleave to a CHILD keeps it; dragleave OUTSIDE clears it', async () => {
     const wrapper = await mountExplorer4d();
-    const yearPill = filterToken(wrapper, 'year');
     const dt = makeDataTransfer('year');
 
     // No highlight before a drag starts.
     const rowsWell = zone(wrapper, 'rows');
     expect(zoneActive(rowsWell)).toBe(false);
 
-    // Begin dragging, then enter the Rows well → it activates.
-    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    // Begin dragging (on the grip), then enter the Rows well → it activates.
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
     fireDrag(rowsWell.element, 'dragenter', { dataTransfer: dt });
     await flushPromises();
     expect(zoneActive(rowsWell)).toBe(true);
@@ -888,7 +899,7 @@ describe('PivotExplorer — drop-zone highlight lifecycle', () => {
     await flushPromises();
     expect(zoneActive(rowsWell), 'leave outside the zone clears').toBe(false);
 
-    fireDrag(yearPill.element, 'dragend', { dataTransfer: dt });
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragend', { dataTransfer: dt });
     await flushPromises();
   });
 
@@ -898,7 +909,7 @@ describe('PivotExplorer — drop-zone highlight lifecycle', () => {
     const dt = makeDataTransfer('year');
     const rowsWell = zone(wrapper, 'rows');
 
-    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
     fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
     await flushPromises();
     expect(zoneActive(rowsWell)).toBe(true);
@@ -919,14 +930,14 @@ describe('PivotExplorer — drop-zone highlight lifecycle', () => {
     const dt = makeDataTransfer('year');
     const colsWell = zone(wrapper, 'cols');
 
-    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
     fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
     await flushPromises();
     expect(zoneActive(colsWell)).toBe(true);
     expect(yearPill.classes()).toContain('pivot-token--dragging');
 
-    // Abandon the drag (mouse released off any zone) → dragend on the source.
-    fireDrag(yearPill.element, 'dragend', { dataTransfer: dt });
+    // Abandon the drag (mouse released off any zone) → dragend on the source grip.
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragend', { dataTransfer: dt });
     await flushPromises();
 
     // The highlight AND the source cue clear; year is STILL a filter pill (no
@@ -949,16 +960,19 @@ describe('PivotExplorer — same-zone drop is a no-op', () => {
       .findAllComponents(PivotAxisChip)
       .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
     expect(accountChip, 'account row chip should exist').toBeTruthy();
-    const chipButton = accountChip.find('button.pivot-chip');
-    expect(chipButton.exists()).toBe(true);
+    // The chip's GRIP is the sole drag surface (the chip button is draggable=
+    // false); dispatch dragstart/dragend on it, not on the button.
+    const chipGrip = accountChip.find('.pivot-grip');
+    expect(chipGrip.exists()).toBe(true);
 
     const rowLabelsBefore = rowLabels(wrapper);
     const chipMapBefore = chipMap(wrapper);
     const callsBefore = runTm1Query.mock.calls.length;
     const dt = makeDataTransfer('account');
 
-    // Start dragging the account chip, hover the Rows well (its own well), drop.
-    fireDrag(chipButton.element, 'dragstart', { dataTransfer: dt });
+    // Start dragging the account chip (via its grip), hover the Rows well (its own
+    // well), drop.
+    fireDrag(chipGrip.element, 'dragstart', { dataTransfer: dt });
     const rowsWell = zone(wrapper, 'rows');
     fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
     fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
@@ -1062,10 +1076,9 @@ describe('PivotExplorer — regression after a drag reassign', () => {
   // Rows dim (so drill is still available) and year + month on Columns. Shared
   // helper for the smoke checks below.
   async function dragYearToCols(wrapper) {
-    const yearPill = filterToken(wrapper, 'year');
     const dt = makeDataTransfer('year');
     const colsWell = zone(wrapper, 'cols');
-    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
     fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
     fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
     await settle();

@@ -110,20 +110,47 @@
       >
         <span class="pivot-context__label">Context</span>
         <div class="pivot-context__pills">
-          <!-- Each filter dimension is a draggable token. The token holds two
-               affordances: the member-picker (KPopover, the existing tap-to-
-               change-member) and a move menu (KMenu, the keyboard/non-drag
-               path to Rows / Columns). The group wrapper is the drag handle. -->
+          <!-- Each filter dimension is a token holding three affordances: a
+               leading GRIP HANDLE (the sole drag-initiation surface), the
+               member-picker (KPopover, tap-to-change-member) and a move menu
+               (KMenu, the keyboard/non-drag path to Rows / Columns). Only the
+               grip is draggable — the group + both buttons set draggable=false
+               so a quick mouse-drag that starts on a button is never swallowed
+               as a click; the grip owns dragging unambiguously. -->
           <div
             v-for="dim in filterDims"
             :key="`ctx-${dim}`"
             class="pivot-pill-group pivot-token"
             :class="{ 'pivot-token--dragging': draggingDim === dim }"
-            draggable="true"
-            :title="`${dim} — drag to Rows or Columns, or use the move menu`"
-            @dragstart="(e) => onDimDragStart(e, dim)"
-            @dragend="onDimDragEnd"
+            draggable="false"
+            :title="`${dim} — grab the handle to drag to Rows or Columns, or use the move menu`"
           >
+            <span
+              class="pivot-grip"
+              draggable="true"
+              role="button"
+              :aria-label="`Drag ${dim} to rows, columns or filter`"
+              :title="`Drag ${dim} to rows, columns or filter`"
+              @dragstart="(e) => onDimDragStart(e, dim)"
+              @dragend="onDimDragEnd"
+            >
+              <svg
+                class="pivot-grip__icon"
+                width="10"
+                height="16"
+                viewBox="0 0 10 16"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="3" cy="3" r="1.25" />
+                <circle cx="7" cy="3" r="1.25" />
+                <circle cx="3" cy="8" r="1.25" />
+                <circle cx="7" cy="8" r="1.25" />
+                <circle cx="3" cy="13" r="1.25" />
+                <circle cx="7" cy="13" r="1.25" />
+              </svg>
+            </span>
+
             <KPopover
               :model-value="openPicker === `filter:${dim}`"
               @update:model-value="(o) => togglePicker(`filter:${dim}`, o, dim)"
@@ -132,6 +159,7 @@
                 <button
                   type="button"
                   class="pivot-pill"
+                  draggable="false"
                   :aria-label="`${dim}: ${filterSelections[dim] || 'none'} — change member`"
                 >
                   <span class="pivot-pill__dim">{{ dim }}</span>
@@ -191,6 +219,7 @@
                 <button
                   type="button"
                   class="pivot-pill__move"
+                  draggable="false"
                   :aria-label="`Move ${dim} to Rows or Columns`"
                 >
                   <svg
@@ -1768,13 +1797,11 @@ loadCubes();
    gets a tinted dashed outline; the source token dims while in flight. All
    colour comes from KDL tokens (accent / hover) via color-mix — no raw hex.
    ═══════════════════════════════════════════════════════════════════════════ */
-/* A token (pill / chip) the user can pick up. Grab cue advertises it. */
+/* A token (pill / chip) the user can pick up — but ONLY via its leading grip
+   handle (.pivot-grip), which carries the grab cue + is the sole draggable
+   element. The token body keeps its buttons' click cursors. */
 .pivot-token {
-  cursor: grab;
-}
-
-.pivot-token:active {
-  cursor: grabbing;
+  cursor: default;
 }
 
 /* The source token while it's being dragged — quietly recede. */
@@ -1821,11 +1848,60 @@ loadCubes();
   border-radius: 6px;
 }
 
-/* A filter token: the member-picker pill + its move button, as one draggable
-   unit. They share a hairline so they read as a single control. */
+/* A filter token: the grip handle + the member-picker pill + its move button,
+   as one control. They share a hairline so they read as a single unit; only the
+   leading grip initiates a drag. */
 .pivot-pill-group {
   display: inline-flex;
   align-items: stretch;
+}
+
+/* The GRIP HANDLE — the sole drag-initiation surface of the token. A bare 6-dot
+   glyph (not a button) so a quick mouse-drag that starts here is unambiguous.
+   It is the leading segment of the grouped pill, so it rounds the leading edge.
+   Subtle at rest (hint), strengthens to accent on hover so it reads as a grab
+   handle. ~16px wide gives an easy hit area. */
+.pivot-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 28px;
+  border: 1px solid var(--kdl-border);
+  border-right-width: 0;
+  border-radius: 999px 0 0 999px;
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-hint);
+  cursor: grab;
+  transition: color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-grip:hover {
+  color: var(--kdl-accent);
+  background: var(--kdl-hover-bg);
+  border-color: var(--kdl-text-muted);
+}
+
+.pivot-grip:active {
+  cursor: grabbing;
+}
+
+.pivot-grip:focus-visible {
+  outline: 2px solid var(--kdl-accent);
+  outline-offset: 1px;
+}
+
+.pivot-grip__icon {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-grip {
+    transition: none;
+  }
 }
 
 .pivot-context__label {
@@ -1850,9 +1926,10 @@ loadCubes();
   height: 28px;
   padding: 0 8px 0 10px;
   border: 1px solid var(--kdl-border);
-  /* Left side of the grouped token — round only the leading edge so the pill
-     and its move button read as one pill with a divider. */
-  border-radius: 999px 0 0 999px;
+  /* Middle segment of the grouped token — the grip rounds the leading edge and
+     the move button the trailing edge, so the pill itself is flat-sided and the
+     three read as one continuous pill with hairline dividers. */
+  border-radius: 0;
   border-right-width: 0;
   background: var(--kdl-card-bg);
   color: var(--kdl-text-secondary);
