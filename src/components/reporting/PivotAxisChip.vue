@@ -1,18 +1,25 @@
 <!--
   PivotAxisChip — one dimension chip inside a Rows / Columns axis well of the
   PAW-style PivotExplorer. The chip shows the dimension name; its kebab menu
-  moves the dimension to another axis (Rows / Columns) or to Filter. No HTML5
-  drag-drop — the chip menu (KMenu, keyboard-operable via Reka) is the move
-  affordance, paired with the toolbar Swap button.
+  moves the dimension to another axis (Rows / Columns) or to Filter.
+
+  The chip is ALSO an HTML5 drag handle: it can be dragged onto another zone
+  (Context bar / the other axis well) to reassign the dimension. Drag is mouse-
+  only, so the kebab menu (KMenu, keyboard-operable via Reka) remains the
+  accessible move affordance, paired with the toolbar Swap button. Both paths
+  funnel through the parent's moveDimension.
 
   Props:
-    dim    (String)  — dimension name shown on the chip
-    axis   ('rows'|'cols')  — which well this chip lives in (its current axis)
-    open   (Boolean) — controlled menu open state (single-open model in parent)
+    dim      (String)  — dimension name shown on the chip
+    axis     ('rows'|'cols')  — which well this chip lives in (its current axis)
+    open     (Boolean) — controlled menu open state (single-open model in parent)
+    dragging (Boolean) — true while THIS chip is the drag source (dim-down state)
 
   Emits:
-    toggle (Boolean)  — request to open/close this chip's menu
-    move   (target)   — move this dimension to 'rows' | 'cols' | 'filter'
+    toggle    (Boolean)  — request to open/close this chip's menu
+    move      (target)   — move this dimension to 'rows' | 'cols' | 'filter'
+    dragstart (DragEvent) — chip drag started (parent records the dragged dim)
+    dragend   (DragEvent) — chip drag ended (parent clears drag state)
 -->
 <template>
   <KMenu
@@ -23,8 +30,13 @@
     <template #trigger>
       <button
         type="button"
-        class="pivot-chip"
+        class="pivot-chip pivot-token"
+        :class="{ 'pivot-token--dragging': dragging }"
+        draggable="true"
+        :title="`${dim} — drag to another zone, or open the move menu`"
         :aria-label="`${dim} — move dimension`"
+        @dragstart="$emit('dragstart', $event)"
+        @dragend="$emit('dragend', $event)"
       >
         <span class="pivot-chip__name" :title="dim">{{ dim }}</span>
         <svg
@@ -81,9 +93,14 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  /** True while this chip is the active drag source (drives the dim-down cue). */
+  dragging: {
+    type: Boolean,
+    default: false,
+  },
 });
 
-defineEmits(['toggle', 'move']);
+defineEmits(['toggle', 'move', 'dragstart', 'dragend']);
 </script>
 
 <style scoped>
@@ -120,6 +137,20 @@ defineEmits(['toggle', 'move']);
 .pivot-chip__kebab {
   flex: 0 0 auto;
   color: var(--kdl-text-hint);
+}
+
+/* Drag affordance — the chip is an HTML5 drag handle. Grab cue advertises it;
+   the source chip recedes while in flight (matches the context-pill token). */
+.pivot-token {
+  cursor: grab;
+}
+
+.pivot-token:active {
+  cursor: grabbing;
+}
+
+.pivot-token--dragging {
+  opacity: 0.45;
 }
 
 @media (prefers-reduced-motion: reduce) {

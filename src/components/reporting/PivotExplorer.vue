@@ -99,68 +99,122 @@
            ═════════════════════════════════════════════════════════════════ -->
       <div
         v-if="cube && !dimsLoading && !dimsError && filterDims.length"
-        class="pivot-context"
+        class="pivot-context pivot-dropzone"
+        :class="{ 'pivot-dropzone--active': dropZone === 'filter' && draggingDim }"
         role="group"
-        aria-label="Filter context"
+        aria-label="Filter context — drop a dimension here to filter by it"
+        @dragover.prevent="onZoneDragOver('filter')"
+        @dragenter.prevent="onZoneDragOver('filter')"
+        @dragleave="(e) => onZoneDragLeave(e, 'filter')"
+        @drop.prevent="onZoneDrop('filter')"
       >
         <span class="pivot-context__label">Context</span>
         <div class="pivot-context__pills">
-          <KPopover
+          <!-- Each filter dimension is a draggable token. The token holds two
+               affordances: the member-picker (KPopover, the existing tap-to-
+               change-member) and a move menu (KMenu, the keyboard/non-drag
+               path to Rows / Columns). The group wrapper is the drag handle. -->
+          <div
             v-for="dim in filterDims"
             :key="`ctx-${dim}`"
-            :model-value="openPicker === `filter:${dim}`"
-            @update:model-value="(o) => togglePicker(`filter:${dim}`, o, dim)"
+            class="pivot-pill-group pivot-token"
+            :class="{ 'pivot-token--dragging': draggingDim === dim }"
+            draggable="true"
+            :title="`${dim} — drag to Rows or Columns, or use the move menu`"
+            @dragstart="(e) => onDimDragStart(e, dim)"
+            @dragend="onDimDragEnd"
           >
-            <template #trigger>
-              <button
-                type="button"
-                class="pivot-pill"
-                :aria-label="`${dim}: ${filterSelections[dim] || 'none'} — change member`"
-              >
-                <span class="pivot-pill__dim">{{ dim }}</span>
-                <span class="pivot-pill__sep" aria-hidden="true">:</span>
-                <span class="pivot-pill__member">{{ filterSelections[dim] || '—' }}</span>
-                <svg
-                  class="pivot-pill__chevron"
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
+            <KPopover
+              :model-value="openPicker === `filter:${dim}`"
+              @update:model-value="(o) => togglePicker(`filter:${dim}`, o, dim)"
+            >
+              <template #trigger>
+                <button
+                  type="button"
+                  class="pivot-pill"
+                  :aria-label="`${dim}: ${filterSelections[dim] || 'none'} — change member`"
                 >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-            </template>
+                  <span class="pivot-pill__dim">{{ dim }}</span>
+                  <span class="pivot-pill__sep" aria-hidden="true">:</span>
+                  <span class="pivot-pill__member">{{ filterSelections[dim] || '—' }}</span>
+                  <svg
+                    class="pivot-pill__chevron"
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              </template>
 
-            <div class="pivot-picker">
-              <p class="pivot-picker__title">{{ dim }}</p>
-              <KSelect
-                v-if="elementCache[dim] && !elementCache[dim].error"
-                :model-value="filterSelections[dim]"
-                class="pivot-picker__control"
-                :options="elementOptions(dim)"
-                :placeholder="memberPlaceholder(dim)"
-                :aria-label="`Filter member for ${dim}`"
-                @update:model-value="(v) => setFilterMember(dim, v)"
-              />
-              <button
-                v-else
-                type="button"
-                class="pivot-picker__load"
-                :disabled="isElementsLoading(dim)"
-                @click="ensureElements(dim)"
-              >
-                <KSpinner v-if="isElementsLoading(dim)" size="xs" tone="muted" />
-                <span>{{ loadBtnLabel(dim) }}</span>
-              </button>
-              <p v-if="elementError(dim)" class="pivot-picker__error">{{ elementError(dim) }}</p>
-            </div>
-          </KPopover>
+              <div class="pivot-picker">
+                <p class="pivot-picker__title">{{ dim }}</p>
+                <KSelect
+                  v-if="elementCache[dim] && !elementCache[dim].error"
+                  :model-value="filterSelections[dim]"
+                  class="pivot-picker__control"
+                  :options="elementOptions(dim)"
+                  :placeholder="memberPlaceholder(dim)"
+                  :aria-label="`Filter member for ${dim}`"
+                  @update:model-value="(v) => setFilterMember(dim, v)"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="pivot-picker__load"
+                  :disabled="isElementsLoading(dim)"
+                  @click="ensureElements(dim)"
+                >
+                  <KSpinner v-if="isElementsLoading(dim)" size="xs" tone="muted" />
+                  <span>{{ loadBtnLabel(dim) }}</span>
+                </button>
+                <p v-if="elementError(dim)" class="pivot-picker__error">{{ elementError(dim) }}</p>
+              </div>
+            </KPopover>
+
+            <!-- Move menu — keyboard-operable equivalent of dragging this pill
+                 onto an axis well. Current role is filter, so only the two axis
+                 targets are offered. -->
+            <KMenu
+              align="end"
+              :model-value="openCtxMenu === dim"
+              @update:model-value="(o) => toggleCtxMenu(dim, o)"
+            >
+              <template #trigger>
+                <button
+                  type="button"
+                  class="pivot-pill__move"
+                  :aria-label="`Move ${dim} to Rows or Columns`"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="5" r="1" />
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="12" cy="19" r="1" />
+                  </svg>
+                </button>
+              </template>
+
+              <KMenuItem @select="moveCtxDimension(dim, 'rows')">Move to Rows</KMenuItem>
+              <KMenuItem @select="moveCtxDimension(dim, 'cols')">Move to Columns</KMenuItem>
+            </KMenu>
+          </div>
         </div>
       </div>
 
@@ -172,7 +226,16 @@
         v-if="cube && !dimsLoading && !dimsError && dimensions.length"
         class="pivot-wells"
       >
-        <div class="pivot-well">
+        <div
+          class="pivot-well pivot-dropzone"
+          :class="{ 'pivot-dropzone--active': dropZone === 'rows' && draggingDim }"
+          role="group"
+          aria-label="Rows axis — drop a dimension here to put it on rows"
+          @dragover.prevent="onZoneDragOver('rows')"
+          @dragenter.prevent="onZoneDragOver('rows')"
+          @dragleave="(e) => onZoneDragLeave(e, 'rows')"
+          @drop.prevent="onZoneDrop('rows')"
+        >
           <span class="pivot-well__label">Rows</span>
           <div class="pivot-well__chips">
             <PivotAxisChip
@@ -181,14 +244,26 @@
               :dim="dim"
               axis="rows"
               :open="openChipMenu === `rows:${dim}`"
+              :dragging="draggingDim === dim"
               @toggle="(o) => toggleChipMenu(`rows:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
+              @dragstart="(e) => onDimDragStart(e, dim)"
+              @dragend="onDimDragEnd"
             />
             <span v-if="!rowDims.length" class="pivot-well__empty">none</span>
           </div>
         </div>
 
-        <div class="pivot-well">
+        <div
+          class="pivot-well pivot-dropzone"
+          :class="{ 'pivot-dropzone--active': dropZone === 'cols' && draggingDim }"
+          role="group"
+          aria-label="Columns axis — drop a dimension here to put it on columns"
+          @dragover.prevent="onZoneDragOver('cols')"
+          @dragenter.prevent="onZoneDragOver('cols')"
+          @dragleave="(e) => onZoneDragLeave(e, 'cols')"
+          @drop.prevent="onZoneDrop('cols')"
+        >
           <span class="pivot-well__label">Columns</span>
           <div class="pivot-well__chips">
             <PivotAxisChip
@@ -197,8 +272,11 @@
               :dim="dim"
               axis="cols"
               :open="openChipMenu === `cols:${dim}`"
+              :dragging="draggingDim === dim"
               @toggle="(o) => toggleChipMenu(`cols:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
+              @dragstart="(e) => onDimDragStart(e, dim)"
+              @dragend="onDimDragEnd"
             />
             <span v-if="!colDims.length" class="pivot-well__empty">none</span>
           </div>
@@ -412,12 +490,14 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import SectionCard from '../klikk/SectionCard.vue';
 import KSelect from '../klikk/KSelect.vue';
 import KToggle from '../klikk/KToggle.vue';
 import KSpinner from '../klikk/KSpinner.vue';
 import KPopover from '../klikk/KPopover.vue';
+import KMenu from '../klikk/KMenu.vue';
+import KMenuItem from '../klikk/KMenuItem.vue';
 import EmptyState from '../klikk/EmptyState.vue';
 import PivotAxisChip from './PivotAxisChip.vue';
 import {
@@ -642,6 +722,91 @@ const showMdx = ref(false);
 // Which context-pill popover / axis-chip menu is open (single-open model).
 const openPicker = ref('');
 const openChipMenu = ref('');
+// Which context-pill MOVE menu is open (separate from the member-picker popover,
+// single-open model). Keyed by dim so only one move menu shows at a time.
+const openCtxMenu = ref('');
+
+// ── Drag-and-drop dimension pivoting (PAW hallmark) ──────────────────────────
+// HTML5 drag-drop lets the user drag any dimension TOKEN (a Context filter pill
+// or a Rows/Columns axis chip) into any of the three ZONES (Context bar, Rows
+// well, Columns well). A drop calls moveDimension(dim, target) — the SAME
+// reassign path the chip menu / context-pill menu / swap button all funnel
+// through (re-seed members + re-query, populated-default preserved). Drag is
+// mouse-only; the move menus are the keyboard-operable equivalent.
+const draggingDim = ref(''); // dim currently being dragged ('' = none)
+const dropZone = ref(''); // 'filter' | 'rows' | 'cols' — zone under the cursor
+
+function onDimDragStart(event, dim) {
+  // Belt-and-braces: clear any prior drag state first, in case a previous
+  // drag's `dragend` never fired (some browsers drop the event when the drag
+  // ends over a non-document target), which would leave dropzones armed.
+  draggingDim.value = '';
+  dropZone.value = '';
+  draggingDim.value = dim;
+  // Close any open menu/popover so it doesn't float over the drag.
+  openPicker.value = '';
+  openChipMenu.value = '';
+  openCtxMenu.value = '';
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    // A payload is required for Firefox to start a drag; the dim is the source
+    // of truth in draggingDim, but we set text/plain too as a courtesy.
+    event.dataTransfer.setData('text/plain', dim);
+  }
+}
+
+function onDimDragEnd() {
+  draggingDim.value = '';
+  dropZone.value = '';
+}
+
+// Window-level safety net: if a drag ends over a non-document target (a known
+// flaky case on some browsers), the per-token `dragend` may never fire, leaving
+// `draggingDim`/`dropZone` set and every dropzone armed. A window `dragend`/
+// `drop` listener guarantees the drag state is cleared regardless. Registered
+// onMounted, removed onBeforeUnmount (no leak). The per-token dragend clear is
+// kept too; both paths clear the same state, so this is idempotent.
+function clearDragState() {
+  draggingDim.value = '';
+  dropZone.value = '';
+}
+onMounted(() => {
+  window.addEventListener('dragend', clearDragState);
+  window.addEventListener('drop', clearDragState);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('dragend', clearDragState);
+  window.removeEventListener('drop', clearDragState);
+});
+
+// dragenter/over on a zone — mark it the active drop target (drives the
+// highlight class). preventDefault on dragover is what permits a drop.
+function onZoneDragOver(target) {
+  if (!draggingDim.value) return;
+  dropZone.value = target;
+}
+
+// dragleave — only clear if we're actually leaving the zone (dragleave fires
+// when crossing onto child elements too; guard with relatedTarget containment).
+function onZoneDragLeave(event, target) {
+  if (dropZone.value !== target) return;
+  const related = event.relatedTarget;
+  if (related && event.currentTarget.contains(related)) return;
+  dropZone.value = '';
+}
+
+// drop — reassign the dragged dim to this zone through the shared path.
+// The same-zone no-op (dropped back where it started) is owned by
+// moveDimension itself, so we funnel through it unconditionally — that keeps
+// the menu-cleanup + reassign logic in one place and avoids duplicating the
+// guard here.
+function onZoneDrop(target) {
+  const dim = draggingDim.value;
+  draggingDim.value = '';
+  dropZone.value = '';
+  if (!dim) return;
+  moveDimension(dim, target);
+}
 
 const result = ref(null);
 const running = ref(false);
@@ -1361,17 +1526,29 @@ function toggleChipMenu(key, open) {
   openChipMenu.value = open ? key : '';
 }
 
-// Move a dimension between Rows / Columns / Filter from a chip menu. Re-seeds
-// the moved dimension's members for its new role and re-runs.
-async function moveDimension(dim, target) {
-  if (assignments[dim] === target) {
-    openChipMenu.value = '';
-    return;
-  }
-  assignments[dim] = target;
-  openChipMenu.value = '';
+// Open/close a context-pill MOVE menu (the keyboard-operable equivalent of
+// dragging a filter pill onto an axis well). Single-open across all pills.
+function toggleCtxMenu(dim, open) {
+  openCtxMenu.value = open ? dim : '';
+}
 
-  // Reset the row tree when the primary row dimension changes.
+// Move a filter dimension to an axis from its context-pill move menu. Closes
+// the menu, then funnels through the same moveDimension reassign path.
+function moveCtxDimension(dim, target) {
+  openCtxMenu.value = '';
+  moveDimension(dim, target);
+}
+
+// Shared reassign TAIL — the single funnel every dimension-reassign path
+// (chip menu, context-pill menu, swap button, drag-drop) runs through after it
+// has set the new assignment(s). It (1) resets the row drill tree, (2) re-seeds
+// members for the CURRENT role of EVERY axis/filter dimension (so multi-dim
+// axes are correct, not just the one(s) that moved), and (3) either re-queries
+// (canRun) or, when an axis was emptied (!canRun), clears the previous result +
+// drill state so the grid drops to its "needs config" empty state instead of
+// leaving a stale grid that no longer matches the (now invalid) layout.
+async function reseedAndRun() {
+  // Reset the row tree (the primary row dimension may have changed).
   for (const k of Object.keys(rowNodes)) delete rowNodes[k];
   rowOrder.value = [];
 
@@ -1381,26 +1558,44 @@ async function moveDimension(dim, target) {
     ...colDims.value.map((d) => seedPopulatedDefault(d)),
     ...filterDims.value.map((d) => ensureSeeded(d)),
   ]);
-  if (canRun.value) runQuery();
+
+  if (canRun.value) {
+    runQuery();
+  } else {
+    // An axis emptied (only-Rows or only-Cols dim moved away). runQuery would
+    // early-return and leave the PREVIOUS grid rendered while the well shows
+    // "none" — a populated grid that no longer matches the config. Drop the
+    // stale result + drill state so the "Put at least one dimension on Rows and
+    // one on Columns" empty state shows instead.
+    result.value = null;
+    runError.value = '';
+    for (const k of Object.keys(rowNodes)) delete rowNodes[k];
+    rowOrder.value = [];
+  }
 }
 
-// Swap the single row dim and single column dim (toolbar button). Re-seeds both
-// for their new axes and re-runs.
+// Move a dimension between Rows / Columns / Filter from a chip menu. Sets the
+// new assignment, then funnels through the shared reseed/re-query tail.
+async function moveDimension(dim, target) {
+  if (assignments[dim] === target) {
+    openChipMenu.value = '';
+    return;
+  }
+  assignments[dim] = target;
+  openChipMenu.value = '';
+  await reseedAndRun();
+}
+
+// Swap the single row dim and single column dim (toolbar button). Sets both
+// assignments, then funnels through the SAME shared tail (one re-query, not
+// two). Behaviour is identical to moveDimension for the single-dim case.
 async function swapAxes() {
   if (!canSwap.value) return;
   const r = rowDims.value[0];
   const c = colDims.value[0];
   assignments[r] = 'cols';
   assignments[c] = 'rows';
-
-  for (const k of Object.keys(rowNodes)) delete rowNodes[k];
-  rowOrder.value = [];
-
-  await Promise.all([
-    seedPopulatedDefault(c), // now on Rows
-    seedPopulatedDefault(r), // now on Cols
-  ]);
-  if (canRun.value) runQuery();
+  await reseedAndRun();
 }
 
 // ── Number formatting (finance: thousands-separated, negatives in red) ───────
@@ -1567,13 +1762,70 @@ loadCubes();
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+   DRAG-AND-DROP — shared dimension-pivoting affordances
+   Every dimension token (context pill, axis chip) is draggable; the three zones
+   (Context bar, Rows well, Columns well) are drop targets. The active drop zone
+   gets a tinted dashed outline; the source token dims while in flight. All
+   colour comes from KDL tokens (accent / hover) via color-mix — no raw hex.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* A token (pill / chip) the user can pick up. Grab cue advertises it. */
+.pivot-token {
+  cursor: grab;
+}
+
+.pivot-token:active {
+  cursor: grabbing;
+}
+
+/* The source token while it's being dragged — quietly recede. */
+.pivot-token--dragging {
+  opacity: 0.45;
+}
+
+/* A zone that accepts drops. On dragover it gains a tinted, dashed accent
+   outline so the target is unmistakable. The transition is colour-only and
+   respects reduced-motion (below). */
+.pivot-dropzone {
+  transition: border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-dropzone--active {
+  border-style: dashed;
+  border-color: var(--kdl-accent);
+  background: color-mix(in srgb, var(--kdl-accent) 7%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-dropzone {
+    transition: none;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
    2 ── CONTEXT BAR (filter pills)
    ═══════════════════════════════════════════════════════════════════════════ */
 .pivot-context {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* The Context bar is also a drop zone — give it the framed look the wells have
+   so its dashed-on-dragover state reads as "a zone", and pad it for the outline
+   to sit off the pills. */
+.pivot-context.pivot-dropzone {
+  padding: 6px 10px;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+}
+
+/* A filter token: the member-picker pill + its move button, as one draggable
+   unit. They share a hairline so they read as a single control. */
+.pivot-pill-group {
+  display: inline-flex;
+  align-items: stretch;
 }
 
 .pivot-context__label {
@@ -1598,7 +1850,10 @@ loadCubes();
   height: 28px;
   padding: 0 8px 0 10px;
   border: 1px solid var(--kdl-border);
-  border-radius: 999px;
+  /* Left side of the grouped token — round only the leading edge so the pill
+     and its move button read as one pill with a divider. */
+  border-radius: 999px 0 0 999px;
+  border-right-width: 0;
   background: var(--kdl-card-bg);
   color: var(--kdl-text-secondary);
   font-family: inherit;
@@ -1612,6 +1867,37 @@ loadCubes();
 .pivot-pill:hover {
   border-color: var(--kdl-text-muted);
   background: var(--kdl-hover-bg);
+}
+
+/* The trailing move-menu button — the right half of the grouped token. */
+.pivot-pill__move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--kdl-border);
+  border-radius: 0 999px 999px 0;
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-hint);
+  cursor: pointer;
+  transition: border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-pill__move:hover {
+  border-color: var(--kdl-text-muted);
+  background: var(--kdl-hover-bg);
+  color: var(--kdl-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-pill,
+  .pivot-pill__move {
+    transition: none;
+  }
 }
 
 .pivot-pill__dim {

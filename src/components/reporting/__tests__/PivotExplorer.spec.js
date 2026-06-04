@@ -64,6 +64,11 @@ vi.mock('../../../api/planningAnalytics', () => ({
 
 import PivotExplorer from '../PivotExplorer.vue';
 import PivotAxisChip from '../PivotAxisChip.vue';
+// KDL portal primitives — imported so the drag/move suites can locate the
+// specific teleporting KMenu / KPopover instances by component (their content
+// is portal-rendered to <body>, so we drive their controlled open state).
+import KMenu from '../../klikk/KMenu.vue';
+import KPopover from '../../klikk/KPopover.vue';
 import {
   getTm1Cubes,
   getTm1CubeDimensions,
@@ -123,6 +128,29 @@ const MONTH = {
 
 const MEASURE = { top: 'Amount', children: { Amount: [] } };
 
+// A FOURTH dimension used only by the drag-and-drop suite below: `year` is a
+// filter dimension in the 4-dim layout, so it gives us a Context pill to drag
+// onto an axis (Context→Rows) and a move-menu to exercise the keyboard path.
+// It is additive — the existing 3-dim suites pass dimensions:[account,month,
+// measure] and never request `year`, so their behaviour is unchanged.
+const YEAR = {
+  top: 'All_Year',
+  children: {
+    All_Year: [
+      { name: 'FY24', type: 'C' },
+      { name: 'FY25', type: 'C' },
+    ],
+    FY24: [
+      { name: 'FY24-H1', type: 'N' },
+      { name: 'FY24-H2', type: 'N' },
+    ],
+    FY25: [
+      { name: 'FY25-H1', type: 'N' },
+      { name: 'FY25-H2', type: 'N' },
+    ],
+  },
+};
+
 const ELEMENTS = {
   account: [
     { name: 'All_Account', type: 'C' },
@@ -137,13 +165,38 @@ const ELEMENTS = {
     { name: 'Jul', type: 'N' },
     { name: 'Aug', type: 'N' },
   ],
+  year: [
+    { name: 'All_Year', type: 'C' },
+    { name: 'FY24', type: 'C' },
+    { name: 'FY25', type: 'C' },
+    { name: 'FY24-H1', type: 'N' },
+    { name: 'FY24-H2', type: 'N' },
+    { name: 'FY25-H1', type: 'N' },
+    { name: 'FY25-H2', type: 'N' },
+  ],
   measure: [{ name: 'Amount', type: 'N' }],
 };
 
 const CHILDREN = {
   account: ACCOUNT.children,
   month: MONTH.children,
+  year: YEAR.children,
   measure: MEASURE.children,
+};
+
+// Scalar values for the `year` dimension's members (used only by the drag suite
+// when `year` is reassigned onto an axis — so the re-query after the drag
+// returns NON-zero rows that render, rather than all-blank rows the grid could
+// suppress). Distinct, non-zero, and stable. Account members never collide with
+// these keys, so the account suites are unaffected.
+const YEAR_VALUE = {
+  All_Year: 700,
+  FY24: 300,
+  FY25: 400,
+  'FY24-H1': 150,
+  'FY24-H2': 150,
+  'FY25-H1': 200,
+  'FY25-H2': 200,
 };
 
 // ── runTm1Query response builder ─────────────────────────────────────────────
@@ -162,7 +215,11 @@ function leafValueFor(member, scope) {
   const direct = scope != null ? ACCOUNT.leafValue[`${scope}/${member}`] : undefined;
   if (direct != null) return { value: direct, scope };
   const anyKey = Object.keys(ACCOUNT.leafValue).find((k) => k.endsWith(`/${member}`));
-  return { value: anyKey != null ? ACCOUNT.leafValue[anyKey] : 0, scope };
+  if (anyKey != null) return { value: ACCOUNT.leafValue[anyKey], scope };
+  // Not an account member — `year` (or another non-account row dim, e.g. after a
+  // Context→Rows drag). Return its scalar so the re-query renders real rows.
+  if (YEAR_VALUE[member] != null) return { value: YEAR_VALUE[member], scope };
+  return { value: 0, scope };
 }
 
 // Build the cellset the backend would return for a payload. Single row dim is
@@ -313,15 +370,117 @@ async function collapse(wrapper, label) {
   await settle();
 }
 
+// ── DRAG-AND-DROP helpers (the drag/move suites) ─────────────────────────────
+// jsdom/happy-dom cannot perform a REAL HTML5 drag — there is no native drag
+// image and no auto-populated DataTransfer. So we test the WIRING: we dispatch
+// the same DOM drag events the browser would, with a STUBBED dataTransfer (the
+// component reads/writes .effectAllowed + .setData), on the SAME elements the
+// real handlers are bound to (the draggable tokens + the role="group" zones).
+// What we assert is OBSERVABLE state — which well a dimension lives in, the
+// active-highlight class, the re-query — never internal handler calls alone.
+// These are explicitly WIRING tests, NOT a true-drag test; the visual drag
+// (drag image following the cursor, native drop) still needs a browser eyeball.
+
+// A minimal DataTransfer stand-in. The component only touches effectAllowed and
+// setData('text/plain', dim); getData is provided for completeness.
+function makeDataTransfer(dim = '') {
+  return {
+    effectAllowed: '',
+    dropEffect: '',
+    _data: { 'text/plain': dim },
+    setData(type, val) {
+      this._data[type] = val;
+    },
+    getData(type) {
+      return this._data[type] ?? '';
+    },
+  };
+}
+
+// Dispatch a drag-family DOM event carrying a stubbed dataTransfer (and an
+// optional relatedTarget, for dragleave containment). Returns the event so a
+// caller can inspect defaultPrevented if needed.
+function fireDrag(el, type, { dataTransfer, relatedTarget } = {}) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'dataTransfer', {
+    value: dataTransfer ?? makeDataTransfer(),
+    configurable: true,
+  });
+  if (relatedTarget !== undefined) {
+    Object.defineProperty(event, 'relatedTarget', {
+      value: relatedTarget,
+      configurable: true,
+    });
+  }
+  el.dispatchEvent(event);
+  return event;
+}
+
+// The three drop ZONES, found by their role="group" aria-label (semantic, not
+// class-coupled). 'filter' → Context bar, 'rows' / 'cols' → the axis wells.
+function zone(wrapper, which) {
+  const needle = { filter: 'Filter context', rows: 'Rows axis', cols: 'Columns axis' }[which];
+  return wrapper
+    .findAll('[role="group"]')
+    .find((g) => (g.attributes('aria-label') || '').includes(needle));
+}
+
+// A Context-bar filter TOKEN (the draggable pill-group) for dimension `dim`,
+// located via its title ("<dim> — drag to Rows or Columns…").
+function filterToken(wrapper, dim) {
+  return wrapper
+    .findAll('.pivot-context .pivot-token')
+    .find((t) => (t.attributes('title') || '').startsWith(`${dim} `));
+}
+
+// True when a zone currently shows its active drop-target highlight.
+function zoneActive(z) {
+  return z.classes().includes('pivot-dropzone--active');
+}
+
+// The axis chips as a quick "axis:dim" snapshot — what lives where right now.
+function chipMap(wrapper) {
+  return wrapper
+    .findAllComponents(PivotAxisChip)
+    .map((c) => `${c.props('axis')}:${c.props('dim')}`);
+}
+
+// Mount with the FOUR-dim layout (account rows, month cols, year + measure
+// filters) so the Context bar carries a draggable `year` pill + its move menu.
+// attachTo: document.body is REQUIRED — Reka teleports KMenu/KPopover content to
+// <body>, and only a body-attached wrapper lets the teleported menu items /
+// picker panel render (and be clicked) under happy-dom.
+async function mountExplorer4d() {
+  installCubeMocks({ dimensions: ['account', 'month', 'year', 'measure'] });
+  const wrapper = mount(PivotExplorer, { attachTo: document.body });
+  attachedWrappers.push(wrapper);
+  await settle();
+  return wrapper;
+}
+
 // Silence the component's DEV-gated console.debug telemetry (it logs raw
 // payloads) so test output stays clean. Never asserted on.
 let debugSpy;
+// Body-attached wrappers (the drag/move suites attach to document.body so Reka's
+// teleported menu/popover content renders) are tracked + torn down here so
+// teleported nodes from one test never leak into the next test's body queries.
+const attachedWrappers = [];
 beforeEach(() => {
   vi.clearAllMocks();
   installCubeMocks();
   debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 });
 afterEach(() => {
+  while (attachedWrappers.length) {
+    const w = attachedWrappers.pop();
+    try {
+      w.unmount();
+    } catch {
+      /* already unmounted */
+    }
+  }
+  // Clear any teleported portal nodes left in <body> (KMenu / KPopover content).
+  document.body.innerHTML = '';
   debugSpy.mockRestore();
 });
 
@@ -504,20 +663,37 @@ describe('PivotExplorer — single vs multi-dim rows', () => {
   });
 
   it('two Rows dims: the "single Rows dimension" caption renders and twisties are absent', async () => {
-    const wrapper = await mountExplorer();
+    // Use the FOUR-dim layout (account rows, month cols, year + measure filters)
+    // so we can put a SECOND dimension on Rows while a Cols dim REMAINS — moving
+    // the only Cols dim instead would empty the Columns axis (canRun → false),
+    // which now correctly clears the grid to the needs-config empty state (the
+    // P2-C fix). Adding `year` to Rows keeps month on Cols, so canRun stays true
+    // and the multi-dim caption renders over a STILL-POPULATED grid — exactly the
+    // state this test means to exercise.
+    const wrapper = await mountExplorer4d();
 
-    // Move the month dimension from Columns onto Rows via the REAL child chip
-    // (emit the documented `move` event — the Reka KMenu content is portal-
-    // teleported and does not open under happy-dom, so we drive the child's
-    // contract directly, exactly the escape hatch the sibling spec uses).
-    const colChip = wrapper
-      .findAllComponents(PivotAxisChip)
-      .find((c) => c.props('axis') === 'cols' && c.props('dim') === 'month');
-    expect(colChip, 'month column chip should exist').toBeTruthy();
-    colChip.vm.$emit('move', 'rows');
+    // Baseline: account on Rows, month on Cols, year a draggable Context pill.
+    expect(chipMap(wrapper)).toEqual(['rows:account', 'cols:month']);
+
+    // Drag the year filter pill onto the Rows well (the proven WIRING path: real
+    // draggable token + real role="group" zone + stubbed dataTransfer). This adds
+    // year as a SECOND Rows dim — account + year on Rows, month staying on Cols.
+    const yearPill = filterToken(wrapper, 'year');
+    expect(yearPill, 'year should be a draggable Context pill').toBeTruthy();
+    const dt = makeDataTransfer('year');
+    const rowsWell = zone(wrapper, 'rows');
+    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
     await settle();
 
-    // Now two Rows dims (account + month) → multi-dim flat render.
+    // Two Rows dims now (account + year), month still on Cols → canRun stays true,
+    // and the rows render as the flat multi-dim cartesian tuples (no drill tree).
+    expect(chipMap(wrapper)).toContain('rows:account');
+    expect(chipMap(wrapper)).toContain('rows:year');
+    expect(chipMap(wrapper)).toContain('cols:month');
+
+    // The multi-dim caption renders (rowDims.length > 1).
     const caption = wrapper.find('caption.pivot-grid__caption');
     expect(caption.exists()).toBe(true);
     expect(caption.text()).toContain('single Rows dimension');
@@ -525,7 +701,9 @@ describe('PivotExplorer — single vs multi-dim rows', () => {
     // No twisties anywhere — drill is a single-row-dimension affordance only.
     expect(wrapper.findAll('button.pivot-grid__twisty').length).toBe(0);
 
-    // The grid still rendered rows (the flat cartesian tuples), not an empty grid.
+    // canRun stayed true → the grid still rendered rows (the flat cartesian
+    // tuples), NOT the needs-config empty state — proving the multi-dim caption
+    // sits over a live grid, not over a cleared/stale one.
     expect(bodyRows(wrapper).length).toBeGreaterThan(0);
   });
 });
@@ -611,5 +789,367 @@ describe('PivotExplorer — suppressed / missing backend row', () => {
     // The table is intact (header + footer present) despite the missing row.
     expect(wrapper.find('thead').exists()).toBe(true);
     expect(wrapper.find('tfoot').exists()).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 8 — DRAG-AND-DROP dimension pivoting (WIRING, not a true visual drag)
+//
+// jsdom/happy-dom has no native HTML5 drag (no DataTransfer the browser
+// populates, no drag image). These tests drive the component's drag HANDLERS via
+// synthetic DOM drag events with a stubbed dataTransfer, on the real draggable
+// tokens + the real role="group" drop zones, and assert OBSERVABLE state: which
+// well a dimension lands in, the active-highlight class lifecycle, and the
+// re-query. The visual drag itself (cursor-following image, native drop effect)
+// is NOT covered here and needs a browser eyeball — see the report.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — drag reassign (Context → Rows)', () => {
+  it('dragging the year filter pill onto the Rows well makes year a Rows dimension and re-queries', async () => {
+    const wrapper = await mountExplorer4d();
+
+    // Baseline: account on Rows, month on Cols, year a Context filter pill.
+    expect(chipMap(wrapper)).toEqual(['rows:account', 'cols:month']);
+    const yearPill = filterToken(wrapper, 'year');
+    expect(yearPill, 'year should be a draggable Context pill').toBeTruthy();
+
+    const callsBefore = runTm1Query.mock.calls.length;
+    const dt = makeDataTransfer('year');
+
+    // dragstart on the year token — the component records the dragged dim and
+    // dims the source token.
+    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    await flushPromises();
+    expect(
+      yearPill.classes(),
+      'source token recedes (dragging cue) on dragstart',
+    ).toContain('pivot-token--dragging');
+    // effectAllowed is set by the handler — proves the real onDimDragStart ran
+    // against our stubbed dataTransfer (not a no-op).
+    expect(dt.effectAllowed).toBe('move');
+
+    // dragover the Rows well (the .prevent handler is what permits the drop).
+    const rowsWell = zone(wrapper, 'rows');
+    fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
+    await flushPromises();
+
+    // drop on the Rows well → moveDimension('year','rows').
+    fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+
+    // OBSERVABLE outcome: year is now a Rows axis chip (no longer a Context pill),
+    // account stayed on Rows, month stayed on Cols.
+    expect(chipMap(wrapper)).toContain('rows:year');
+    expect(chipMap(wrapper)).toContain('rows:account');
+    expect(chipMap(wrapper)).toContain('cols:month');
+    // The year pill is gone from the Context bar.
+    expect(filterToken(wrapper, 'year')).toBeUndefined();
+
+    // A re-query fired (the reassign re-seeds + re-runs), and the dragging cue
+    // cleared (drop resets draggingDim).
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(zoneActive(rowsWell)).toBe(false);
+
+    // The grid still renders rows after the reassign (sensible re-query, not an
+    // empty grid) — the well now has TWO row chips and the body has rows.
+    expect(bodyRows(wrapper).length).toBeGreaterThan(0);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 9 — Drop-zone highlight lifecycle (dragenter/over set; containment-guarded
+//     dragleave; drop + dragend clear)
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — drop-zone highlight lifecycle', () => {
+  it('dragenter/over activates a zone; dragleave to a CHILD keeps it; dragleave OUTSIDE clears it', async () => {
+    const wrapper = await mountExplorer4d();
+    const yearPill = filterToken(wrapper, 'year');
+    const dt = makeDataTransfer('year');
+
+    // No highlight before a drag starts.
+    const rowsWell = zone(wrapper, 'rows');
+    expect(zoneActive(rowsWell)).toBe(false);
+
+    // Begin dragging, then enter the Rows well → it activates.
+    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'dragenter', { dataTransfer: dt });
+    await flushPromises();
+    expect(zoneActive(rowsWell)).toBe(true);
+
+    // dragleave whose relatedTarget is a CHILD still inside the zone must NOT
+    // clear the highlight (the containment guard) — crossing onto the inner
+    // label / chips fires dragleave on the zone, but we have not left it.
+    const childInside = rowsWell.find('.pivot-well__label').element;
+    fireDrag(rowsWell.element, 'dragleave', { dataTransfer: dt, relatedTarget: childInside });
+    await flushPromises();
+    expect(zoneActive(rowsWell), 'leave to a child does NOT clear').toBe(true);
+
+    // dragleave whose relatedTarget is OUTSIDE the zone clears the highlight.
+    fireDrag(rowsWell.element, 'dragleave', { dataTransfer: dt, relatedTarget: document.body });
+    await flushPromises();
+    expect(zoneActive(rowsWell), 'leave outside the zone clears').toBe(false);
+
+    fireDrag(yearPill.element, 'dragend', { dataTransfer: dt });
+    await flushPromises();
+  });
+
+  it('drop clears the active highlight and the dragging-source cue', async () => {
+    const wrapper = await mountExplorer4d();
+    const yearPill = filterToken(wrapper, 'year');
+    const dt = makeDataTransfer('year');
+    const rowsWell = zone(wrapper, 'rows');
+
+    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
+    await flushPromises();
+    expect(zoneActive(rowsWell)).toBe(true);
+    expect(yearPill.classes()).toContain('pivot-token--dragging');
+
+    fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+
+    // Both cues are gone after a drop.
+    expect(zoneActive(rowsWell)).toBe(false);
+    // year became a chip; assert the highlight cleared on every remaining zone.
+    expect(zoneActive(zone(wrapper, 'cols'))).toBe(false);
+  });
+
+  it('dragend (drag abandoned outside any zone) clears the active highlight and source cue', async () => {
+    const wrapper = await mountExplorer4d();
+    const yearPill = filterToken(wrapper, 'year');
+    const dt = makeDataTransfer('year');
+    const colsWell = zone(wrapper, 'cols');
+
+    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+    await flushPromises();
+    expect(zoneActive(colsWell)).toBe(true);
+    expect(yearPill.classes()).toContain('pivot-token--dragging');
+
+    // Abandon the drag (mouse released off any zone) → dragend on the source.
+    fireDrag(yearPill.element, 'dragend', { dataTransfer: dt });
+    await flushPromises();
+
+    // The highlight AND the source cue clear; year is STILL a filter pill (no
+    // reassign happened — dragend is not a drop).
+    expect(zoneActive(colsWell)).toBe(false);
+    expect(filterToken(wrapper, 'year').classes()).not.toContain('pivot-token--dragging');
+    expect(chipMap(wrapper)).toEqual(['rows:account', 'cols:month']);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 10 — No-op on same-zone drop (dropping a Rows dim back on the Rows well)
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — same-zone drop is a no-op', () => {
+  it('dropping the account Rows chip back onto the Rows well does not re-query or change state', async () => {
+    const wrapper = await mountExplorer4d();
+
+    // Grab the account axis chip (it lives in the Rows well) as the drag source.
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+    expect(accountChip, 'account row chip should exist').toBeTruthy();
+    const chipButton = accountChip.find('button.pivot-chip');
+    expect(chipButton.exists()).toBe(true);
+
+    const rowLabelsBefore = rowLabels(wrapper);
+    const chipMapBefore = chipMap(wrapper);
+    const callsBefore = runTm1Query.mock.calls.length;
+    const dt = makeDataTransfer('account');
+
+    // Start dragging the account chip, hover the Rows well (its own well), drop.
+    fireDrag(chipButton.element, 'dragstart', { dataTransfer: dt });
+    const rowsWell = zone(wrapper, 'rows');
+    fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+
+    // onZoneDrop guards `assignments[dim] === target` → no moveDimension, hence
+    // NO re-query and NO change to the layout or the rendered rows.
+    expect(runTm1Query.mock.calls.length, 'no re-query on same-zone drop').toBe(callsBefore);
+    expect(chipMap(wrapper)).toEqual(chipMapBefore);
+    expect(rowLabels(wrapper)).toEqual(rowLabelsBefore);
+    // The highlight cleared and account is still a single Rows chip (not duped).
+    expect(zoneActive(rowsWell)).toBe(false);
+    expect(chipMap(wrapper).filter((s) => s === 'rows:account').length).toBe(1);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 11 — Context-pill MOVE menu (keyboard path) + member-picker still independent
+//
+// This exercises the REAL teleported KMenu: with attachTo:document.body the Reka
+// DropdownMenuContent renders into <body>, so we open the year pill's move menu
+// and CLICK the real "Move to Rows" menu item — the keyboard-operable equivalent
+// of the drag. We then assert the member-picker KPopover on that same pill still
+// opens independently (the move menu did not break the picker).
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — context-pill move menu (keyboard path)', () => {
+  // Find the KMenu whose trigger is a given dim's move button (aria-label
+  // "Move <dim> to Rows or Columns"). Discriminates on rendered trigger markup.
+  function ctxMoveMenu(wrapper, dim) {
+    return wrapper
+      .findAllComponents(KMenu)
+      .find((m) => m.html().includes(`Move ${dim} to Rows`));
+  }
+  // Find the member-picker KPopover for a given filter dim (its trigger pill
+  // carries aria-label "<dim>: … — change member").
+  function pickerPopover(wrapper, dim) {
+    return wrapper
+      .findAllComponents(KPopover)
+      .find((p) => p.html().includes(`${dim}:`) && p.html().includes('change member'));
+  }
+
+  it('opening the year pill move menu and clicking "Move to Rows" reassigns year + re-queries', async () => {
+    const wrapper = await mountExplorer4d();
+    expect(chipMap(wrapper)).toEqual(['rows:account', 'cols:month']);
+
+    const menu = ctxMoveMenu(wrapper, 'year');
+    expect(menu, 'year context-pill move menu should exist').toBeTruthy();
+
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Open the menu (controlled open state → component sets openCtxMenu=year).
+    menu.vm.$emit('update:modelValue', true);
+    await settle();
+
+    // The teleported menu items render into <body>. Click the REAL "Move to Rows"
+    // item (Reka DropdownMenuItem activates → KMenuItem emits select →
+    // moveCtxDimension('year','rows')).
+    const items = [...document.body.querySelectorAll('.km-item')];
+    const moveToRows = items.find((el) => el.textContent.trim() === 'Move to Rows');
+    expect(moveToRows, '"Move to Rows" menu item should be rendered').toBeTruthy();
+    moveToRows.dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+
+    // year reassigned to Rows via the keyboard path; account stayed on Rows.
+    expect(chipMap(wrapper)).toContain('rows:year');
+    expect(chipMap(wrapper)).toContain('rows:account');
+    // No longer a Context pill.
+    expect(filterToken(wrapper, 'year')).toBeUndefined();
+    // The reassign re-queried.
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it('the member-picker popover on a context pill still opens independently of the move menu', async () => {
+    const wrapper = await mountExplorer4d();
+
+    // The move menu and the picker are SEPARATE affordances on the same pill.
+    // Open the picker popover for the (still-filter) year pill and confirm its
+    // panel renders — the move menu wiring did not hijack the picker.
+    const picker = pickerPopover(wrapper, 'year');
+    expect(picker, 'year member-picker popover should exist').toBeTruthy();
+    picker.vm.$emit('update:modelValue', true);
+    await settle();
+
+    // The teleported picker panel renders into <body> with the dim's title.
+    const panel = document.body.querySelector('.pivot-picker');
+    expect(panel, 'picker panel should render').toBeTruthy();
+    expect(document.body.querySelector('.pivot-picker__title')?.textContent.trim()).toBe('year');
+
+    // Opening the picker requested the dimension's elements (lazy load) — the
+    // picker is live, not inert.
+    expect(getTm1DimensionElements).toHaveBeenCalledWith('year');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 12 — Regression smoke after a drag reassign (drill / totals / swap / chip menu
+//      all still work once a dimension has been moved by drag)
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — regression after a drag reassign', () => {
+  // Drag the year filter pill onto the Columns well, leaving account the single
+  // Rows dim (so drill is still available) and year + month on Columns. Shared
+  // helper for the smoke checks below.
+  async function dragYearToCols(wrapper) {
+    const yearPill = filterToken(wrapper, 'year');
+    const dt = makeDataTransfer('year');
+    const colsWell = zone(wrapper, 'cols');
+    fireDrag(yearPill.element, 'dragstart', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+  }
+
+  it('drill (expand) still works after a drag reassign, and totals still exclude expanded parents', async () => {
+    const wrapper = await mountExplorer4d();
+    await dragYearToCols(wrapper);
+
+    // Confirm the drag actually LANDED (year is now a Columns chip) so this is a
+    // genuine post-drag state, not a vacuous pass if the drop were a no-op.
+    expect(chipMap(wrapper)).toContain('cols:year');
+    expect(filterToken(wrapper, 'year')).toBeUndefined();
+
+    // account is the lone Rows dim → drill is live; EXPENSE carries a twisty.
+    expect(twistyFor(wrapper, 'EXPENSE')).toBeTruthy();
+
+    // Column totals over the Jul column still equal EXPENSE 100 + COGS 40 = 140
+    // (year only fans the columns; all value still lands in Jul of FY-* via the
+    // single-row-dim builder which keys cells off the FIRST col-dim member list…
+    // we assert the parent-exclusion invariant, not exact column arithmetic).
+    await expand(wrapper, 'EXPENSE');
+    expect(rowLabels(wrapper)).toContain('Rent');
+    expect(rowLabels(wrapper)).toContain('Salaries');
+
+    // The expanded EXPENSE parent is excluded from the grand total (no double
+    // count): grand total must NOT equal the doubled figure.
+    const grand = grandTotalText(wrapper);
+    expect(grand).not.toBe('240');
+    // And the EXPENSE row still shows its own rolled value.
+    const expenseRow = bodyRows(wrapper).find(
+      (tr) => tr.find('.pivot-grid__row-label').text() === 'EXPENSE',
+    );
+    expect(cellTexts(expenseRow)[0]).toBe('100');
+  });
+
+  it('an axis-chip menu still reassigns after a drag reassign', async () => {
+    const wrapper = await mountExplorer4d();
+    await dragYearToCols(wrapper);
+
+    // year is now a Columns chip. Use its REAL chip `move` contract to send it
+    // back to Filter (the chip menu content is teleported; the documented escape
+    // hatch used by the sibling spec is to drive the child's emit directly).
+    const yearColChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'cols' && c.props('dim') === 'year');
+    expect(yearColChip, 'year should be a Columns chip after the drag').toBeTruthy();
+
+    const callsBefore = runTm1Query.mock.calls.length;
+    yearColChip.vm.$emit('move', 'filter');
+    await settle();
+
+    // year is back as a Context filter pill; the chip menu reassign re-queried.
+    expect(filterToken(wrapper, 'year'), 'year returns to the Context bar').toBeTruthy();
+    expect(chipMap(wrapper)).not.toContain('cols:year');
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it('the swap button still swaps the axes after a drag reassign', async () => {
+    const wrapper = await mountExplorer4d();
+
+    // First drag year OUT to Columns then back to Filter so we are back to the
+    // single-dim-per-axis layout swap requires (account rows, month cols).
+    await dragYearToCols(wrapper);
+    const yearColChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'cols' && c.props('dim') === 'year');
+    yearColChip.vm.$emit('move', 'filter');
+    await settle();
+    expect(chipMap(wrapper)).toEqual(['rows:account', 'cols:month']);
+
+    const callsBefore = runTm1Query.mock.calls.length;
+    // Click the toolbar Swap button (semantic: aria-label).
+    const swapBtn = wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === 'Swap rows and columns');
+    expect(swapBtn, 'swap button should exist and be enabled').toBeTruthy();
+    expect(swapBtn.attributes('disabled')).toBeUndefined();
+    await swapBtn.trigger('click');
+    await settle();
+
+    // Axes swapped: month → Rows, account → Columns; and it re-queried.
+    expect(chipMap(wrapper)).toContain('rows:month');
+    expect(chipMap(wrapper)).toContain('cols:account');
+    expect(runTm1Query.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 });
