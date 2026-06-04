@@ -126,6 +126,36 @@ export function groupLabel(value) {
   return GROUP_LABELS[value] || value || 'Ungrouped';
 }
 
+// ── Manageable cost (the user's editable hit-list of top cut opportunities) ──
+//
+// `is_manageable` is a per-account boolean the backend now returns (default seed
+// = addressable tiers T1/T2/T3) and the user edits via the per-row star toggle.
+// It is a SEPARATE axis from cuttability tier: tier says "how hard is this to
+// cut", manageable says "is this on MY shortlist to act on now". The two
+// "Manageable" buckets order the hit-list FIRST (true before false), mirroring
+// the tier/behaviour grouping shape (keyOf / order / labelOf) so the grouped
+// table consumes it identically.
+//
+// The boolean is bucketed under STRING keys ('yes'/'no') so it travels through
+// the same Map-keyed grouping engine as the other axes (a raw boolean key is
+// brittle as a Map key alongside the string keys the engine already uses).
+export const MANAGEABLE_KEYS = ['yes', 'no'];
+
+export const MANAGEABLE_LABELS = {
+  yes: 'Manageable — top opportunities',
+  no: 'Not manageable',
+};
+
+// Normalise a row's is_manageable flag to a grouping key. Anything truthy →
+// 'yes'; everything else (false / null / undefined) → 'no'.
+export function manageableKey(value) {
+  return value === true ? 'yes' : 'no';
+}
+
+export function manageableLabel(key) {
+  return MANAGEABLE_LABELS[key] || MANAGEABLE_LABELS.no;
+}
+
 // ── Client-side RAG (lower-is-better) ───────────────────────────────────────
 //
 // Recolours the EDITED row on the SAME tick after an optimistic target edit,

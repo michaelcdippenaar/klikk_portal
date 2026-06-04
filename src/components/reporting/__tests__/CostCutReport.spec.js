@@ -116,39 +116,45 @@ const ENTITY = '41ebfa0e-012e-4ff1-82ba-a9a7585c536c';
 // fixed_variable_ratio = 670000/300000 = 2.23
 // rag_counts over accounts[] = { red:1, amber:1, green:1, none:2 }
 
+// Per-row `is_manageable` seed (the user's editable top-cut-opportunity hit-list)
+// mirrors the backend default: the actionable near-term tiers T1/T2/T3 start ON,
+// the renegotiable/structural T4/T5 start OFF.
+//   a1 T1 (420000) manageable, a2 T2 (300000) manageable, a3 T3 (180000) manageable,
+//   a4 T4  (90000) NOT,        a5 T5 (250000) NOT.
+//   manageable_total = 420000 + 300000 + 180000 = 900,000 (a SERVER aggregate).
 function addressableRows() {
   return [
     {
       account_id: 'a1', account_key: 'kl_T1', name: 'Employee Expenses Tanja',
-      group: 'OVERHEADS', cuttability: 'T1', is_addressable: true,
+      group: 'OVERHEADS', cuttability: 'T1', is_addressable: true, is_manageable: true,
       behaviour: 'fixed', driver: 'headcount (salaried)',
       recurring_actual: 420000, recurring_prior: 471000,
       yoy_pct: -10.8, pct_of_cost: 33.9, target: 380000, rag: 'red',
     },
     {
       account_id: 'a2', account_key: 'kl_T2', name: 'Casual Wages',
-      group: 'DIRECTCOSTS', cuttability: 'T2', is_addressable: true,
+      group: 'DIRECTCOSTS', cuttability: 'T2', is_addressable: true, is_manageable: true,
       behaviour: 'variable', driver: 'hours worked',
       recurring_actual: 300000, recurring_prior: 250000,
       yoy_pct: 20, pct_of_cost: 24.2, target: null, rag: 'none',
     },
     {
       account_id: 'a3', account_key: 'kl_T3', name: 'Electricity',
-      group: 'OVERHEADS', cuttability: 'T3', is_addressable: true,
+      group: 'OVERHEADS', cuttability: 'T3', is_addressable: true, is_manageable: true,
       behaviour: 'semi_variable', driver: 'usage + standing',
       recurring_actual: 180000, recurring_prior: 170000,
       yoy_pct: 5.9, pct_of_cost: 14.5, target: 200000, rag: 'green',
     },
     {
       account_id: 'a4', account_key: 'kl_T4', name: 'Statutory Levies',
-      group: 'EXPENSE', cuttability: 'T4', is_addressable: true,
+      group: 'EXPENSE', cuttability: 'T4', is_addressable: true, is_manageable: false,
       behaviour: 'non_controllable', driver: 'regulation',
       recurring_actual: 90000, recurring_prior: 88000,
       yoy_pct: 2.3, pct_of_cost: 7.3, target: null, rag: 'none',
     },
     {
       account_id: 'a5', account_key: 'kl_T5', name: 'Premises Lease',
-      group: 'OVERHEADS', cuttability: 'T5', is_addressable: true,
+      group: 'OVERHEADS', cuttability: 'T5', is_addressable: true, is_manageable: false,
       behaviour: 'fixed', driver: 'lease',
       recurring_actual: 250000, recurring_prior: 230000,
       yoy_pct: 8.7, pct_of_cost: 20.2, target: 240000, rag: 'amber',
@@ -193,6 +199,12 @@ function makeReport(overrides = {}) {
 
     // ── v2 headline (change #1) ──────────────────────────────────────────────
     addressable_operating_cost: 1240000,
+
+    // ── Manageable hit-list total (A3/A4) — a SERVER aggregate. Σ of the
+    //    is_manageable rows: a1 420k + a2 300k + a3 180k = 900,000. The client
+    //    NEVER recomputes this; the reconcile owns it (same contract as
+    //    behaviour_totals). ────────────────────────────────────────────────────
+    manageable_total: 900000,
 
     // ── Below the line (change #4) ───────────────────────────────────────────
     below_the_line: belowTheLineRows(),
@@ -250,20 +262,69 @@ function mountReport() {
   });
 }
 
-// Find a row KSelect *component* for a given account name + axis. The row passes
-// :aria-label="`Cost behaviour for <name>`" / "Cuttability tier for <name>";
-// KSelect forwards that fallthrough aria-label onto its trigger element, so we
-// match on attributes('aria-label') — a stable accessible-name handle, not a
-// test-only hook.
-function behaviourSelectFor(wrapper, accountName) {
+// ── Chip-as-trigger (B2) reveal helpers ──────────────────────────────────────
+//
+// Post-B2, the per-row tier/behaviour KSelect no longer renders at rest — the
+// row shows a READABLE chip wrapped in a button (.cost-cut-row__chip-trigger,
+// aria-expanded="false") and the KSelect only appears AFTER that trigger is
+// clicked. So the select-finders are now async: they locate the CostCutRow by
+// name, click the axis's chip-trigger to REVEAL the select, then return the
+// now-rendered KSelect component (matched on the same accessible-name aria-label
+// the select forwards onto its trigger). Emitting update:modelValue on the
+// returned select then drives the real consumer chain exactly as before — the
+// optimistic-mutation + POST contract is unchanged; only the affordance is.
+//
+// The chip-trigger aria-labels are stable accessible-name handles, not test-only
+// hooks: "Cost behaviour: <label>. Activate to change." / "Cuttability tier:
+// <label>. Activate to change.".
+function rowByName(wrapper, accountName) {
+  return leafRows(wrapper).find((r) => r.props('row').name === accountName);
+}
+
+// Click the chip-trigger for `axisPrefix` ('Cost behaviour:' | 'Cuttability tier:')
+// inside the named row to reveal that axis's KSelect. Returns the row wrapper.
+async function revealAxisFor(wrapper, accountName, axisPrefix) {
+  const row = rowByName(wrapper, accountName);
+  expect(row, `row "${accountName}" should exist`).toBeTruthy();
+  const trigger = row
+    .findAll('.cost-cut-row__chip-trigger')
+    .find((b) => (b.attributes('aria-label') || '').startsWith(axisPrefix));
+  expect(
+    trigger,
+    `chip-trigger "${axisPrefix}" in row "${accountName}" should exist`,
+  ).toBeTruthy();
+  // NOTE: the chip-trigger is an "activate to edit" button, NOT a disclosure —
+  // post the P1 fix it carries NO aria-expanded (clicking it UNMOUNTS the button
+  // and swaps in a KSelect, so an aria-expanded here would control nothing). The
+  // accessible-name handle (`aria-label` startsWith above) is what reveals the
+  // select; we no longer assert aria-expanded on it.
+  await trigger.trigger('click');
+  await flushPromises();
+  return row;
+}
+
+// Reveal + return the behaviour re-tag KSelect for the named account. Clicks the
+// behaviour chip-trigger FIRST (B2), then returns the revealed KSelect.
+async function behaviourSelectFor(wrapper, accountName) {
+  await revealAxisFor(wrapper, accountName, 'Cost behaviour:');
   return wrapper
     .findAllComponents(KSelect)
     .find((c) => c.attributes('aria-label') === `Cost behaviour for ${accountName}`);
 }
-function tierSelectFor(wrapper, accountName) {
+
+// Reveal + return the tier re-tag KSelect for the named account.
+async function tierSelectFor(wrapper, accountName) {
+  await revealAxisFor(wrapper, accountName, 'Cuttability tier:');
   return wrapper
     .findAllComponents(KSelect)
     .find((c) => c.attributes('aria-label') === `Cuttability tier for ${accountName}`);
+}
+
+// Per-row manageable star (role="switch"). A stable semantic handle.
+function manageableStarFor(wrapper, accountName) {
+  const row = rowByName(wrapper, accountName);
+  if (!row) return undefined;
+  return row.find('button[role="switch"]');
 }
 
 // The data <tr> rows actually rendered for the active table (CostCutRow roots).
@@ -288,6 +349,16 @@ async function clickChip(wrapper, groupAriaLabel, label) {
 }
 const clickBehaviourFilter = (w, label) => clickChip(w, 'Filter by cost behaviour', label);
 const clickGroupBy = (w, label) => clickChip(w, 'Group accounts by', label);
+const clickManageableFilter = (w, label) => clickChip(w, 'Filter by manageable', label);
+
+// The headline "Manageable — top opportunities" secondary stat, located by its
+// label so it's never confused with the "Total incl. below-the-line" stat that
+// shares the .cost-cut__secondary-value class.
+function manageableStat(wrapper) {
+  return wrapper
+    .findAll('.cost-cut__secondary-stat')
+    .find((s) => s.find('.cost-cut__secondary-label').text().includes('Manageable'));
+}
 
 // Strip all whitespace (regular / NBSP / narrow-NBSP) so en-ZA currency
 // assertions don't depend on the irregular separator char.
@@ -487,18 +558,59 @@ describe('Area 2 — partial-year vs complete-year', () => {
     expect(pill.classes()).toContain('status-pill--info');
   });
 
-  it('renders the comparison_basis caption and the annualised projection when in progress', async () => {
+  it('folds comparison_basis + annualised projection into ONE .cost-cut__methodology line (B1)', async () => {
+    // B1 reorder: the two stacked caption lines (.cost-cut__basis-caption +
+    // .cost-cut__annualised) are GONE — both are folded into a single muted
+    // .cost-cut__methodology line so the YoY delta is no longer buried beneath
+    // them. The one line must carry BOTH the comparison basis and the projection.
     const wrapper = mountReport();
     await flushPromises();
 
-    const basis = wrapper.find('.cost-cut__basis-caption');
-    expect(basis.exists()).toBe(true);
-    expect(basis.text()).toContain('like-for-like to the same 5 months');
+    // The old two lines no longer exist.
+    expect(wrapper.find('.cost-cut__basis-caption').exists()).toBe(false);
+    expect(wrapper.find('.cost-cut__annualised').exists()).toBe(false);
 
-    const annualised = wrapper.find('.cost-cut__annualised');
-    expect(annualised.exists()).toBe(true);
-    expect(annualised.text()).toContain('Projected full year');
-    expect(digits(annualised.text())).toContain('R3100000');
+    // ONE methodology line carries BOTH reads.
+    const methodology = wrapper.find('.cost-cut__methodology');
+    expect(methodology.exists()).toBe(true);
+    expect(methodology.text()).toContain('like-for-like to the same 5 months');
+    expect(methodology.text()).toContain('Projected full year');
+    expect(digits(methodology.text())).toContain('R3100000');
+  });
+
+  it('B1 source-order: YoY delta is co-headline weight, and .beh-split renders AFTER the headline hero', async () => {
+    // B1: the CMA reads the addressable hero first, then "which way is it moving"
+    // (the YoY delta as a CO-HEADLINE, right under the hero value and BEFORE the
+    // muted methodology line), then operating leverage (the behaviour bar) THIRD —
+    // so .beh-split now sits AFTER .cost-cut__headline in DOM order (it was before).
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const headline = wrapper.find('.cost-cut__headline');
+    const delta = wrapper.find('.cost-cut__delta');
+    const methodology = wrapper.find('.cost-cut__methodology');
+    const behSplit = wrapper.find('.beh-split');
+    expect(headline.exists()).toBe(true);
+    expect(delta.exists()).toBe(true);
+    expect(methodology.exists()).toBe(true);
+    expect(behSplit.exists()).toBe(true);
+
+    // The YoY delta lives INSIDE the headline hero, ahead of the methodology line.
+    expect(headline.element.contains(delta.element)).toBe(true);
+    expect(
+      delta.element.compareDocumentPosition(methodology.element)
+        & Node.DOCUMENT_POSITION_FOLLOWING,
+      'methodology line should follow the YoY delta',
+    ).toBeTruthy();
+
+    // The behaviour split follows the WHOLE headline block (insight #3, below the
+    // hero + YoY co-headline) — the load-bearing reorder.
+    expect(headline.element.contains(behSplit.element)).toBe(false);
+    expect(
+      headline.element.compareDocumentPosition(behSplit.element)
+        & Node.DOCUMENT_POSITION_FOLLOWING,
+      '.beh-split should render AFTER .cost-cut__headline in DOM order',
+    ).toBeTruthy();
   });
 
   it('complete-year fixture: chip is NOT info-toned and the annualised projection is ABSENT', async () => {
@@ -513,9 +625,14 @@ describe('Area 2 — partial-year vs complete-year', () => {
     expect(pill.classes()).toContain('status-pill--neutral');
     expect(pill.classes()).not.toContain('status-pill--info');
 
-    // annualised_estimate is null → the projection line must not render.
-    expect(wrapper.find('.cost-cut__annualised').exists()).toBe(false);
+    // annualised_estimate is null → no projection text anywhere. The methodology
+    // line still renders (it carries the comparison basis) but must NOT mention
+    // a projection.
     expect(wrapper.text()).not.toContain('Projected full year');
+    const methodology = wrapper.find('.cost-cut__methodology');
+    expect(methodology.exists()).toBe(true);
+    expect(methodology.text()).toContain('full prior year');
+    expect(methodology.text()).not.toContain('Projected full year');
   });
 });
 
@@ -882,9 +999,10 @@ describe('Area 6 — optimistic behaviour & tier re-tag', () => {
       .find((li) => li.text().includes('Fixed'));
     expect(digits(fixedLegendBefore.text())).toContain('R670000');
 
-    // Re-tag a1 (Employee Expenses Tanja) fixed → variable.
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
-    expect(select, 'behaviour re-tag KSelect should exist').toBeTruthy();
+    // Re-tag a1 (Employee Expenses Tanja) fixed → variable. The behaviour
+    // chip-trigger must be CLICKED first (B2) to reveal the select.
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    expect(select, 'behaviour re-tag KSelect should exist after revealing it').toBeTruthy();
     select.vm.$emit('update:modelValue', 'variable');
     await flushPromises();
 
@@ -941,9 +1059,10 @@ describe('Area 6 — optimistic behaviour & tier re-tag', () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    // Re-tag a2 (Casual Wages) from T2 → T1.
-    const tierSelect = tierSelectFor(wrapper, 'Casual Wages');
-    expect(tierSelect, 'tier re-tag KSelect should exist').toBeTruthy();
+    // Re-tag a2 (Casual Wages) from T2 → T1. Click the tier chip-trigger first
+    // (B2) to reveal the select.
+    const tierSelect = await tierSelectFor(wrapper, 'Casual Wages');
+    expect(tierSelect, 'tier re-tag KSelect should exist after revealing it').toBeTruthy();
     tierSelect.vm.$emit('update:modelValue', 'T1');
     await flushPromises();
 
@@ -978,7 +1097,7 @@ describe('Area 6 — optimistic behaviour & tier re-tag', () => {
     await flushPromises();
     expect(getCostCutReport).toHaveBeenCalledTimes(1);
 
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
     select.vm.$emit('update:modelValue', 'fixed'); // already fixed
     await flushPromises();
 
@@ -994,7 +1113,7 @@ describe('Area 6 — optimistic behaviour & tier re-tag', () => {
     await flushPromises();
     expect(getCostCutReport).toHaveBeenCalledTimes(1);
 
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
     select.vm.$emit('update:modelValue', 'variable');
     await flushPromises();
 
@@ -1009,7 +1128,7 @@ describe('Area 6 — optimistic behaviour & tier re-tag', () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
     select.vm.$emit('update:modelValue', 'variable');
     await flushPromises();
 
@@ -1064,7 +1183,7 @@ describe('Area 7 — reconcile race / last-wins', () => {
     expect(getCostCutReport).toHaveBeenCalledTimes(1);
 
     // Re-tag → save resolves → reconcile (#2) kicks off and is held open.
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
     select.vm.$emit('update:modelValue', 'variable');
     await flushPromises();
     expect(getCostCutReport).toHaveBeenCalledTimes(2);
@@ -1131,8 +1250,11 @@ describe('Area 7 — reconcile race / last-wins', () => {
     const wrapper = mountReport();
     await flushPromises();
 
+    // Reveal a1's behaviour select FIRST (the chip-trigger click is a UI-only
+    // reveal — no POST, no target-cell change). The target input is a separate
+    // cell, unaffected by the behaviour edit-mode toggle.
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
     const input = wrapper.find('input[aria-label="Target for Employee Expenses Tanja"]');
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
 
     // 1) Target blur: 420000 actual, set target 500000 → actual ≤ target → green.
     await input.setValue('500000');
@@ -1185,7 +1307,7 @@ describe('Area 7 — reconcile race / last-wins', () => {
     const wrapper = mountReport();
     await flushPromises();
 
-    const select = behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
     select.vm.$emit('update:modelValue', 'semi_variable'); // optimistic guess
     await flushPromises(); // let the reconcile fully land
 
@@ -1412,6 +1534,483 @@ describe('CostBehaviourBar — headline split', () => {
 
     expect(leafRows(wrapper).length).toBe(5); // report still loaded
     expect(wrapper.find('.beh-split').exists()).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// B2 — chip-as-trigger affordance (resting → reveal → collapse; contract intact)
+// ════════════════════════════════════════════════════════════════════════════
+describe('B2 — chip-as-trigger affordance', () => {
+  it('resting state: each editable row shows BOTH chip-triggers as activate-to-edit buttons (NO KSelect yet)', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // No re-tag KSelect anywhere at rest (only the Entity + Year header selects,
+    // which are NOT inside a CostCutRow). The select is revealed on intent only.
+    const a1 = rowByName(wrapper, 'Employee Expenses Tanja');
+    expect(a1.findAllComponents(KSelect).length).toBe(0);
+
+    // Post the P1 fix the chip-triggers are activate-to-edit BUTTONS, not
+    // disclosures — they carry NO aria-expanded. Assert instead that each resting
+    // trigger is a real <button> on the chip-trigger class carrying its
+    // descriptive accessible-name (the "Activate to change." handle).
+    const triggers = a1.findAll('.cost-cut-row__chip-trigger');
+    expect(triggers.length).toBe(2); // one behaviour, one tier
+    expect(triggers.every((t) => t.element.tagName === 'BUTTON')).toBe(true);
+    expect(triggers.every((t) => t.attributes('aria-expanded') === undefined)).toBe(true);
+    const labels = triggers.map((t) => t.attributes('aria-label') || '');
+    expect(labels.some((l) => l.startsWith('Cost behaviour:') && l.includes('Activate to change.'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('Cuttability tier:') && l.includes('Activate to change.'))).toBe(true);
+
+    // The chips read the row's CURRENT value (the trigger wraps the live tag).
+    expect(a1.findComponent(BehaviourTag).find('.behaviour-tag__label').text()).toBe('Fixed');
+    expect(a1.findComponent(TierTag).find('.tier-tag__label').text()).toBe('T1 Quick win');
+  });
+
+  it('clicking the behaviour chip-trigger reveals its KSelect; committing collapses back to the chip', async () => {
+    // Hold the reconcile OPEN so the OPTIMISTIC flip is observable — otherwise a
+    // resolved reconcile (default makeReport(), where a1 is still 'fixed')
+    // overwrites the optimistic 'variable' wholesale (the documented last-write =
+    // server path, covered separately in Area 7).
+    let resolveReconcile;
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport())
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Reveal — the helper clicks the chip-trigger and returns the revealed select.
+    const select = await behaviourSelectFor(wrapper, 'Employee Expenses Tanja');
+    expect(select, 'behaviour KSelect should be revealed after the chip click').toBeTruthy();
+
+    // While editing, the row shows the select (not the resting BehaviourTag chip).
+    const a1Editing = rowByName(wrapper, 'Employee Expenses Tanja');
+    expect(a1Editing.findComponent(BehaviourTag).exists()).toBe(false);
+
+    // Commit → the parent owns the optimistic flip + POST; the row collapses back
+    // to the chip (KSelect gone, BehaviourTag back, reading the optimistic value).
+    select.vm.$emit('update:modelValue', 'variable');
+    await flushPromises();
+
+    const a1After = rowByName(wrapper, 'Employee Expenses Tanja');
+    expect(a1After.findAllComponents(KSelect).length).toBe(0);
+    expect(a1After.findComponent(BehaviourTag).find('.behaviour-tag__label').text()).toBe('Variable');
+    // The activate-to-edit chip-trigger is back (the select collapsed on commit).
+    // It carries no aria-expanded — assert it's the real button with its handle.
+    const behTrigger = a1After
+      .findAll('.cost-cut-row__chip-trigger')
+      .find((t) => (t.attributes('aria-label') || '').startsWith('Cost behaviour:'));
+    expect(behTrigger).toBeTruthy();
+    expect(behTrigger.element.tagName).toBe('BUTTON');
+
+    // Drain the held reconcile.
+    resolveReconcile(makeReport());
+    await flushPromises();
+  });
+
+  it('the chip-as-trigger contract is unchanged: reveal+commit still fires the optimistic flip AND the saveCostBehaviour POST identically', async () => {
+    // B2 changed only the AFFORDANCE (the select hides behind a chip). The
+    // optimistic-flip-then-POST contract is byte-for-byte the same: same payload
+    // shape {account_key, cuttability}, same optimistic chip flip, same success
+    // toast. This guards that the chip wrapper didn't quietly alter the contract.
+    // Hold the reconcile OPEN so the optimistic flip is observable (a resolved
+    // default reconcile would restore a2 to T2 — last-write = server).
+    let resolveReconcile;
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport())
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const select = await tierSelectFor(wrapper, 'Casual Wages');
+    select.vm.$emit('update:modelValue', 'T1');
+    await flushPromises();
+
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({ account_key: 'kl_T2', cuttability: 'T1' });
+    // Optimistic tier flip on the row's own chip (reconcile still held).
+    const a2 = rowByName(wrapper, 'Casual Wages');
+    expect(a2.findComponent(TierTag).find('.tier-tag__label').text()).toBe('T1 Quick win');
+    expect(toastCalls.success).toHaveBeenCalled();
+
+    resolveReconcile(makeReport());
+    await flushPromises();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// B2 — deferred focusout collapse (REGRESSION: a null relatedTarget must NOT
+// collapse an OPEN editor; a genuine focus-move outside MUST collapse it)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// This is the exact bug-class the whole pass exists to avoid. The original chip-
+// as-trigger collapse decided SYNCHRONOUSLY on event.relatedTarget — "relatedTarget
+// === null → collapse". But Reka focuses the (portal-teleported) dropdown item
+// ASYNCHRONOUSLY after popper positioning, and on programmatic / cross-portal focus
+// moves the browser frequently reports relatedTarget === null even while focus is
+// landing inside the dropdown. So the synchronous null→collapse path snapped the
+// editor shut the instant the dropdown opened (can't-select / flicker).
+//
+// The P1 fix replaced that with a DEFERRED (requestAnimationFrame, setTimeout(0)
+// fallback) re-read of document.activeElement: collapse ONLY when, after focus has
+// settled, the active element is NEITHER inside the cell wrapper NOR inside an OPEN
+// `.kselect-content` panel (and the trigger isn't still data-state="open").
+//
+// These mount CostCutRow directly (the deferred collapse lives entirely in the row),
+// attached to the document so focus + the trigger's data-state behave realistically.
+// We drive the deferred path EXPLICITLY with fake timers + advanceTimersToNextFrame()
+// so the test exercises the rAF-scheduled re-check rather than incidentally relying
+// on happy-dom's microtask scheduling of rAF. (Sanity: under the OLD synchronous
+// `if (!next) return true` collapse, the null-relatedTarget case below would collapse
+// the editor BEFORE any activeElement re-check — so this test would fail, which is
+// exactly the regression it guards.)
+describe('B2 — deferred focusout collapse (relatedTarget=null safety)', () => {
+  const fmt = (v) => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(v) || 0);
+
+  function mountRowAttached(rowOverrides = {}) {
+    const row = {
+      account_id: 'x1', account_key: 'kl_X1', name: 'Test Account',
+      group: 'OVERHEADS', cuttability: 'T1', behaviour: 'fixed',
+      driver: 'headcount (salaried)',
+      recurring_actual: 100000, recurring_prior: 90000,
+      yoy_pct: 11.1, pct_of_cost: 5, target: null, rag: 'none',
+      ...rowOverrides,
+    };
+    // attachTo a real node so .focus() moves document.activeElement and the
+    // KSelect trigger gets a live data-state (both load-bearing for the fix).
+    return mount(CostCutRow, { props: { row, formatCurrency: fmt }, attachTo: document.body });
+  }
+
+  // Reveal the behaviour axis's KSelect by clicking its chip-trigger. Returns the
+  // cell wrapper (.cost-cut-row__behaviour-top) that owns the @focusout listener.
+  async function revealBehaviour(wrapper) {
+    const trigger = wrapper
+      .findAll('.cost-cut-row__chip-trigger')
+      .find((b) => (b.attributes('aria-label') || '').startsWith('Cost behaviour:'));
+    expect(trigger, 'behaviour chip-trigger should exist at rest').toBeTruthy();
+    await trigger.trigger('click');
+    await flushPromises(); // nextTick → focusSelectTrigger lands focus on the trigger
+    return wrapper.find('.cost-cut-row__behaviour-top');
+  }
+
+  // Flush the DEFERRED collapse check: advance to the next animation frame (the
+  // rAF the fix schedules), then drain microtasks so the resulting reactive
+  // unmount/render settles. This is the deterministic flush idiom for the fix.
+  async function flushDeferredCollapse() {
+    vi.advanceTimersToNextFrame();
+    await flushPromises();
+  }
+
+  it('a focusout with relatedTarget=null while focus is still in the editing region does NOT collapse the open editor', async () => {
+    vi.useFakeTimers();
+    try {
+      const wrapper = mountRowAttached();
+      const cell = await revealBehaviour(wrapper);
+
+      // The select is open; focus is on its trigger (inside the cell) — the exact
+      // state the dropdown opens in. Reka's trigger reads data-state="closed" under
+      // happy-dom (the portal panel can't truly open), so the fix's collapse decision
+      // falls through to the activeElement re-check — precisely the path we want.
+      expect(wrapper.findAllComponents(KSelect).length).toBe(1);
+
+      // Fire the cross-portal/programmatic focus move the old code mis-read:
+      // relatedTarget === null. The DEFERRED re-check must see activeElement still
+      // inside the cell (the trigger) and STAY OPEN.
+      await cell.trigger('focusout', { relatedTarget: null });
+      await flushDeferredCollapse();
+
+      // Editor STILL open — a null relatedTarget alone did NOT collapse it.
+      expect(wrapper.findAllComponents(KSelect).length).toBe(1);
+      // And the resting chip-trigger has NOT come back (we're still editing).
+      const stillEditing = wrapper
+        .findAll('.cost-cut-row__chip-trigger')
+        .some((b) => (b.attributes('aria-label') || '').startsWith('Cost behaviour:'));
+      expect(stillEditing).toBe(false);
+
+      wrapper.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a focusout where focus genuinely moved OUTSIDE the cell (and outside any .kselect-content) collapses the editor back to the chip', async () => {
+    vi.useFakeTimers();
+    // A real element outside the row, focused so document.activeElement lands on
+    // it — neither inside the cell nor inside a .kselect-content panel.
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    try {
+      const wrapper = mountRowAttached();
+      const cell = await revealBehaviour(wrapper);
+      expect(wrapper.findAllComponents(KSelect).length).toBe(1);
+
+      // Move focus genuinely outside, then fire focusout (relatedTarget = that
+      // outside element) and flush the deferred check.
+      outside.focus();
+      await cell.trigger('focusout', { relatedTarget: outside });
+      await flushDeferredCollapse();
+
+      // Editor collapsed: the KSelect is gone and the activate-to-edit chip-trigger
+      // is back (reading the row's current value).
+      expect(wrapper.findAllComponents(KSelect).length).toBe(0);
+      const behTrigger = wrapper
+        .findAll('.cost-cut-row__chip-trigger')
+        .find((b) => (b.attributes('aria-label') || '').startsWith('Cost behaviour:'));
+      expect(behTrigger, 'chip-trigger should be restored after collapse').toBeTruthy();
+      expect(behTrigger.element.tagName).toBe('BUTTON');
+      expect(wrapper.findComponent(BehaviourTag).find('.behaviour-tag__label').text()).toBe('Fixed');
+
+      wrapper.unmount();
+    } finally {
+      outside.remove();
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AREA 9 — Manageable cost (group-by, filter, star toggle, no-client-recompute)
+// ════════════════════════════════════════════════════════════════════════════
+describe('Area 9 — manageable group-by', () => {
+  it('Group-by "Manageable cost" buckets into "Manageable — top opportunities" (FIRST) then "Not manageable", with right counts + subtotals', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    await clickGroupBy(wrapper, 'Manageable cost');
+
+    const headers = wrapper.findAll('.cc-group__header');
+    expect(headers.length).toBe(2);
+
+    const labels = headers.map((h) => h.find('.cc-group__label').text());
+    // is_manageable === true bucket FIRST (the user's shortlist to act on).
+    expect(labels).toEqual(['Manageable — top opportunities', 'Not manageable']);
+
+    // Manageable bucket = a1 (420000) + a2 (300000) + a3 (180000) = 900000 / 3.
+    const yes = headers[0];
+    expect(yes.find('.cc-group__hint').text()).toBe('Your shortlist to act on');
+    expect(yes.find('.cc-group__count').text()).toContain('3 accounts');
+    expect(digits(yes.find('.cc-group__subtotal').text())).toBe(rand(900000));
+
+    // Not-manageable bucket = a4 (90000) + a5 (250000) = 340000 / 2.
+    const no = headers[1];
+    expect(no.find('.cc-group__count').text()).toContain('2 accounts');
+    expect(digits(no.find('.cc-group__subtotal').text())).toBe(rand(340000));
+
+    // All five leaves still present (just re-bucketed), nothing dropped.
+    expect(leafRows(wrapper).length).toBe(5);
+  });
+});
+
+describe('Area 9 — manageable filter', () => {
+  it('the "Manageable" filter chip narrows to is_manageable===true rows; "All" restores', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(leafRows(wrapper).length).toBe(5);
+
+    await clickManageableFilter(wrapper, 'Manageable');
+    // Only the three manageable accounts survive (a1, a2, a3).
+    expect(leafNames(wrapper).sort()).toEqual(['Casual Wages', 'Electricity', 'Employee Expenses Tanja']);
+
+    await clickManageableFilter(wrapper, 'All');
+    expect(leafRows(wrapper).length).toBe(5);
+  });
+
+  it('the Manageable filter composes (AND) with the behaviour filter', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Manageable ∩ Fixed: a1 (fixed, manageable) survives; a5 (fixed) is NOT
+    // manageable so it's filtered out; a2/a3 (manageable) are not fixed.
+    await clickManageableFilter(wrapper, 'Manageable');
+    await clickBehaviourFilter(wrapper, 'Fixed');
+    expect(leafNames(wrapper)).toEqual(['Employee Expenses Tanja']);
+
+    // Manageable ∩ Variable: only a2 (variable + manageable).
+    await clickBehaviourFilter(wrapper, 'Variable');
+    expect(leafNames(wrapper)).toEqual(['Casual Wages']);
+
+    // Manageable ∩ Non-controllable: a4 is non-controllable but NOT manageable →
+    // empty intersection → the "no matching accounts" empty state, zero leaves.
+    await clickBehaviourFilter(wrapper, 'Non-controllable');
+    expect(leafRows(wrapper).length).toBe(0);
+
+    // Drop the behaviour filter back to All → the three manageable rows return.
+    await clickBehaviourFilter(wrapper, 'All');
+    expect(leafNames(wrapper).sort()).toEqual(['Casual Wages', 'Electricity', 'Employee Expenses Tanja']);
+  });
+
+  it('sets aria-pressed on the active manageable chip only', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    await clickManageableFilter(wrapper, 'Manageable');
+    const chips = wrapper.findAll('[aria-label="Filter by manageable"] .cost-cut__chip');
+    const pressed = chips.filter((c) => c.attributes('aria-pressed') === 'true');
+    expect(pressed.length).toBe(1);
+    expect(pressed[0].text()).toBe('Manageable');
+  });
+});
+
+describe('Area 9 — manageable star toggle (optimistic flip + no-client-recompute)', () => {
+  it('flips row.is_manageable same-tick, re-buckets under manageable grouping, and POSTs {account_key, is_manageable: !current}; the manageable_total headline stat does NOT recompute client-side (settles only after reconcile)', async () => {
+    // Mirror of the Area-6 behaviour-totals no-client-recompute pattern. The
+    // optimistic mutation flips ONLY this row's is_manageable cell (its star +
+    // its bucket). manageable_total is a CROSS-ROW server aggregate the reconcile
+    // owns EXCLUSIVELY — the client never recomputes it. Hold the reconcile OPEN
+    // with a payload whose manageable_total differs, so an early move (a regressed
+    // client recompute) is caught.
+    let resolveReconcile;
+    const reconciled = makeReport({ manageable_total: 990000 }); // server's post-toggle truth (900k + a4 90k)
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport())
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Default tier grouping. Before: the headline manageable stat reads R900 000.
+    expect(digits(manageableStat(wrapper).find('.cost-cut__secondary-value').text())).toContain('R900000');
+
+    // a4 (Statutory Levies, T4) starts NOT manageable.
+    const a4Star = manageableStarFor(wrapper, 'Statutory Levies');
+    expect(a4Star, 'a4 manageable star should exist').toBeTruthy();
+    expect(a4Star.attributes('aria-checked')).toBe('false');
+
+    await a4Star.trigger('click');
+    await flushPromises();
+
+    // SAME-TICK, load-bearing: POST fired with the FLIPPED value, reconcile open.
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({ account_key: 'kl_T4', is_manageable: true });
+    expect(getCostCutReport).toHaveBeenCalledTimes(2);
+    expect(resolveReconcile).toBeTypeOf('function');
+
+    // SAME-TICK, optimistic: a4's own star flipped on.
+    expect(manageableStarFor(wrapper, 'Statutory Levies').attributes('aria-checked')).toBe('true');
+
+    // SAME-TICK re-bucket under MANAGEABLE grouping: a4 now joins the "Manageable"
+    // bucket (4 accounts), "Not manageable" drops to 1 (a5 only).
+    await clickGroupBy(wrapper, 'Manageable cost');
+    const headers = wrapper.findAll('.cc-group__header');
+    const yes = headers.find((h) => h.find('.cc-group__label').text() === 'Manageable — top opportunities');
+    const no = headers.find((h) => h.find('.cc-group__label').text() === 'Not manageable');
+    expect(yes.find('.cc-group__count').text()).toContain('4 accounts');
+    expect(no.find('.cc-group__count').text()).toContain('1 account');
+
+    // SAME-TICK no-client-recompute LOCK: the manageable_total headline stat is a
+    // cross-row aggregate — it must STILL read the server's R900 000, NOT a
+    // locally recomputed R990 000, while the reconcile is held open.
+    expect(digits(manageableStat(wrapper).find('.cost-cut__secondary-value').text())).toContain('R900000');
+    expect(digits(manageableStat(wrapper).find('.cost-cut__secondary-value').text())).not.toContain('R990000');
+
+    // Let the reconcile land — the headline stat NOW settles to the server value.
+    resolveReconcile(reconciled);
+    await flushPromises();
+    expect(digits(manageableStat(wrapper).find('.cost-cut__secondary-value').text())).toContain('R990000');
+
+    expect(toastCalls.success).toHaveBeenCalled();
+    expect(toastCalls.success.mock.calls.at(-1)[0].toLowerCase()).toContain('manageable');
+  });
+
+  it('un-starring a manageable row POSTs is_manageable:false (the !current flip)', async () => {
+    // Hold the reconcile OPEN so the optimistic OFF flip is observable (a resolved
+    // default reconcile restores a1 to manageable — last-write = server).
+    let resolveReconcile;
+    getCostCutReport
+      .mockResolvedValueOnce(makeReport())
+      .mockImplementationOnce(() => new Promise((r) => { resolveReconcile = r; }));
+
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // a1 (Employee Expenses Tanja, T1) starts manageable.
+    const a1Star = manageableStarFor(wrapper, 'Employee Expenses Tanja');
+    expect(a1Star.attributes('aria-checked')).toBe('true');
+
+    await a1Star.trigger('click');
+    await flushPromises();
+
+    expect(saveCostBehaviour).toHaveBeenCalledTimes(1);
+    expect(saveCostBehaviour.mock.calls[0][0]).toEqual({ account_key: 'kl_T1', is_manageable: false });
+    // Optimistic flip off (reconcile still held).
+    expect(manageableStarFor(wrapper, 'Employee Expenses Tanja').attributes('aria-checked')).toBe('false');
+
+    resolveReconcile(makeReport());
+    await flushPromises();
+  });
+
+  it('a manageable toggle on a row MISSING account_key surfaces an error toast and does NOT POST', async () => {
+    const rows = addressableRows();
+    rows[3].account_key = null; // a4 (currently not-manageable) loses its key
+    getCostCutReport.mockResolvedValue(makeReport({ accounts: rows }));
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1);
+
+    const a4Star = manageableStarFor(wrapper, 'Statutory Levies');
+    await a4Star.trigger('click');
+    await flushPromises();
+
+    expect(saveCostBehaviour).not.toHaveBeenCalled();
+    expect(getCostCutReport).toHaveBeenCalledTimes(1); // no reconcile either
+    expect(toastCalls.error).toHaveBeenCalled();
+    expect(toastCalls.error.mock.calls.at(-1)[0].toLowerCase()).toContain('manageable');
+  });
+
+  it('a below-the-line (T0) row renders NO star — only the five addressable rows get one', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    // Expand the below-the-line section so its rows are in the DOM (and visible).
+    const btl = wrapper.findComponent(BelowTheLineSection);
+    await btl.find('.btl__toggle').trigger('click');
+    await flushPromises();
+
+    // Income Tax / Finance Costs are listed but carry no role="switch" star.
+    expect(btl.text()).toContain('Income Tax');
+    expect(btl.findAll('button[role="switch"]').length).toBe(0);
+
+    // Exactly five stars across the whole report — one per addressable leaf.
+    expect(wrapper.findAll('button[role="switch"]').length).toBe(5);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// B-polish — "% of addr." leaf header + collapsible "Reading this table" legend
+// ════════════════════════════════════════════════════════════════════════════
+describe('B-polish — % of addressable header + legend collapse', () => {
+  it('the leaf column header reads "% of addr." (share of addressable), not "% of cost"', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const headerTexts = wrapper.findAll('.cc-group-table thead th').map((th) => th.text());
+    expect(headerTexts).toContain('% of addr.');
+    expect(headerTexts).not.toContain('% of cost');
+  });
+
+  it('the "Reading this table" legend is collapsed by default (aria-expanded=false, body hidden) and expands on click', async () => {
+    const wrapper = mountReport();
+    await flushPromises();
+
+    const toggle = wrapper.find('.cost-cut__legend-toggle');
+    expect(toggle.exists()).toBe(true);
+    expect(toggle.text()).toContain('Reading this table');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+
+    // Body present in the DOM but hidden via v-show while collapsed.
+    const body = wrapper.find('.cost-cut__legend-body');
+    expect(body.exists()).toBe(true);
+    expect(body.attributes('style') || '').toContain('display: none');
+    // The toggle controls the body it collapses.
+    expect(toggle.attributes('aria-controls')).toBe(body.attributes('id'));
+
+    await toggle.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.cost-cut__legend-toggle').attributes('aria-expanded')).toBe('true');
+    expect(wrapper.find('.cost-cut__legend-body').attributes('style') || '').not.toContain('display: none');
   });
 });
 

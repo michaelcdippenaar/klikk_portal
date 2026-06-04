@@ -60,57 +60,64 @@
           </span>
         </div>
 
-        <!-- Headline strip -->
+        <!-- Headline strip. Source order = reading order (B1): the CMA reads the
+             addressable hero first, then "which way is it moving" (the YoY
+             co-headline), then operating leverage (the behaviour bar) third. -->
         <div class="cost-cut__headline">
-          <!-- Cost-behaviour split (operating leverage) — spans full width -->
-          <CostBehaviourBar
-            v-if="hasBehaviourData"
-            :behaviour-totals="behaviourTotals"
-            :addressable-base="addressableBase"
-            :fixed-variable-ratio="fixedVariableRatio"
-            :total="report.total_recurring_cost"
-            :format-currency="formatCurrency"
-          />
-
           <!-- PRIMARY headline: addressable operating cost (change #1) -->
           <div class="cost-cut__headline-primary">
             <div class="cost-cut__addressable-tile">
-              <MetricTile
-                label="Addressable operating cost"
-                :value="formatCurrency(addressableOperatingCost)"
-              />
-              <p class="cost-cut__addressable-sub">
-                (excludes tax, finance &amp; statutory — shown below the line)
-              </p>
-              <!--
-                Like-for-like YoY beside the headline. Rendered separately from
-                MetricTile's `trend` (which hardcodes up=green/down=red, inverting
-                cost semantics): a RISE in cost is bad (red), a FALL is good
-                (green) — same cost-direction logic as CostCutRow.
-              -->
-              <span
-                v-if="addressableYoy"
-                class="cost-cut__delta cost-cut__num"
-                :class="addressableYoy.cls"
-                :aria-label="`Addressable cost year on year, like for like: ${addressableYoy.label}`"
-              >
-                {{ addressableYoy.label }} YoY
-                <span class="cost-cut__delta-note">like-for-like</span>
-              </span>
-              <p v-if="comparisonBasis" class="cost-cut__basis-caption">
-                {{ comparisonBasis }}
-              </p>
-              <p v-if="annualisedLabel" class="cost-cut__annualised">
-                {{ annualisedLabel }}
-              </p>
+              <!-- Hero + YoY co-headline, read as one unit. The delta is the
+                   SECOND thing read, so it sits right under the hero value at a
+                   larger weight than the methodology line below it. -->
+              <div class="cost-cut__hero">
+                <MetricTile
+                  label="Addressable operating cost"
+                  :value="formatCurrency(addressableOperatingCost)"
+                />
+                <p class="cost-cut__addressable-sub">
+                  (excludes tax, finance &amp; statutory — shown below the line)
+                </p>
+                <!--
+                  Like-for-like YoY as a CO-HEADLINE. Rendered separately from
+                  MetricTile's `trend` (which hardcodes up=green/down=red,
+                  inverting cost semantics): a RISE in cost is bad (red), a FALL
+                  is good (green) — same cost-direction logic as CostCutRow.
+                -->
+                <span
+                  v-if="addressableYoy"
+                  class="cost-cut__delta cost-cut__num"
+                  :class="addressableYoy.cls"
+                  :aria-label="`Addressable cost year on year, like for like: ${addressableYoy.label}`"
+                >
+                  {{ addressableYoy.label }}
+                  <span class="cost-cut__delta-label">YoY</span>
+                  <span class="cost-cut__delta-note">like-for-like</span>
+                </span>
+                <!-- ONE muted methodology line folding comparison basis +
+                     annualised projection (demoted from two caption lines). -->
+                <p v-if="methodologyLine" class="cost-cut__methodology">
+                  {{ methodologyLine }}
+                </p>
+              </div>
             </div>
 
-            <!-- Secondary stats: total incl. below-the-line + RAG summary -->
+            <!-- Secondary stats: total incl. below-the-line + manageable + RAG -->
             <div class="cost-cut__secondary">
               <div class="cost-cut__secondary-stat">
                 <span class="cost-cut__secondary-label">Total incl. below-the-line RX</span>
                 <span class="cost-cut__secondary-value cost-cut__num">
                   {{ formatCurrency(report.total_recurring_cost) }}
+                </span>
+              </div>
+              <!-- Manageable = the user's top-opportunities number (A4). -->
+              <div v-if="hasManageableTotal" class="cost-cut__secondary-stat">
+                <span class="cost-cut__secondary-label">Manageable — top opportunities</span>
+                <span class="cost-cut__secondary-value cost-cut__num">
+                  {{ formatCurrency(manageableTotal) }}
+                  <span class="cost-cut__secondary-suffix">
+                    · {{ manageableCount }} {{ manageableCount === 1 ? 'account' : 'accounts' }}
+                  </span>
                 </span>
               </div>
               <div class="cost-cut__secondary-stat">
@@ -162,6 +169,17 @@
           </div>
         </div>
 
+        <!-- Cost-behaviour split (operating leverage) — insight #3, so it sits
+             BELOW the hero + YoY co-headline, not above them (B1). -->
+        <CostBehaviourBar
+          v-if="hasBehaviourData"
+          :behaviour-totals="behaviourTotals"
+          :addressable-base="addressableBase"
+          :fixed-variable-ratio="fixedVariableRatio"
+          :total="report.total_recurring_cost"
+          :format-currency="formatCurrency"
+        />
+
         <!-- Tabs -->
         <KTabs
           v-model="activeTab"
@@ -170,7 +188,7 @@
           :tabs="tabDefs"
         />
 
-        <!-- Controls row: Group-by toggle + behaviour filter chips -->
+        <!-- Controls row: Group-by toggle + behaviour & manageable filter chips -->
         <div class="cost-cut__controls">
           <div class="cost-cut__groupby" role="group" aria-label="Group accounts by">
             <span class="cost-cut__controls-label">Group by</span>
@@ -201,6 +219,50 @@
               {{ opt.label }}
             </button>
           </div>
+
+          <!-- Manageable filter — narrow to the user's hit-list (A2). -->
+          <div class="cost-cut__manage-filter" role="group" aria-label="Filter by manageable">
+            <span class="cost-cut__controls-label">Manageable</span>
+            <button
+              v-for="opt in manageableFilterOptions"
+              :key="opt.value"
+              type="button"
+              class="cost-cut__chip"
+              :class="{ 'cost-cut__chip--active': manageableFilter === opt.value }"
+              :aria-pressed="manageableFilter === opt.value"
+              @click="manageableFilter = opt.value"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+
+        <!-- One-line "reading this table" legend — collapsed by default (B4). -->
+        <div class="cost-cut__legend">
+          <button
+            type="button"
+            class="cost-cut__legend-toggle"
+            :aria-expanded="legendOpen"
+            aria-controls="cost-cut-legend-body"
+            @click="legendOpen = !legendOpen"
+          >
+            <svg
+              class="cost-cut__legend-chevron"
+              :class="{ 'cost-cut__legend-chevron--open': legendOpen }"
+              xmlns="http://www.w3.org/2000/svg"
+              width="12" height="12" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>Reading this table</span>
+          </button>
+          <p v-show="legendOpen" id="cost-cut-legend-body" class="cost-cut__legend-body">
+            <strong>RAG</strong> = target status ·
+            <strong>Behaviour hue</strong> = fixed / variable ·
+            <strong>Tier</strong> = how to cut (T1 quick-win → T5 structural).
+          </p>
         </div>
 
         <!-- Where the money goes -->
@@ -215,7 +277,7 @@
             v-else-if="!filteredAccounts.length"
             icon="∅"
             title="No matching accounts"
-            :body="`No ${activeBehaviourLabel.toLowerCase()} accounts in this view. Clear the behaviour filter to see all.`"
+            :body="`No ${activeFilterLabel} accounts in this view. Clear the filters to see all.`"
           />
           <CostCutGroupTable
             v-else
@@ -227,6 +289,7 @@
             @commit="commitAccountTarget"
             @retag="commitBehaviour"
             @retag-tier="commitTier"
+            @toggle-manageable="commitManageable"
           />
         </div>
 
@@ -245,7 +308,7 @@
             v-else-if="!filteredOpportunities.length"
             icon="∅"
             title="No matching opportunities"
-            :body="`No ${activeBehaviourLabel.toLowerCase()} opportunities in this view. Clear the behaviour filter to see all.`"
+            :body="`No ${activeFilterLabel} opportunities in this view. Clear the filters to see all.`"
           />
           <CostCutGroupTable
             v-else
@@ -258,6 +321,7 @@
             @commit="commitAccountTarget"
             @retag="commitBehaviour"
             @retag-tier="commitTier"
+            @toggle-manageable="commitManageable"
           />
         </div>
 
@@ -303,6 +367,13 @@ import {
   computeRag,
 } from '../../utils/costBehaviour';
 
+// Filter chip row options for the manageable axis. 'all' keeps the full table;
+// 'manageable' narrows to the user's hit-list (is_manageable === true).
+const MANAGEABLE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'manageable', label: 'Manageable' },
+];
+
 const KLIKK_FALLBACK_ENTITY = '41ebfa0e-012e-4ff1-82ba-a9a7585c536c';
 const TOTAL_METRIC_KEY = 'cost_cut.total';
 // Prefixes for save-state keys in `savingKeys`. Kept distinct per edit axis so a
@@ -310,6 +381,7 @@ const TOTAL_METRIC_KEY = 'cost_cut.total';
 // a spinner-state slot. CostCutGroupTable mirrors these helpers exactly.
 const BEHAVIOUR_KEY_PREFIX = 'cost_cut.behaviour.';
 const TIER_KEY_PREFIX = 'cost_cut.tier.';
+const MANAGEABLE_KEY_PREFIX = 'cost_cut.manageable.';
 
 const dataStore = useDataStore();
 const { selectedTenant, tenants } = storeToRefs(dataStore);
@@ -343,8 +415,12 @@ const totalTargetFocused = ref(false);
 const activeTab = ref('accounts');
 // Behaviour filter for the tables — 'all' or a behaviour key. Client-side only.
 const behaviourFilter = ref('all');
-// Grouping axis for the table — 'tier' (default) | 'behaviour' | 'group'.
+// Manageable filter for the tables — 'all' or 'manageable'. Client-side only.
+const manageableFilter = ref('all');
+// Grouping axis — 'tier' (default) | 'behaviour' | 'group' | 'manageable'.
 const groupBy = ref('tier');
+// "Reading this table" legend — collapsed/off by default (B4).
+const legendOpen = ref(false);
 
 function isSaving(metricKey) {
   return savingKeys.value.has(metricKey);
@@ -359,6 +435,7 @@ const groupByOptions = [
   { value: 'tier', label: 'Cuttability tier' },
   { value: 'behaviour', label: 'Behaviour' },
   { value: 'group', label: 'Account group' },
+  { value: 'manageable', label: 'Manageable cost' },
 ];
 
 const entityOptions = computed(() =>
@@ -435,6 +512,17 @@ const addressableYoy = computed(() => {
   return { label: `${sign}${pct.toFixed(1)}%`, cls };
 });
 
+// ── Manageable cost (the user's top cut-opportunity shortlist) ───────────────
+// manageable_total is a SERVER aggregate (the reconcile owns it — we never
+// recompute it client-side). The COUNT is a cheap read of how many addressable
+// rows are currently flagged, for the "· N accounts" suffix; it reflects the
+// optimistic row flips immediately and settles with the reconcile like the rest.
+const manageableTotal = computed(() => Number(report.value?.manageable_total) || 0);
+const hasManageableTotal = computed(() => report.value?.manageable_total != null);
+const manageableCount = computed(
+  () => addressableAccounts.value.filter((r) => r.is_manageable === true).length,
+);
+
 // ── Partial-year honesty (change #2) ─────────────────────────────────────────
 const yearInProgress = computed(() => !!report.value?.year_in_progress);
 const periodLabel = computed(() => report.value?.period_label || '');
@@ -448,6 +536,17 @@ const annualisedLabel = computed(() => {
   return `Projected full year ≈ ${formatCurrency(annualisedEstimate.value)} (seasonal estimate)`;
 });
 
+// ONE muted methodology line (B1): folds the comparison basis + the annualised
+// projection (when present) behind a single quiet caption, separated by a thin
+// middot. Demoted from the two stacked caption lines that previously buried the
+// YoY delta. Empty when neither is present (line then doesn't render).
+const methodologyLine = computed(() => {
+  const parts = [];
+  if (comparisonBasis.value) parts.push(comparisonBasis.value);
+  if (annualisedLabel.value) parts.push(annualisedLabel.value);
+  return parts.join(' · ');
+});
+
 // ── Cost-behaviour split (headline bar) ──────────────────────────────────────
 const behaviourTotals = computed(() => report.value?.behaviour_totals ?? {});
 const addressableBase = computed(() => Number(report.value?.addressable_base) || 0);
@@ -459,22 +558,42 @@ const hasBehaviourData = computed(() =>
   Object.values(behaviourTotals.value).some((v) => (Number(v) || 0) > 0),
 );
 
-// ── Behaviour filter (client-side, no re-fetch) — applies WITHIN the group view ─
+// ── Filters (client-side, no re-fetch) — applied WITHIN the group view ───────
+// Two independent chip rows: behaviour and manageable. A row must satisfy BOTH
+// to survive, so the user can e.g. narrow to "Fixed" AND "Manageable" at once.
 const behaviourFilterOptions = BEHAVIOUR_FILTER_OPTIONS;
+const manageableFilterOptions = MANAGEABLE_FILTER_OPTIONS;
 
 function matchesBehaviourFilter(row) {
   if (behaviourFilter.value === 'all') return true;
   return normaliseBehaviour(row.behaviour) === behaviourFilter.value;
 }
 
+function matchesManageableFilter(row) {
+  if (manageableFilter.value === 'all') return true;
+  return row.is_manageable === true;
+}
+
+function matchesFilters(row) {
+  return matchesBehaviourFilter(row) && matchesManageableFilter(row);
+}
+
 const filteredAccounts = computed(() =>
-  addressableAccounts.value.filter(matchesBehaviourFilter),
+  addressableAccounts.value.filter(matchesFilters),
 );
 const filteredOpportunities = computed(() =>
-  addressableOpportunities.value.filter(matchesBehaviourFilter),
+  addressableOpportunities.value.filter(matchesFilters),
 );
 
 const activeBehaviourLabel = computed(() => behaviourLabel(behaviourFilter.value));
+
+// Empty-state copy that names whichever filter(s) are hiding rows.
+const activeFilterLabel = computed(() => {
+  const parts = [];
+  if (behaviourFilter.value !== 'all') parts.push(activeBehaviourLabel.value.toLowerCase());
+  if (manageableFilter.value !== 'all') parts.push('manageable');
+  return parts.join(' + ');
+});
 
 const totalRagLabel = computed(() => {
   const rag = report.value?.total_rag;
@@ -499,6 +618,9 @@ function behaviourKey(accountId) {
 }
 function tierKey(accountId) {
   return `${TIER_KEY_PREFIX}${accountId}`;
+}
+function manageableKeyFor(accountId) {
+  return `${MANAGEABLE_KEY_PREFIX}${accountId}`;
 }
 
 const currencyFormatter = new Intl.NumberFormat('en-ZA', {
@@ -738,6 +860,40 @@ async function commitTier({ accountKey, accountId, cuttability, label }) {
   }
 }
 
+// ── Manageable toggle — OPTIMISTIC then background reconcile (change A3) ──────
+// Marks/unmarks an account on the user's top cut-opportunity shortlist. The
+// endpoint accepts { account_key, is_manageable }.
+async function commitManageable({ accountKey, accountId, isManageable, label }) {
+  if (!accountKey) {
+    toast.error('Cannot update manageable: missing account key.');
+    return;
+  }
+  // 1) OPTIMISTIC: flip ONLY this row's is_manageable on this tick — its star
+  //    fills/empties and it re-buckets under the "Manageable" grouping (a local
+  //    row-field change, fine). We deliberately do NOT recompute manageable_total
+  //    — that is a cross-row aggregate the background reconcile owns (the same
+  //    contract as behaviour_totals / tier_totals). The "Syncing…" pill covers
+  //    the settle window for the headline stat.
+  for (const r of rowsForAccount(accountId)) {
+    r.is_manageable = isManageable;
+  }
+
+  const key = manageableKeyFor(accountId);
+  savingKeys.value.add(key);
+  try {
+    await saveCostBehaviour({ account_key: accountKey, is_manageable: isManageable });
+    reconcileInBackground();
+    toast.success(`${label}: ${isManageable ? 'added to manageable' : 'removed from manageable'}`);
+  } catch (error) {
+    const msg =
+      error?.response?.data?.error || error?.message || 'Could not update manageable.';
+    toast.error(msg);
+    reconcileInBackground();
+  } finally {
+    savingKeys.value.delete(key);
+  }
+}
+
 // Enter blurs the field, which triggers @blur=commit — the single source of
 // truth for committing. Do NOT call commit() here too, or Enter double-commits.
 function onTargetKeyup(event) {
@@ -868,6 +1024,14 @@ onMounted(async () => {
   min-width: 0;
 }
 
+/* Hero + YoY co-headline read as one unit (B1). */
+.cost-cut__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .cost-cut__addressable-sub {
   margin: 0;
   font-size: 11px;
@@ -876,13 +1040,20 @@ onMounted(async () => {
   color: var(--kdl-text-muted);
 }
 
+/* YoY delta promoted to a CO-HEADLINE (B1): larger + heavier than the old 12px
+   line, sitting right under the hero value. It's the second thing read. */
 .cost-cut__delta {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  padding-left: 2px;
+  margin-top: 2px;
+}
+
+.cost-cut__delta-label {
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .cost-cut__delta-note {
@@ -915,24 +1086,16 @@ onMounted(async () => {
   color: #2dd4bf;
 }
 
-.cost-cut__basis-caption {
-  margin: 2px 0 0;
+/* ONE muted methodology line (B1): comparison basis + annualised, folded. */
+.cost-cut__methodology {
+  margin: 4px 0 0;
   font-size: 11px;
   font-weight: 500;
   line-height: 1.4;
   color: var(--kdl-text-muted);
 }
 
-.cost-cut__annualised {
-  margin: 4px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--kdl-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Secondary stats column (total incl. below-the-line + RAG summary). */
+/* Secondary stats column (total incl. below-the-line + manageable + RAG). */
 .cost-cut__secondary {
   display: flex;
   flex-direction: column;
@@ -963,6 +1126,13 @@ onMounted(async () => {
   font-size: 15px;
   font-weight: 600;
   color: var(--kdl-text-primary);
+}
+
+/* "· N accounts" suffix on the manageable stat — quieter than the ZAR figure. */
+.cost-cut__secondary-suffix {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--kdl-text-muted);
 }
 
 .cost-cut__target-tile {
@@ -1015,7 +1185,8 @@ onMounted(async () => {
 }
 
 .cost-cut__groupby,
-.cost-cut__beh-filter {
+.cost-cut__beh-filter,
+.cost-cut__manage-filter {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1074,6 +1245,70 @@ onMounted(async () => {
 
 .cost-cut__chip--active:hover {
   color: #ffffff;
+}
+
+/* ── One-line legend (B4) ────────────────────────────────────────────────── */
+.cost-cut__legend {
+  display: grid;
+  gap: 6px;
+  margin-top: -4px;
+}
+
+.cost-cut__legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: start;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--kdl-text-hint);
+}
+
+.cost-cut__legend-toggle:hover {
+  color: var(--kdl-text-secondary);
+}
+
+.cost-cut__legend-toggle:focus-visible {
+  outline: 2px solid var(--kdl-accent);
+  outline-offset: 1px;
+}
+
+.cost-cut__legend-chevron {
+  flex: 0 0 auto;
+  transition: transform var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.cost-cut__legend-chevron--open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cost-cut__legend-chevron {
+    transition: none;
+  }
+}
+
+.cost-cut__legend-body {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kdl-text-muted);
+}
+
+.cost-cut__legend-body strong {
+  font-weight: 600;
+  color: var(--kdl-text-secondary);
 }
 
 /* ── Panel ───────────────────────────────────────────────────────────────── */

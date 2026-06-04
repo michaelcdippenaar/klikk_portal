@@ -26,11 +26,14 @@
     <table class="cc-group-table">
       <thead>
         <tr>
+          <th scope="col" class="cc-group-table__manage-col">
+            <span class="cc-group-table__manage-head" title="Manageable — your top cut-opportunity shortlist">Manage</span>
+          </th>
           <th scope="col">Account</th>
           <th scope="col">Tier</th>
           <th scope="col">Behaviour</th>
           <th scope="col" class="text-right">Recurring cost</th>
-          <th scope="col" class="text-right">% of cost</th>
+          <th scope="col" class="text-right" title="Share of addressable operating cost">% of addr.</th>
           <th scope="col" class="text-right">YoY</th>
           <th scope="col" class="text-right">Target</th>
           <th scope="col">RAG</th>
@@ -45,7 +48,7 @@
       >
         <!-- Group header row -->
         <tr class="cc-group__header">
-          <th scope="colgroup" colspan="3" class="cc-group__header-main">
+          <th scope="colgroup" colspan="4" class="cc-group__header-main">
             <button
               type="button"
               class="cc-group__toggle"
@@ -91,10 +94,12 @@
           :saving="isSaving(accountMetricKey(row.account_id))"
           :saving-behaviour="isSaving(behaviourKey(row.account_id))"
           :saving-tier="isSaving(tierKey(row.account_id))"
+          :saving-manageable="isSaving(manageableSaveKey(row.account_id))"
           :format-currency="formatCurrency"
           @commit="$emit('commit', $event)"
           @retag="$emit('retag', $event)"
           @retag-tier="$emit('retag-tier', $event)"
+          @toggle-manageable="$emit('toggle-manageable', $event)"
         />
       </tbody>
     </table>
@@ -108,12 +113,15 @@ import {
   TIER_ORDER,
   BEHAVIOUR_ORDER,
   GROUP_LABELS,
+  MANAGEABLE_KEYS,
   normaliseTier,
   normaliseBehaviour,
   tierLabel,
   tierHint,
   behaviourLabel,
   groupLabel,
+  manageableKey,
+  manageableLabel,
 } from '../../utils/costBehaviour';
 
 const props = defineProps({
@@ -122,7 +130,7 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  // 'tier' | 'behaviour' | 'group'
+  // 'tier' | 'behaviour' | 'group' | 'manageable'
   groupBy: {
     type: String,
     default: 'tier',
@@ -149,7 +157,7 @@ const props = defineProps({
   },
 });
 
-defineEmits(['commit', 'retag', 'retag-tier']);
+defineEmits(['commit', 'retag', 'retag-tier', 'toggle-manageable']);
 
 // ── Metric-key helpers — MUST mirror CostCutReport's so the shared savingKeys
 //    Set lights the correct row spinner. ───────────────────────────────────
@@ -161,6 +169,9 @@ function behaviourKey(accountId) {
 }
 function tierKey(accountId) {
   return `cost_cut.tier.${accountId}`;
+}
+function manageableSaveKey(accountId) {
+  return `cost_cut.manageable.${accountId}`;
 }
 function isSaving(key) {
   return props.savingKeys.has(key);
@@ -207,6 +218,15 @@ const axis = computed(() => {
       order: [...Object.keys(GROUP_LABELS), 'UNGROUPED'],
       labelOf: (key) => groupLabel(key === 'UNGROUPED' ? null : key),
       hintOf: () => '',
+    };
+  }
+  if (props.groupBy === 'manageable') {
+    // The user's hit-list axis — 'yes' (top opportunities) first, then 'no'.
+    return {
+      keyOf: (row) => manageableKey(row.is_manageable),
+      order: MANAGEABLE_KEYS, // ['yes', 'no']
+      labelOf: (key) => manageableLabel(key),
+      hintOf: (key) => (key === 'yes' ? 'Your shortlist to act on' : ''),
     };
   }
   // Default: cuttability tier — act-first order T1 → T5.
@@ -263,9 +283,20 @@ const groups = computed(() => {
 
 .cc-group-table {
   width: 100%;
-  /* 8 columns now (Tier column added beside Behaviour). */
-  min-width: 1040px;
+  /* 9 columns now (a leading Manage star column ahead of Account). */
+  min-width: 1100px;
   border-collapse: collapse;
+}
+
+/* Leading "Manage" (manageable star) column — narrow, centred. */
+.cc-group-table__manage-col {
+  width: 64px;
+}
+
+.cc-group-table__manage-head {
+  /* The header cell stays uppercase via the thead rule; this just lets the
+     title tooltip hang off a span without changing layout. */
+  white-space: nowrap;
 }
 
 .cc-group-table th,
