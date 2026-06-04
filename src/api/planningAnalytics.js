@@ -123,11 +123,52 @@ export async function getTm1CubeDimensions(cube) {
 
 // GET /tm1/dimension-elements/?dimension=NAME -> elements of a dimension.
 // Members can be large (hundreds); callers lazy-load only when a picker opens.
-export async function getTm1DimensionElements(dimension) {
+export async function getTm1DimensionElements(dimension, hierarchy = null) {
   const client = await getClient();
-  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_ELEMENTS, {
+  const params = { dimension };
+  if (hierarchy) params.hierarchy = hierarchy;
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_ELEMENTS, { params });
+  return resp.data;
+}
+
+// GET /tm1/dimension-hierarchies/?dimension=NAME -> visible hierarchies of a
+// dimension (system 'Leaves' hidden), each {name, is_default}, plus has_alternates.
+// e.g. account -> account (default) + EBITDA / Grouping / IS (excl non-cash) / is_non_cashflow.
+export async function getTm1DimensionHierarchies(dimension) {
+  const client = await getClient();
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_HIERARCHIES, {
     params: { dimension },
   });
+  return resp.data;
+}
+
+// GET /tm1/subsets/?dimension=NAME[&hierarchy=H] -> public subsets [{name, dynamic}].
+export async function getTm1Subsets(dimension, hierarchy = null) {
+  const client = await getClient();
+  const params = { dimension };
+  if (hierarchy) params.hierarchy = hierarchy;
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_SUBSETS, { params });
+  return resp.data;
+}
+
+// GET /tm1/subset-members/?dimension=NAME&subset=S[&hierarchy=H&top=N] -> resolved
+// members of a (static or dynamic) subset, capped: { subset, dynamic, members, truncated }.
+export async function getTm1SubsetMembers(dimension, subset, hierarchy = null, top = null) {
+  const client = await getClient();
+  const params = { dimension, subset };
+  if (hierarchy) params.hierarchy = hierarchy;
+  if (top) params.top = top;
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_SUBSET_MEMBERS, { params });
+  return resp.data;
+}
+
+// GET /tm1/dimension-aliases/?dimension=NAME[&hierarchy=H] -> { dimension, aliases:[name,…] }
+// (Alias-type element attributes — the display-label choices for the dimension.)
+export async function getTm1DimensionAliases(dimension, hierarchy = null) {
+  const client = await getClient();
+  const params = { dimension };
+  if (hierarchy) params.hierarchy = hierarchy;
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_ALIASES, { params });
   return resp.data;
 }
 
@@ -136,11 +177,11 @@ export async function getTm1DimensionElements(dimension) {
 // [{name:'EXPENSE',type}, {name:'ASSET',type}, …]. Used to (a) seed a populated
 // default for Rows/Cols dims (children of the top element, not the grand total)
 // and (b) drill a consolidation member down to its children in the rendered pivot.
-export async function getTm1DimensionChildren(dimension, parent) {
+export async function getTm1DimensionChildren(dimension, parent, hierarchy = null) {
   const client = await getClient();
-  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_CHILDREN, {
-    params: { dimension, parent },
-  });
+  const params = { dimension, parent };
+  if (hierarchy) params.hierarchy = hierarchy;
+  const resp = await client.get(API_ENDPOINTS.PA_TM1_DIMENSION_CHILDREN, { params });
   return resp.data;
 }
 
