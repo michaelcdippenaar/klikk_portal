@@ -19,6 +19,7 @@
   Emits:
     toggle    (Boolean)  — request to open/close this chip's menu
     move      (target)   — move this dimension to 'rows' | 'cols' | 'filter'
+    edit      ()         — open the Set (Subset) Editor for this dimension
     dragstart (DragEvent) — grip drag started (parent records the dragged dim)
     dragend   (DragEvent) — grip drag ended (parent clears drag state)
 -->
@@ -89,6 +90,10 @@
         </button>
       </template>
 
+      <KMenuItem icon="edit" @select="$emit('edit')">
+        Edit set…
+      </KMenuItem>
+      <KMenuSeparator />
       <KMenuItem :disabled="axis === 'rows'" @select="$emit('move', 'rows')">
         Move to Rows
       </KMenuItem>
@@ -132,7 +137,7 @@ defineProps({
   },
 });
 
-defineEmits(['toggle', 'move', 'dragstart', 'dragend']);
+defineEmits(['toggle', 'move', 'edit', 'dragstart', 'dragend']);
 </script>
 
 <style scoped>

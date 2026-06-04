@@ -276,6 +276,7 @@
               :dragging="draggingDim === dim"
               @toggle="(o) => toggleChipMenu(`rows:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
+              @edit="openSetEditor(dim)"
               @dragstart="(e) => onDimDragStart(e, dim)"
               @dragend="onDimDragEnd"
             />
@@ -304,6 +305,7 @@
               :dragging="draggingDim === dim"
               @toggle="(o) => toggleChipMenu(`cols:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
+              @edit="openSetEditor(dim)"
               @dragstart="(e) => onDimDragStart(e, dim)"
               @dragend="onDimDragEnd"
             />
@@ -515,6 +517,20 @@
         class="pivot-mdx__code"
       >{{ mdxText }}</pre>
     </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════════
+         SET EDITOR — PAW-style Subset Editor, opened from an axis chip's
+         "Edit set…" menu item. Applies a hierarchy + ordered member list back
+         onto the axis, then re-queries through the shared reseed path.
+         ═════════════════════════════════════════════════════════════════════ -->
+    <SetEditor
+      v-if="editorDim"
+      v-model="editorOpen"
+      :dimension="editorDim"
+      :hierarchy="dimHierarchy[editorDim] || null"
+      :members="memberSelections[editorDim] || []"
+      @apply="applySet"
+    />
   </SectionCard>
 </template>
 
@@ -529,6 +545,7 @@ import KMenu from '../klikk/KMenu.vue';
 import KMenuItem from '../klikk/KMenuItem.vue';
 import EmptyState from '../klikk/EmptyState.vue';
 import PivotAxisChip from './PivotAxisChip.vue';
+import SetEditor from './SetEditor.vue';
 import {
   getTm1Cubes,
   getTm1CubeDimensions,
@@ -709,6 +726,11 @@ const dimsError = ref('');
 const assignments = reactive({});
 // dim -> string[] (rows/cols members)
 const memberSelections = reactive({});
+// dim -> string|null — an EXPLICIT alternate hierarchy chosen for this dimension
+// via the Set Editor. null/absent = the dimension's default hierarchy. Threaded
+// into each axis spec ({ dimension, hierarchy?, members }) at query time so
+// runTm1Query honours the per-axis hierarchy (and TM1SubsetToSet for the set).
+const dimHierarchy = reactive({});
 // dim -> string (filter member)
 const filterSelections = reactive({});
 // dim -> { loading, error, options:[{value,label,type}] }
@@ -754,6 +776,14 @@ const openChipMenu = ref('');
 // Which context-pill MOVE menu is open (separate from the member-picker popover,
 // single-open model). Keyed by dim so only one move menu shows at a time.
 const openCtxMenu = ref('');
+
+// ── Set (Subset) Editor modal ────────────────────────────────────────────────
+// editorOpen drives the KDialog; editorDim is the dimension being edited (kept
+// rendered while open so the dialog's close transition can play). The editor is
+// seeded from dimHierarchy[dim] + memberSelections[dim] and writes both back via
+// applySet on Apply.
+const editorOpen = ref(false);
+const editorDim = ref('');
 
 // ── Drag-and-drop dimension pivoting (PAW hallmark) ──────────────────────────
 // HTML5 drag-drop lets the user drag any dimension TOKEN (a Context filter pill
@@ -1261,7 +1291,10 @@ async function expandRow(dim, path) {
   }
   drilling.value = path;
   try {
-    const data = await getTm1DimensionChildren(dim, node.member);
+    // Drill in the dimension's ACTIVE hierarchy — when the Set Editor applied an
+    // alternate, node.member is a principal name in that hierarchy, so its
+    // children must be fetched there too (dimHierarchy[dim] || default).
+    const data = await getTm1DimensionChildren(dim, node.member, dimHierarchy[dim] || null);
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
       console.debug(`[PivotExplorer] drill children(${dim}, ${node.member}) raw:`, data);
@@ -1416,6 +1449,7 @@ async function seedAllDefaults() {
 function applyDefaultAssignments(dims) {
   for (const k of Object.keys(assignments)) delete assignments[k];
   for (const k of Object.keys(memberSelections)) delete memberSelections[k];
+  for (const k of Object.keys(dimHierarchy)) delete dimHierarchy[k];
   for (const k of Object.keys(filterSelections)) delete filterSelections[k];
   for (const k of Object.keys(elementCache)) delete elementCache[k];
   for (const k of Object.keys(memberTypes)) delete memberTypes[k];
@@ -1453,6 +1487,16 @@ function applyDefaultAssignments(dims) {
 }
 
 // ── Run query ────────────────────────────────────────────────────────────
+// Build one axis spec for a row/col dimension: { dimension, members[, hierarchy] }.
+// The hierarchy key is included ONLY when the Set Editor set an explicit
+// alternate (dimHierarchy[d]); on the default hierarchy it's omitted so the
+// backend uses the dimension default — matching the per-axis contract.
+function axisSpec(d) {
+  const spec = { dimension: d, members: memberSelections[d] || [] };
+  if (dimHierarchy[d]) spec.hierarchy = dimHierarchy[d];
+  return spec;
+}
+
 async function runQuery() {
   if (!canRun.value) return;
 
@@ -1466,14 +1510,8 @@ async function runQuery() {
 
   const payload = {
     cube: cube.value,
-    rows: rowDims.value.map((d) => ({
-      dimension: d,
-      members: memberSelections[d] || [],
-    })),
-    cols: colDims.value.map((d) => ({
-      dimension: d,
-      members: memberSelections[d] || [],
-    })),
+    rows: rowDims.value.map((d) => axisSpec(d)),
+    cols: colDims.value.map((d) => axisSpec(d)),
     filters: Object.fromEntries(
       filterDims.value
         .filter((d) => filterSelections[d])
@@ -1625,6 +1663,52 @@ async function swapAxes() {
   assignments[r] = 'cols';
   assignments[c] = 'rows';
   await reseedAndRun();
+}
+
+// ── Set Editor open / apply ──────────────────────────────────────────────────
+// Open the Set Editor for an axis dimension. Closes any open chip menu first so
+// the dialog doesn't open behind a floating menu. The editor reads the dim's
+// current hierarchy + members via its props (bound to dimHierarchy/memberSelections).
+function openSetEditor(dim) {
+  openChipMenu.value = '';
+  editorDim.value = dim;
+  editorOpen.value = true;
+}
+
+// Apply the built set back onto the axis. Writes the chosen hierarchy + ordered
+// members, rebuilds the row drill tree (the primary row dim's members may have
+// changed wholesale), records the members' default for "Collapse all", and
+// re-queries. The hierarchy + members are the source of truth the axis spec
+// (axisSpec) now reads — runTm1Query honours per-axis hierarchy + the set order.
+async function applySet({ dimension, hierarchy, members, types }) {
+  if (!dimension) return;
+  const next = Array.isArray(members) ? members.slice() : [];
+  // Record the explicit hierarchy (null clears it back to the default).
+  if (hierarchy) dimHierarchy[dimension] = hierarchy;
+  else delete dimHierarchy[dimension];
+
+  // Learn the applied members' types (consolidation vs leaf) so the rendered
+  // grid knows which rows are drillable — the editor surfaced these from the
+  // (possibly alternate) hierarchy. recordTypes wants [{ value, type }].
+  if (types && typeof types === 'object') {
+    recordTypes(
+      dimension,
+      Object.entries(types).map(([value, type]) => ({ value, type })),
+    );
+  }
+
+  memberSelections[dimension] = next;
+  // The editor's members become the new "default" for this dim so Collapse all
+  // returns here rather than to the original auto-seeded rollups.
+  defaultMembers[dimension] = next.slice();
+
+  // If this is the single primary row dimension, reseed its drill tree to the
+  // new top-level members (collapsed). Other axes just carry the new member list.
+  if (assignments[dimension] === 'rows' && rowDims.value.length === 1) {
+    initRowTree(dimension, next);
+  }
+
+  if (canRun.value) runQuery();
 }
 
 // ── Number formatting (finance: thousands-separated, negatives in red) ───────
