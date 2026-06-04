@@ -30,8 +30,10 @@
     members    (String[]) — the axis's current member principal names.
 
   Emits:
-    update:modelValue (Boolean)              — open/close.
-    apply ({ dimension, hierarchy, members }) — commit the built set.
+    update:modelValue (Boolean)                     — open/close.
+    apply ({ dimension, hierarchy, members, types, alias }) — commit the built
+        set. `alias` is the chosen display label (null = principal names); it is
+        DISPLAY-ONLY and never affects `members` (always principal names).
 -->
 <template>
   <KDialog
@@ -1181,6 +1183,10 @@ function apply() {
     hierarchy: hierarchyArg(),
     members: setMembers.value.slice(),
     types,
+    // Carry the chosen display alias through so the pivot grid shows the SAME
+    // label the user was looking at while building the set. Display-only — the
+    // members above stay principal names. '' (principal) maps to null.
+    alias: activeAlias.value || null,
   });
   emit('update:modelValue', false);
 }

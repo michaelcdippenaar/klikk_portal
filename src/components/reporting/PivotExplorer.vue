@@ -160,11 +160,14 @@
                   type="button"
                   class="pivot-pill"
                   draggable="false"
-                  :aria-label="`${dim}: ${filterSelections[dim] || 'none'} — change member`"
+                  :aria-label="`${dim}: ${filterSelections[dim] ? displayMember(dim, filterSelections[dim]) : 'none'} — change member`"
                 >
                   <span class="pivot-pill__dim">{{ dim }}</span>
                   <span class="pivot-pill__sep" aria-hidden="true">:</span>
-                  <span class="pivot-pill__member">{{ filterSelections[dim] || '—' }}</span>
+                  <span
+                    class="pivot-pill__member"
+                    :title="filterPrincipalTitle(dim)"
+                  >{{ filterSelections[dim] ? displayMember(dim, filterSelections[dim]) : '—' }}</span>
                   <svg
                     class="pivot-pill__chevron"
                     width="11"
@@ -242,6 +245,27 @@
 
               <KMenuItem @select="moveCtxDimension(dim, 'rows')">Move to Rows</KMenuItem>
               <KMenuItem @select="moveCtxDimension(dim, 'cols')">Move to Columns</KMenuItem>
+
+              <!-- Display label (alias) — only when the dim has aliases to pick.
+                   A flat list (KMenu has no sub-menu primitive): the active
+                   choice carries a check. Display-only; the query is untouched. -->
+              <template v-if="dimAliasList[dim] && dimAliasList[dim].length">
+                <KMenuSeparator />
+                <KMenuItem
+                  :icon="!dimAlias[dim] ? 'check' : null"
+                  @select="chooseCtxAlias(dim, '')"
+                >
+                  Label: principal name
+                </KMenuItem>
+                <KMenuItem
+                  v-for="a in dimAliasList[dim]"
+                  :key="`ctx-alias-${dim}-${a}`"
+                  :icon="dimAlias[dim] === a ? 'check' : null"
+                  @select="chooseCtxAlias(dim, a)"
+                >
+                  Label: {{ a }}
+                </KMenuItem>
+              </template>
             </KMenu>
           </div>
         </div>
@@ -274,9 +298,12 @@
               axis="rows"
               :open="openChipMenu === `rows:${dim}`"
               :dragging="draggingDim === dim"
+              :aliases="dimAliasList[dim] || []"
+              :active-alias="dimAlias[dim] || ''"
               @toggle="(o) => toggleChipMenu(`rows:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
               @edit="openSetEditor(dim)"
+              @alias="(a) => chooseChipAlias(`rows:${dim}`, dim, a)"
               @dragstart="(e) => onDimDragStart(e, dim)"
               @dragend="onDimDragEnd"
             />
@@ -303,9 +330,12 @@
               axis="cols"
               :open="openChipMenu === `cols:${dim}`"
               :dragging="draggingDim === dim"
+              :aliases="dimAliasList[dim] || []"
+              :active-alias="dimAlias[dim] || ''"
               @toggle="(o) => toggleChipMenu(`cols:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
               @edit="openSetEditor(dim)"
+              @alias="(a) => chooseChipAlias(`cols:${dim}`, dim, a)"
               @dragstart="(e) => onDimDragStart(e, dim)"
               @dragend="onDimDragEnd"
             />
@@ -366,8 +396,9 @@
                   :key="`col-${ci}`"
                   class="pivot-grid__col-head pivot-num"
                   scope="col"
+                  :title="colHeadTitle(col)"
                 >
-                  {{ col }}
+                  {{ colHeadLabel(col) }}
                 </th>
                 <th class="pivot-grid__col-head pivot-grid__total-head pivot-num" scope="col">
                   Total
@@ -409,7 +440,7 @@
                           :class="{ 'pivot-grid__twisty--busy': drilling === hcell.drillKey }"
                           :disabled="drilling === hcell.drillKey"
                           :aria-expanded="hcell.expanded"
-                          :aria-label="`${hcell.expanded ? 'Collapse' : 'Expand'} ${hcell.label}`"
+                          :aria-label="`${hcell.expanded ? 'Collapse' : 'Expand'} ${displayMember(hcell.dim, hcell.member)}`"
                           @click="toggleRow(row)"
                         >
                           <KSpinner v-if="drilling === hcell.drillKey" size="xs" tone="muted" />
@@ -432,7 +463,10 @@
                         </button>
                         <span v-else class="pivot-grid__twisty-spacer" aria-hidden="true" />
                       </template>
-                      <span class="pivot-grid__row-label" :title="hcell.label">{{ hcell.label }}</span>
+                      <span
+                        class="pivot-grid__row-label"
+                        :title="rowSegTitle(hcell)"
+                      >{{ displayMember(hcell.dim, hcell.member) }}</span>
                     </span>
                   </span>
                 </th>
@@ -556,6 +590,7 @@ import KSpinner from '../klikk/KSpinner.vue';
 import KPopover from '../klikk/KPopover.vue';
 import KMenu from '../klikk/KMenu.vue';
 import KMenuItem from '../klikk/KMenuItem.vue';
+import KMenuSeparator from '../klikk/KMenuSeparator.vue';
 import EmptyState from '../klikk/EmptyState.vue';
 import PivotAxisChip from './PivotAxisChip.vue';
 import SetEditor from './SetEditor.vue';
@@ -564,6 +599,8 @@ import {
   getTm1CubeDimensions,
   getTm1DimensionElements,
   getTm1DimensionChildren,
+  getTm1DimensionAliases,
+  getTm1ElementLabels,
   runTm1Query,
 } from '../../api/planningAnalytics';
 
@@ -754,6 +791,77 @@ const memberTypes = reactive({});
 // dim -> string[] — the populated default members resolved on cube load (children
 // of the top consolidation). "Collapse all" restores Rows to these.
 const defaultMembers = reactive({});
+
+// ── DISPLAY ALIASES (display-only labels; the query is never aliased) ─────────
+// The pivot can show human alias labels (e.g. an entity UUID → "Klikk (Pty) Ltd")
+// in row/col headers + filter pills WITHOUT touching the MDX — axisSpec keeps
+// principal keys. Three reactive maps, all keyed by dimension:
+//   dimAlias[dim]      → the active alias NAME ('' / absent = principal names).
+//   dimAliasList[dim]  → the dim's available alias names (lazy-loaded once).
+//   aliasLabels[dim]   → { principalMember: aliasLabel } for the dim's CURRENT
+//                        alias+hierarchy (cleared when either changes; only the
+//                        members actually shown are fetched + cached).
+// dimAliasTouched[dim] records that the USER set/cleared the alias, so the
+// auto-default-to-`name` (TM1/PAW convention) never overrides an explicit choice.
+const dimAlias = reactive({});
+const dimAliasList = reactive({});
+const aliasLabels = reactive({});
+const dimAliasTouched = reactive({});
+// dim -> token incremented on every alias/hierarchy change for that dim, so a
+// label fetch that resolves after the user switched alias/hierarchy is dropped
+// (last change wins — mirrors querySeq for the pivot query).
+const aliasSeq = reactive({});
+// Guards re-entrant alias-list loads (lazy, fire-and-forget) so a dim's list is
+// fetched at most once in flight.
+const aliasListLoading = reactive({});
+
+// The display label for a principal member of a dimension: the cached alias
+// label when one exists, else the principal key itself (so the UUID still shows
+// rather than a blank until — and if — a label resolves). Reactive: re-renders
+// when aliasLabels fills.
+function displayMember(dim, member) {
+  if (member == null) return member;
+  return aliasLabels[dim]?.[member] ?? member;
+}
+
+// The principal-key tooltip for a displayed member: shown ONLY when an alias has
+// actually relabelled it (label !== principal), so the raw key (e.g. a UUID)
+// stays discoverable without cluttering principal-only dims with a redundant
+// self-tooltip. Returns undefined when there's nothing extra to reveal.
+function memberPrincipalTitle(dim, member) {
+  if (member == null) return undefined;
+  const label = displayMember(dim, member);
+  return label !== member ? member : undefined;
+}
+
+function filterPrincipalTitle(dim) {
+  return memberPrincipalTitle(dim, filterSelections[dim]);
+}
+
+// Column-header display. The dominant case is a SINGLE column dimension (e.g.
+// month): every displayColHeaders entry is then a principal member of
+// colDims[0], so we resolve its alias label. With MULTIPLE column dimensions the
+// header is a composite tuple string ("Jul / FY24") that doesn't map cleanly to
+// one member, so we degrade to the raw header verbatim — never mislabelled,
+// never crashes. (Single-col-dim is the contract that MUST be correct.)
+function colHeadLabel(col) {
+  if (colDims.value.length === 1) return displayMember(colDims.value[0], col);
+  return col;
+}
+
+function colHeadTitle(col) {
+  if (colDims.value.length === 1) return memberPrincipalTitle(colDims.value[0], col);
+  return undefined;
+}
+
+// A row-header segment's tooltip. When an alias has relabelled it, surface the
+// PRINCIPAL key (e.g. the UUID stays discoverable — mirrors the Set Editor's
+// faint-principal pattern); otherwise fall back to the full label so an
+// ellipsised long name is still readable on hover (the prior behaviour).
+function rowSegTitle(hcell) {
+  if (hcell?.dim == null || hcell?.member == null) return hcell?.label;
+  return memberPrincipalTitle(hcell.dim, hcell.member) ?? displayMember(hcell.dim, hcell.member);
+}
 
 // ── Row-axis EXPANSION TREE (PAW drill-in-place) ────────────────────────────
 // The backend returns a FLAT member list on the row axis. To render a real
@@ -969,7 +1077,18 @@ const gridRows = computed(() => {
       return {
         key: `flat-${i}`,
         headerCells: (r.members.length ? r.members : [`Row ${i + 1}`]).map(
-          (m, hi) => ({ label: m, level: 0, drillable: false, isInner: false, key: `h-${i}-${hi}` }),
+          (m, hi) => ({
+            // `member` is the PRINCIPAL key (used for alias lookup + tooltip);
+            // `dim` lets the renderer resolve the per-dim display label. `label`
+            // stays the principal as the fallback / aria source.
+            member: m,
+            dim: rowDims.value[hi] ?? null,
+            label: m,
+            level: 0,
+            drillable: false,
+            isInner: false,
+            key: `h-${i}-${hi}`,
+          }),
         ),
         label: r.members.join(' / ') || `Row ${i + 1}`,
         level: 0,
@@ -1043,6 +1162,10 @@ const gridRows = computed(() => {
       // twisty); the inner dim shows this tree node (drillable + indented).
       const headerCells = [
         ...outerTuple.map((om, oi) => ({
+          // `member`/`dim` drive the display-label lookup; `label` is the
+          // principal fallback. Outer segment oi maps to outerRowDims[oi].
+          member: om,
+          dim: outerRowDims.value[oi] ?? null,
           label: om,
           level: 0,
           drillable: false,
@@ -1050,6 +1173,8 @@ const gridRows = computed(() => {
           key: `o-${gi}-${oi}`,
         })),
         {
+          member,
+          dim,
           label: member,
           level: node.level || 0,
           drillable,
@@ -1545,6 +1670,125 @@ function insertAfter(anchor, paths) {
   rowOrder.value = next;
 }
 
+// ── Alias loaders (display-only labels) ──────────────────────────────────────
+// Lazy-load a dimension's available aliases ONCE. When the list includes an
+// alias literally named `name` and the user hasn't already chosen/cleared an
+// alias for this dim, default to it (TM1/PAW convention — the `name` caption is
+// the expected default display, and it makes entity/account readable with zero
+// clicks). Dims with no `name` alias stay on principal. Fire-and-forget: never
+// blocks the pivot render. Re-entry guarded so it fetches at most once.
+async function loadDimAliases(dim) {
+  if (!dim || dimAliasList[dim] || aliasListLoading[dim]) return;
+  aliasListLoading[dim] = true;
+  try {
+    const data = await getTm1DimensionAliases(dim, dimHierarchy[dim] || null);
+    const list = Array.isArray(data?.aliases) ? data.aliases.filter(Boolean) : [];
+    dimAliasList[dim] = list;
+    // Auto-default to `name` unless the user already made an explicit choice.
+    if (!dimAliasTouched[dim] && !dimAlias[dim] && list.includes('name')) {
+      setDimAlias(dim, 'name', { user: false });
+    }
+  } catch {
+    // Alias metadata unavailable — leave the dim on principal names. Record an
+    // empty list so we don't refetch in a tight loop; a cube change resets it.
+    dimAliasList[dim] = [];
+  } finally {
+    aliasListLoading[dim] = false;
+  }
+}
+
+// Set (or clear) a dimension's active display alias. Clears the dim's resolved
+// label cache and bumps its alias token so any in-flight label fetch for the
+// PRIOR alias is dropped, then resolves labels for whatever that dim is showing
+// now. `user:true` marks the choice explicit so the auto-default never overrides
+// it later. An alias of '' / null means principal names.
+function setDimAlias(dim, alias, { user = true } = {}) {
+  const next = alias || '';
+  if (user) dimAliasTouched[dim] = true;
+  if ((dimAlias[dim] || '') === next) return;
+  if (next) dimAlias[dim] = next;
+  else delete dimAlias[dim];
+  if (aliasLabels[dim]) delete aliasLabels[dim];
+  aliasSeq[dim] = (aliasSeq[dim] || 0) + 1;
+  resolveShownLabels();
+}
+
+// Resolve display labels for the members CURRENTLY shown on a dimension, under
+// its active alias + hierarchy. Only fetches members not already cached; drops a
+// stale response if the dim's alias/hierarchy changed mid-flight (aliasSeq).
+// Fire-and-forget — aliasLabels is reactive, so headers/pills re-render when the
+// labels land. A dim with no active alias is a no-op (principal names show).
+async function ensureAliasLabels(dim, members) {
+  const alias = dimAlias[dim];
+  if (!dim || !alias) return;
+  const hier = dimHierarchy[dim] || null;
+  const seq = aliasSeq[dim] || 0;
+  const cached = aliasLabels[dim] || {};
+  const want = [...new Set((members || []).filter((m) => m != null && !(m in cached)))];
+  if (!want.length) return;
+  try {
+    const data = await getTm1ElementLabels(dim, alias, want, hier);
+    // Drop the reply if the alias OR hierarchy changed while it was in flight.
+    if ((dimAlias[dim] || '') !== alias || (dimHierarchy[dim] || null) !== hier) return;
+    if ((aliasSeq[dim] || 0) !== seq) return;
+    const labels = data?.labels || {};
+    const map = aliasLabels[dim] ? { ...aliasLabels[dim] } : {};
+    // Cache every requested member, falling back to its own key when the alias
+    // value is blank, so we never refetch the same members in a tight loop.
+    for (const m of want) map[m] = labels[m] || m;
+    aliasLabels[dim] = map;
+  } catch {
+    // TM1 / network error — keep principal names; don't poison the cache so a
+    // later relabel can retry.
+  }
+}
+
+// Resolve labels for every member the grid is currently SHOWING — the displayed
+// row members (one segment per row dim), the displayed column members (single
+// col dim — the dominant case), and each filter pill's member. Called whenever
+// the display set, an alias, or a hierarchy changes. Per-dim no-op when that dim
+// is on principal names.
+function resolveShownLabels() {
+  // Row dims: the rendered row header cells already carry their (dim, member).
+  const perDim = new Map();
+  for (const row of displayRows.value) {
+    for (const hc of row.headerCells || []) {
+      if (!hc.dim || hc.member == null) continue;
+      let set = perDim.get(hc.dim);
+      if (!set) {
+        set = new Set();
+        perDim.set(hc.dim, set);
+      }
+      set.add(hc.member);
+    }
+  }
+  // Single col dim: every displayed header is a member of colDims[0]. Multi col
+  // dims degrade to principal (composite headers — documented; never mislabelled).
+  if (colDims.value.length === 1) {
+    const cd = colDims.value[0];
+    let set = perDim.get(cd);
+    if (!set) {
+      set = new Set();
+      perDim.set(cd, set);
+    }
+    for (const col of displayColHeaders.value) if (col != null) set.add(col);
+  }
+  // Filter pills.
+  for (const dim of filterDims.value) {
+    const m = filterSelections[dim];
+    if (m == null) continue;
+    let set = perDim.get(dim);
+    if (!set) {
+      set = new Set();
+      perDim.set(dim, set);
+    }
+    set.add(m);
+  }
+  for (const [dim, set] of perDim) {
+    if (dimAlias[dim]) ensureAliasLabels(dim, [...set]);
+  }
+}
+
 // ── Loaders ────────────────────────────────────────────────────────────────
 async function loadCubes() {
   cubesLoading.value = true;
@@ -1582,6 +1826,10 @@ async function loadDimensions(cubeName) {
     }
     dimensions.value = normaliseDimensions(data);
     applyDefaultAssignments(dimensions.value);
+    // Lazy-load each dimension's alias list (fire-and-forget — never blocks the
+    // initial pivot render). When a dim has a `name` alias this auto-defaults its
+    // display to it, then resolves labels for whatever ends up shown.
+    for (const d of dimensions.value) loadDimAliases(d);
     await seedAllDefaults();
   } catch (error) {
     dimsError.value =
@@ -1615,6 +1863,13 @@ function applyDefaultAssignments(dims) {
   for (const k of Object.keys(elementCache)) delete elementCache[k];
   for (const k of Object.keys(memberTypes)) delete memberTypes[k];
   for (const k of Object.keys(defaultMembers)) delete defaultMembers[k];
+  // Display-alias state is per-cube — clear it so a new cube re-resolves aliases
+  // (and re-auto-defaults to `name`) for its own dimensions from scratch.
+  for (const k of Object.keys(dimAlias)) delete dimAlias[k];
+  for (const k of Object.keys(dimAliasList)) delete dimAliasList[k];
+  for (const k of Object.keys(aliasLabels)) delete aliasLabels[k];
+  for (const k of Object.keys(dimAliasTouched)) delete dimAliasTouched[k];
+  for (const k of Object.keys(aliasSeq)) delete aliasSeq[k];
   for (const k of Object.keys(rowNodes)) delete rowNodes[k];
   rowOrder.value = [];
 
@@ -1768,6 +2023,20 @@ function moveCtxDimension(dim, target) {
   moveDimension(dim, target);
 }
 
+// Choose a display alias from the context-pill move menu. Closes the menu, then
+// sets the dim's alias (display-only — the query is never aliased). '' = principal.
+function chooseCtxAlias(dim, alias) {
+  openCtxMenu.value = '';
+  setDimAlias(dim, alias, { user: true });
+}
+
+// Choose a display alias from an axis chip's menu. Closes that chip's menu (by
+// key), then sets the dim's alias. Display-only — the query is never aliased.
+function chooseChipAlias(menuKey, dim, alias) {
+  if (openChipMenu.value === menuKey) openChipMenu.value = '';
+  setDimAlias(dim, alias, { user: true });
+}
+
 // Shared reassign TAIL — the single funnel every dimension-reassign path
 // (chip menu, context-pill menu, swap button, drag-drop) runs through after it
 // has set the new assignment(s). It (1) resets the row drill tree, (2) re-seeds
@@ -1842,7 +2111,7 @@ function openSetEditor(dim) {
 // changed wholesale), records the members' default for "Collapse all", and
 // re-queries. The hierarchy + members are the source of truth the axis spec
 // (axisSpec) now reads — runTm1Query honours per-axis hierarchy + the set order.
-async function applySet({ dimension, hierarchy, members, types }) {
+async function applySet({ dimension, hierarchy, members, types, alias }) {
   if (!dimension) return;
   const next = Array.isArray(members) ? members.slice() : [];
   // Did the dimension's hierarchy actually change? (null/absent === default.)
@@ -1857,6 +2126,24 @@ async function applySet({ dimension, hierarchy, members, types }) {
   // the dim's cache so any later picker/seed refetches members in the NEW
   // hierarchy rather than serving the prior hierarchy's element list.
   if (hierarchyChanged) delete elementCache[dimension];
+
+  // Aliases (the LIST + the resolved labels) are hierarchy-scoped — a hierarchy
+  // switch invalidates both. Drop the resolved labels + bump the dim's token so
+  // any in-flight label fetch from the prior hierarchy is dropped, and refetch
+  // the alias list in the new hierarchy.
+  if (hierarchyChanged) {
+    if (aliasLabels[dimension]) delete aliasLabels[dimension];
+    aliasSeq[dimension] = (aliasSeq[dimension] || 0) + 1;
+    delete dimAliasList[dimension];
+    loadDimAliases(dimension);
+  }
+
+  // Carry through the display alias the user was looking at in the editor (the
+  // SAME label the grid should now show). `alias === undefined` (older payloads)
+  // leaves the current alias untouched; a string sets it; null clears to
+  // principal. Marked as an explicit user choice so the auto-default never
+  // overrides it. setDimAlias relabels the shown members.
+  if (alias !== undefined) setDimAlias(dimension, alias, { user: true });
 
   // Learn the applied members' types (consolidation vs leaf) so the rendered
   // grid knows which rows are drillable — the editor surfaced these from the
@@ -1969,6 +2256,24 @@ watch(cube, (next, prev) => {
 watch(suppressEmpty, () => {
   if (canRun.value) runQuery();
 });
+
+// Whenever the SET OF MEMBERS ON SCREEN changes — a fresh query result, a drill
+// expand/collapse, a suppress toggle, an axis move, or a filter pill change —
+// resolve the display labels for the newly-shown members under each dim's active
+// alias. Reactive deps: the rendered rows + columns (which recompute on all of
+// the above) and the filter selections. Per-dim no-op when on principal names;
+// only un-cached members are fetched. `resolveShownLabels` itself reads the
+// current displayRows/displayColHeaders, so this watcher's job is purely to
+// re-trigger it on change (the returned arrays are the change signal). It does
+// NOT touch the query — labels are display-only.
+watch(
+  // Include colDims so the dep set matches what resolveShownLabels actually reads
+  // (it maps col headers via colDims.value[0]); displayRows/displayColHeaders cover
+  // the row/col member changes, filterSelections the filter pills. Direct callers
+  // (setDimAlias / applySet) own alias/hierarchy-change triggers.
+  () => [displayRows.value, displayColHeaders.value, colDims.value, { ...filterSelections }],
+  () => resolveShownLabels(),
+);
 
 // First load.
 loadCubes();

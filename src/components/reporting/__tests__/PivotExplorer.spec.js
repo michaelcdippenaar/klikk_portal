@@ -70,6 +70,13 @@ vi.mock('../../../api/planningAnalytics', () => ({
   getTm1Subsets: vi.fn(),
   getTm1SubsetMembers: vi.fn(),
   getTm1DimensionAliases: vi.fn(),
+  // Display-alias relabel endpoint. PivotExplorer now auto-defaults a dim with a
+  // `name` alias to it and resolves labels for the shown members via this — so it
+  // is called on mount for `account` (aliases:['name'] below). The default impl
+  // resolves to NO labels so displayMember falls back to PRINCIPAL keys, keeping
+  // every existing text assertion (EXPENSE / Rent / COGS / Jul …) valid. The
+  // dedicated alias-display coverage is the independent tester's to add.
+  getTm1ElementLabels: vi.fn(),
 }));
 
 import PivotExplorer from '../PivotExplorer.vue';
@@ -89,6 +96,7 @@ import {
   getTm1Subsets,
   getTm1SubsetMembers,
   getTm1DimensionAliases,
+  getTm1ElementLabels,
 } from '../../../api/planningAnalytics';
 // KDL primitives the Set-Editor integration drives by component instance (the
 // editor's hierarchy/subset/alias pickers teleport their dropdowns via Reka's
@@ -343,6 +351,14 @@ function installCubeMocks({ dimensions = ['account', 'month', 'measure'] } = {})
   getTm1DimensionAliases.mockImplementation(async (dimension) => (
     dimension === 'account' ? { dimension, aliases: ['name'] } : { dimension, aliases: [] }
   ));
+  // Default alias relabel: resolve to NO labels, so displayMember falls back to
+  // principal keys and existing text assertions hold. (Suites that exercise the
+  // alias DISPLAY feature override this with a real label map.)
+  getTm1ElementLabels.mockImplementation(async (dimension, alias) => ({
+    dimension,
+    alias,
+    labels: {},
+  }));
 }
 
 // ── DOM helpers — select on SEMANTICS (role / aria / text / stable class) ─────
@@ -2077,5 +2093,631 @@ describe('PivotExplorer — multi-dimension row drill', () => {
     // Collapse → aria-expanded returns to false.
     await collapseInner(wrapper, 'EXPENSE');
     expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('false');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 16 — ALIAS DISPLAY (entity/account UUIDs → human names in the pivot)
+//
+// Authored by the INDEPENDENT TESTER (author≠tester doctrine, 2026-05-26) to LOCK
+// the display-only alias labelling that just landed. The feature relabels row
+// headers, the single-col-dim column headers, and the filter pills from the raw
+// principal key (e.g. an entity UUID `41ebfa0e-…`, an account leaf `kl_310_…`) to
+// a human alias VALUE — WITHOUT ever letting the alias reach the MDX query
+// (axisSpec stays on principal keys).
+//
+// ── The REALISTIC shapes (the bar: production data, not happy-path fixtures) ───
+// We add an `entity` dimension whose principal keys are UUIDs and whose `name`
+// alias resolves to "Klikk (Pty) Ltd" — the canonical entity case. `entity` is
+// neither account- nor month-shaped, so the fuzzy default assignment puts it on
+// the FILTER bar (a pill), exercising the filter-pill relabel path with a true
+// UUID principal. `account` stays on Rows; its principal members (EXPENSE / COGS /
+// Rent / Salaries / Materials — the cube topology keys) are relabelled to
+// `kl_310_…`-style account-leaf names via the label map, exercising the row-header
+// relabel. `month` stays on Cols (single col dim), exercising the col-header
+// relabel. The drill / query engine is the SAME proven fake cube — only the
+// network alias surface is overridden per test, so the topology + arithmetic are
+// untouched.
+//
+// Selectors are SEMANTIC / stable-class (no data-test): `.pivot-grid__row-label`
+// (text = displayMember, :title = rowSegTitle = the principal when relabelled),
+// `th.pivot-grid__col-head` (text = colHeadLabel), `.pivot-pill__member` (filter
+// pill, :title = filterPrincipalTitle). The per-dim "Display label" control items
+// render as teleported `.km-item` text ("Label: principal name" / "Label: name").
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — alias display (UUID → human name)', () => {
+  // The entity UUID principal (a single filter-bar element) and its human alias.
+  const ENTITY_UUID = '41ebfa0e-7c2b-4f1a-9d3e-2a6b8c0d1e2f';
+  const ENTITY_NAME = 'Klikk (Pty) Ltd';
+
+  // account principal key → its `name`-alias human label (kl_310_… account leaves
+  // + readable rollup names). Covers every account member the grid can show so a
+  // drill never surfaces an un-mapped key under this alias.
+  const ACCOUNT_NAME_LABELS = {
+    EXPENSE: 'kl_400_Operating Expenses',
+    COGS: 'kl_500_Cost of Sales',
+    Rent: 'kl_410_Rent Paid',
+    Salaries: 'kl_420_Salaries & Wages',
+    Materials: 'kl_510_Raw Materials',
+    All_Account: 'kl_000_All Accounts',
+  };
+
+  // month principal key → its `name`-alias label (the single-col-dim header case).
+  const MONTH_NAME_LABELS = { Jul: 'July 2025', Aug: 'August 2025' };
+
+  // Layer entity onto the shared cube: a single UUID-keyed leaf element so the
+  // filter pill seeds to the UUID (topElement → first option; no "All_" prefix so
+  // the UUID itself is selected). The base installCubeMocks already returns
+  // aliases:['name'] for `account` ONLY — we extend it so `entity` also advertises
+  // a `name` alias, and (by default) `month` does NOT (to assert a dim WITHOUT a
+  // `name` alias stays on principal in the same render).
+  function installEntityElements() {
+    const baseElements = getTm1DimensionElements.getMockImplementation();
+    getTm1DimensionElements.mockImplementation(async (dimension, hier) => {
+      if (dimension === 'entity') return { elements: [{ name: ENTITY_UUID, type: 'N' }] };
+      return baseElements(dimension, hier);
+    });
+    const baseChildren = getTm1DimensionChildren.getMockImplementation();
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent, hier) => {
+      if (dimension === 'entity') return { children: [] };
+      return baseChildren(dimension, parent, hier);
+    });
+  }
+
+  // Which dims advertise a `name` alias. entity + account = yes; month = no by
+  // default (so the "no name alias → stays principal" arm is observable). Per-test
+  // callers can widen this (e.g. add month) before mounting.
+  function installAliasLists(withName = ['account', 'entity']) {
+    getTm1DimensionAliases.mockImplementation(async (dimension) => ({
+      dimension,
+      aliases: withName.includes(dimension) ? ['name'] : [],
+    }));
+  }
+
+  // The label resolver for the entity+account world. Returns ONLY the requested
+  // members (mirrors the real per-shown-member fetch) so a test asserting the
+  // request shape (`want`) sees the component asking for exactly its shown set.
+  function installLabelMap({ account = ACCOUNT_NAME_LABELS, entity = { [ENTITY_UUID]: ENTITY_NAME }, month = {} } = {}) {
+    const FULL = { account, entity, month };
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      const all = FULL[dimension] || {};
+      const labels = {};
+      for (const m of elements || Object.keys(all)) {
+        if (all[m] != null) labels[m] = all[m];
+      }
+      return { dimension, alias, labels };
+    });
+  }
+
+  // Mount the 4-dim entity layout (account Rows, entity Filter pill, month Cols,
+  // measure Filter). attachTo:body so the teleported chip / context menus render.
+  async function mountEntityPivot() {
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    installAliasLists();
+    installLabelMap();
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    return wrapper;
+  }
+
+  // The filter pill's rendered MEMBER text for a dim (displayMember output).
+  function pillMemberText(wrapper, dim) {
+    const pill = wrapper
+      .findAll('.pivot-pill')
+      .find((p) => (p.attributes('aria-label') || '').startsWith(`${dim}:`));
+    return pill ? pill.find('.pivot-pill__member') : undefined;
+  }
+
+  // The col-head <th> elements' trimmed text, EXCLUDING the trailing Total header.
+  function dataColHeadTexts(wrapper) {
+    return wrapper
+      .findAll('thead th.pivot-grid__col-head:not(.pivot-grid__total-head)')
+      .map((th) => th.text().trim());
+  }
+
+  // The teleported chip-menu / context-menu item whose text === label.
+  function bodyMenuItem(label) {
+    return [...document.body.querySelectorAll('.km-item')].find(
+      (el) => el.textContent.trim() === label,
+    );
+  }
+
+  // ── Auto-default ────────────────────────────────────────────────────────────
+  it('auto-defaults a dim with a `name` alias: row/col/filter members relabel to the alias, principal kept in title; a dim WITHOUT `name` stays on principal', async () => {
+    // entity + account advertise `name`; month does NOT (default list). So account
+    // rows + the entity pill relabel; the month col headers stay on principal.
+    const wrapper = await mountEntityPivot();
+
+    // Sanity: the layout landed as designed (account on Rows, entity a Filter pill).
+    expect(chipMap(wrapper)).toContain('rows:account');
+    expect(pillMemberText(wrapper, 'entity'), 'entity is a filter pill').toBeTruthy();
+
+    // ROW HEADERS: the account rollups relabelled to their kl_… alias values (NOT
+    // the raw EXPENSE / COGS principal keys). The grid auto-resolved `name` with
+    // zero clicks.
+    const labels = rowLabels(wrapper);
+    expect(labels).toContain('kl_400_Operating Expenses');
+    expect(labels).toContain('kl_500_Cost of Sales');
+    expect(labels).not.toContain('EXPENSE');
+    expect(labels).not.toContain('COGS');
+
+    // The PRINCIPAL key is still discoverable as the row-segment :title (the UUID /
+    // code stays reachable for audit) — load-bearing statutory-style affordance.
+    const expenseSeg = bodyRows(wrapper)
+      .flatMap((tr) => tr.findAll('.pivot-grid__row-label'))
+      .find((s) => s.text() === 'kl_400_Operating Expenses');
+    expect(expenseSeg.attributes('title')).toBe('EXPENSE');
+
+    // FILTER PILL: the entity UUID relabelled to the human name; its :title carries
+    // the raw UUID principal.
+    const pill = pillMemberText(wrapper, 'entity');
+    expect(pill.text()).toBe(ENTITY_NAME);
+    expect(pill.attributes('title')).toBe(ENTITY_UUID);
+
+    // COL HEADERS: month has NO `name` alias → its members stay on the raw principal
+    // keys (Jul / Aug), proving the auto-default is per-dim, not global. (Aug is
+    // suppressed by default, so assert Jul is present and is the principal key.)
+    const colHeads = dataColHeadTexts(wrapper);
+    expect(colHeads).toContain('Jul');
+    expect(colHeads).not.toContain('July 2025');
+    // And the month col-head carries NO principal :title (nothing was relabelled).
+    const julHead = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .find((th) => th.text().trim() === 'Jul');
+    expect(julHead.attributes('title')).toBeUndefined();
+  });
+
+  it('a single-col-dim WITH a `name` alias relabels its column headers (Jul → "July 2025") with the principal in the header title', async () => {
+    // Widen the alias list so month ALSO advertises `name`, and give it a label map.
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    installAliasLists(['account', 'entity', 'month']);
+    installLabelMap({ month: MONTH_NAME_LABELS });
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    // Suppress OFF so BOTH month columns (incl. the all-zero Aug) are visible to
+    // assert the full relabel, not just the surviving column.
+    await setSuppress(wrapper, false);
+
+    const colHeads = dataColHeadTexts(wrapper);
+    expect(colHeads).toContain('July 2025');
+    expect(colHeads).toContain('August 2025');
+    expect(colHeads).not.toContain('Jul');
+
+    // The principal month key is the col-head :title.
+    const julyHead = wrapper
+      .findAll('thead th.pivot-grid__col-head')
+      .find((th) => th.text().trim() === 'July 2025');
+    expect(julyHead.attributes('title')).toBe('Jul');
+  });
+
+  // ── Fallback (sparse / blank / rejecting label endpoint) ──────────────────────
+  it('falls back to the principal key when getTm1ElementLabels returns a SPARSE/blank map — no throw, grid still renders', async () => {
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    installAliasLists();
+    // SPARSE: only EXPENSE resolves; COGS is MISSING and Rent is BLANK ('').
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      if (dimension === 'account') {
+        const labels = {};
+        for (const m of elements || []) {
+          if (m === 'EXPENSE') labels[m] = 'kl_400_Operating Expenses';
+          else if (m === 'Rent') labels[m] = ''; // blank → must fall back to key
+          // COGS deliberately omitted → must fall back to key
+        }
+        return { dimension, alias, labels };
+      }
+      if (dimension === 'entity') return { dimension, alias, labels: {} }; // blank entity
+      return { dimension, alias, labels: {} };
+    });
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+
+    const labels = rowLabels(wrapper);
+    // The resolved member shows its alias label; the missing one falls back to its
+    // raw principal key — both render, neither throws.
+    expect(labels).toContain('kl_400_Operating Expenses'); // resolved
+    expect(labels).toContain('COGS'); //                      missing → principal key
+
+    // Blank entity label → the pill falls back to the raw UUID principal.
+    expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_UUID);
+
+    // The grid is intact (rows present) — a sparse map degraded gracefully.
+    expect(bodyRows(wrapper).length).toBeGreaterThan(0);
+
+    // Drill EXPENSE: its blank-labelled leaf Rent falls back to the principal key,
+    // its mapped sibling stays principal too (Salaries was never mapped). No throw.
+    await expand(wrapper, 'kl_400_Operating Expenses');
+    const afterDrill = rowLabels(wrapper);
+    expect(afterDrill).toContain('Rent'); //     blank '' → key
+    expect(afterDrill).toContain('Salaries'); // unmapped → key
+    expect(bodyRows(wrapper).length).toBeGreaterThan(1);
+  });
+
+  it('falls back to the principal key when getTm1ElementLabels REJECTS — no unhandled throw, members render as keys', async () => {
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    installAliasLists();
+    // The label endpoint hard-fails for every dim.
+    getTm1ElementLabels.mockRejectedValue(new Error('TM1 element-labels 503'));
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+
+    // Auto-default still SET `name` (the alias LIST resolved fine), but label
+    // resolution failed → every shown member falls back to its principal key.
+    const labels = rowLabels(wrapper);
+    expect(labels).toContain('EXPENSE');
+    expect(labels).toContain('COGS');
+    expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_UUID);
+
+    // The grid rendered (the rejection did not bubble out of the fire-and-forget
+    // resolve and break the render).
+    expect(wrapper.find('table.pivot-grid').exists()).toBe(true);
+    expect(bodyRows(wrapper).length).toBeGreaterThan(0);
+  });
+
+  // ── Per-dim control: CHIP menu ────────────────────────────────────────────────
+  it('chip menu: "Label: principal name" reverts the row headers to the raw key; "Label: name" re-applies the alias; the active item carries the check', async () => {
+    const wrapper = await mountEntityPivot();
+    // Auto-defaulted: rows show the kl_… alias.
+    expect(rowLabels(wrapper)).toContain('kl_400_Operating Expenses');
+
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+    expect(accountChip, 'account row chip should exist').toBeTruthy();
+    // The chip received the alias list + active alias from the parent (auto-default).
+    expect(accountChip.props('aliases')).toEqual(['name']);
+    expect(accountChip.props('activeAlias')).toBe('name');
+
+    // Open the chip menu (controlled) → its alias items teleport into <body>. The
+    // ACTIVE alias item carries the check icon (km-item__icon present); principal
+    // does not.
+    accountChip.findComponent(KMenu).vm.$emit('update:modelValue', true);
+    await settle();
+    const nameItem = bodyMenuItem('Label: name');
+    const principalItem = bodyMenuItem('Label: principal name');
+    expect(nameItem, '"Label: name" item should render').toBeTruthy();
+    expect(principalItem, '"Label: principal name" item should render').toBeTruthy();
+    expect(nameItem.querySelector('.km-item__icon'), 'active alias carries the check').toBeTruthy();
+    expect(principalItem.querySelector('.km-item__icon')).toBeFalsy();
+
+    // Click "Label: principal name" → reverts the rows to the raw principal keys.
+    principalItem.dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    expect(rowLabels(wrapper)).toContain('EXPENSE');
+    expect(rowLabels(wrapper)).not.toContain('kl_400_Operating Expenses');
+    // The chip now reflects principal as active.
+    expect(accountChip.props('activeAlias')).toBe('');
+
+    // Re-open + click "Label: name" → re-applies the alias.
+    accountChip.findComponent(KMenu).vm.$emit('update:modelValue', true);
+    await settle();
+    bodyMenuItem('Label: name').dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    expect(rowLabels(wrapper)).toContain('kl_400_Operating Expenses');
+    expect(rowLabels(wrapper)).not.toContain('EXPENSE');
+    expect(accountChip.props('activeAlias')).toBe('name');
+  });
+
+  it('chip menu: choosing an alias emits `alias` from the chip and is display-only — the runTm1Query payload is unchanged', async () => {
+    const wrapper = await mountEntityPivot();
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+
+    // Snapshot the LAST query payload BEFORE the alias flip.
+    const payloadBefore = runTm1Query.mock.calls.at(-1)[0];
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Flip to principal via the chip's REAL emit contract (what the menu item fires).
+    accountChip.vm.$emit('alias', '');
+    await settle();
+    // …and back to name.
+    accountChip.vm.$emit('alias', 'name');
+    await settle();
+
+    // The rendered label changed (display happened)…
+    expect(rowLabels(wrapper)).toContain('kl_400_Operating Expenses');
+    // …but NO query was issued by the alias change (display-only) and the latest
+    // payload is byte-identical to the pre-flip one — the alias never reached MDX.
+    expect(runTm1Query.mock.calls.length).toBe(callsBefore);
+    expect(runTm1Query.mock.calls.at(-1)[0]).toEqual(payloadBefore);
+  });
+
+  // ── Per-dim control: CONTEXT-PILL menu ────────────────────────────────────────
+  it('context-pill menu: the entity pill exposes "Label: name"/"Label: principal name"; flipping to principal shows the UUID, re-applying shows the human name', async () => {
+    const wrapper = await mountEntityPivot();
+    // entity pill auto-defaulted to the human name.
+    expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_NAME);
+
+    // The entity context-pill move menu (aria-label "Move entity to Rows…") carries
+    // the alias items below the move targets. Open it (controlled).
+    const ctxMenu = wrapper
+      .findAllComponents(KMenu)
+      .find((m) => m.html().includes('Move entity to Rows'));
+    expect(ctxMenu, 'entity context-pill move menu should exist').toBeTruthy();
+    ctxMenu.vm.$emit('update:modelValue', true);
+    await settle();
+
+    const principalItem = bodyMenuItem('Label: principal name');
+    const nameItem = bodyMenuItem('Label: name');
+    expect(principalItem, 'context "Label: principal name" item').toBeTruthy();
+    expect(nameItem, 'context "Label: name" item').toBeTruthy();
+    // Active alias (name) carries the check; principal does not.
+    expect(nameItem.querySelector('.km-item__icon')).toBeTruthy();
+    expect(principalItem.querySelector('.km-item__icon')).toBeFalsy();
+
+    // Click "Label: principal name" → the pill shows the raw UUID.
+    principalItem.dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_UUID);
+
+    // Re-open + "Label: name" → back to the human name.
+    ctxMenu.vm.$emit('update:modelValue', true);
+    await settle();
+    bodyMenuItem('Label: name').dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_NAME);
+  });
+
+  // ── Stale-guard (late label reply for a superseded alias is dropped) ──────────
+  it('stale-guard: switching a dim\'s alias while a label fetch is IN FLIGHT drops the late reply (members reflect the LATEST alias, not the stale one)', async () => {
+    // Build a layout where account has TWO aliases (name + code) so we can switch
+    // between two non-principal aliases and prove the LATE one wins, not the slow
+    // earlier one. We hand-roll the label endpoint to DEFER the first (name) reply.
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    getTm1DimensionAliases.mockImplementation(async (dimension) => {
+      if (dimension === 'account') return { dimension, aliases: ['name', 'code'] };
+      if (dimension === 'entity') return { dimension, aliases: ['name'] };
+      return { dimension, aliases: [] };
+    });
+
+    // A deferred gate for the `name` alias account fetch (the auto-default fires it
+    // on mount). `code` resolves SYNCHRONOUSLY. We hold `name` open, switch to
+    // `code`, let `code` land, THEN release the stale `name` reply.
+    let releaseName;
+    const nameGate = new Promise((res) => {
+      releaseName = res;
+    });
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      if (dimension === 'account' && alias === 'name') {
+        await nameGate; // held open until the test releases it
+        const labels = {};
+        for (const m of elements || []) labels[m] = `NAME_${m}`;
+        return { dimension, alias, labels };
+      }
+      if (dimension === 'account' && alias === 'code') {
+        const labels = {};
+        for (const m of elements || []) labels[m] = `CODE_${m}`;
+        return { dimension, alias, labels };
+      }
+      if (dimension === 'entity') return { dimension, alias, labels: { [ENTITY_UUID]: ENTITY_NAME } };
+      return { dimension, alias, labels: {} };
+    });
+
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+
+    // The `name` reply is still gated → rows show the raw principal keys (no label
+    // resolved yet for account).
+    expect(rowLabels(wrapper)).toContain('EXPENSE');
+    expect(rowLabels(wrapper)).not.toContain('NAME_EXPENSE');
+
+    // Switch account → `code` via the chip emit. This bumps aliasSeq + clears the
+    // label cache, and `code` resolves synchronously on the next settle.
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+    accountChip.vm.$emit('alias', 'code');
+    await settle();
+
+    // `code` landed: rows show CODE_*.
+    expect(rowLabels(wrapper)).toContain('CODE_EXPENSE');
+
+    // NOW release the stale `name` reply (the alias the user already moved off of).
+    releaseName();
+    await settle();
+
+    // The stale `name` reply must NOT apply — rows STILL reflect `code`, never the
+    // late `name` labels (aliasSeq + alias-change guard dropped it).
+    expect(rowLabels(wrapper)).toContain('CODE_EXPENSE');
+    expect(rowLabels(wrapper)).not.toContain('NAME_EXPENSE');
+    expect(accountChip.props('activeAlias')).toBe('code');
+  });
+
+  it('stale-guard (aliasSeq specifically): a clear-then-RESELECT of the SAME alias drops an in-flight reply with a SUPERSEDED seq token, not via the alias-name check', async () => {
+    // This isolates the aliasSeq token. We HANG the very first account `name` fetch
+    // and tag it STALE; every later `name` fetch resolves immediately tagged FRESH.
+    // After a round-trip (name → principal → name) the dim is on `name` AGAIN, so
+    // the alias-NAME guard `dimAlias[dim] !== alias` does NOT fire when the held
+    // STALE reply finally lands — only the bumped aliasSeq distinguishes it. NB:
+    // ensureAliasLabels does not de-dupe an identical in-flight request, so the
+    // grid may already show FRESH before the round-trip; the load-bearing claim is
+    // simply that releasing the STALE reply never clobbers FRESH.
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    installAliasLists();
+
+    let firstSeen = false;
+    let releaseFirst;
+    const firstGate = new Promise((res) => {
+      releaseFirst = res;
+    });
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      if (dimension === 'account' && alias === 'name') {
+        const isFirst = !firstSeen;
+        firstSeen = true;
+        if (isFirst) await firstGate; // hang ONLY the original in-flight fetch
+        const tag = isFirst ? 'STALE' : 'FRESH';
+        const labels = {};
+        for (const m of elements || []) labels[m] = `${tag}_${m}`;
+        return { dimension, alias, labels };
+      }
+      if (dimension === 'entity') return { dimension, alias, labels: { [ENTITY_UUID]: ENTITY_NAME } };
+      return { dimension, alias, labels: {} };
+    });
+
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+
+    // Round-trip the SAME alias: name → principal → name. Each transition bumps
+    // aliasSeq, so the originally-captured seq (held in the gated STALE fetch) is
+    // now superseded. The reselect's FRESH fetch resolves immediately.
+    accountChip.vm.$emit('alias', ''); // → principal (bump)
+    await settle();
+    accountChip.vm.$emit('alias', 'name'); // → name again (bump), fresh fetch
+    await settle();
+    expect(rowLabels(wrapper)).toContain('FRESH_EXPENSE');
+
+    // Release the ORIGINAL (STALE) in-flight reply. It carries alias 'name' — which
+    // EQUALS the current dimAlias — so ONLY the seq token can reject it.
+    releaseFirst();
+    await settle();
+
+    // The fresh labels MUST stand; the stale reply is dropped by the seq guard.
+    expect(rowLabels(wrapper)).toContain('FRESH_EXPENSE');
+    expect(rowLabels(wrapper)).not.toContain('STALE_EXPENSE');
+  });
+
+  // ── Set Editor carry-through ──────────────────────────────────────────────────
+  it('Set Editor carry-through: emitting `apply` with alias:"name" sets the grid\'s dimAlias so that dim relabels (and apply with alias:null reverts to principal)', async () => {
+    const wrapper = await mountEntityPivot();
+    const editor = () => wrapper.findComponent(SetEditor);
+
+    // Open the Set Editor for the account Rows dim via its REAL chip menu.
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+    accountChip.findComponent(KMenu).vm.$emit('update:modelValue', true);
+    await settle();
+    bodyMenuItem('Edit set…').dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    expect(editor().exists(), 'editor mounted').toBe(true);
+
+    // First, FORCE the dim onto principal so the carry-through change is observable
+    // (auto-default already put it on `name`). Then apply with alias:'name' from the
+    // editor and assert the grid relabels.
+    accountChip.vm.$emit('alias', '');
+    await settle();
+    expect(rowLabels(wrapper)).toContain('EXPENSE');
+
+    // Apply EXPENSE with alias:'name' (a non-zero rollup → survives suppression).
+    editor().vm.$emit('apply', {
+      dimension: 'account',
+      hierarchy: null,
+      members: ['EXPENSE'],
+      types: { EXPENSE: 'C' },
+      alias: 'name',
+    });
+    await settle();
+
+    // The grid relabelled the applied member to its `name` alias value — the editor
+    // alias carried through to dimAlias[account].
+    expect(rowLabels(wrapper)).toEqual(['kl_400_Operating Expenses']);
+    expect(accountChip.props('activeAlias')).toBe('name');
+
+    // Re-open + apply with alias:null → reverts to principal.
+    accountChip.findComponent(KMenu).vm.$emit('update:modelValue', true);
+    await settle();
+    bodyMenuItem('Edit set…').dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    editor().vm.$emit('apply', {
+      dimension: 'account',
+      hierarchy: null,
+      members: ['EXPENSE'],
+      types: { EXPENSE: 'C' },
+      alias: null,
+    });
+    await settle();
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE']);
+    expect(accountChip.props('activeAlias')).toBe('');
+
+    // Close the editor cleanly before teardown (teleport-unmount hygiene).
+    if (editor().exists()) {
+      editor().vm.$emit('update:modelValue', false);
+      await settle();
+    }
+  });
+
+  // ── MDX INVARIANT (load-bearing): the alias NEVER reaches the query ───────────
+  it('MDX invariant: the runTm1Query payload AND the "Show MDX" text are IDENTICAL whether the dim is on principal or on `name` — the alias never reaches the query', async () => {
+    // Make the mock's MDX DEPEND on the requested members so that IF an alias ever
+    // leaked into axisSpec.members, the MDX string (and the payload) would visibly
+    // differ — turning a silent leak into a hard assertion failure.
+    installCubeMocks({ dimensions: ['account', 'entity', 'month', 'measure'] });
+    installEntityElements();
+    installAliasLists();
+    installLabelMap();
+    runTm1Query.mockImplementation(async (payload) => {
+      const resp = buildQueryResponse(payload);
+      const rowMembers = (payload.rows || []).flatMap((r) => r.members || []);
+      const colMembers = (payload.cols || []).flatMap((c) => c.members || []);
+      resp.mdx =
+        `SELECT {${colMembers.join(',')}} ON COLUMNS, ` +
+        `{${rowMembers.join(',')}} ON ROWS FROM [${payload.cube}]`;
+      return resp;
+    });
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+
+    // Open the MDX disclosure (semantic: the toggle button text).
+    const mdxToggle = wrapper
+      .findAll('button')
+      .find((b) => ['Show MDX', 'Hide MDX'].includes(b.text().trim()));
+    expect(mdxToggle, 'MDX disclosure toggle should render').toBeTruthy();
+    if (mdxToggle.text().trim() === 'Show MDX') {
+      await mdxToggle.trigger('click');
+      await settle();
+    }
+    const mdxEl = () => wrapper.find('#pivot-mdx-body');
+
+    // Capture the state with account on `name` (auto-defaulted) — the rows show the
+    // kl_… alias, proving display IS relabelled here.
+    expect(rowLabels(wrapper)).toContain('kl_400_Operating Expenses');
+    const payloadAliased = runTm1Query.mock.calls.at(-1)[0];
+    const mdxAliased = mdxEl().text();
+    // The MDX uses the PRINCIPAL keys even though the DISPLAY shows aliases.
+    expect(mdxAliased).toContain('EXPENSE');
+    expect(mdxAliased).not.toContain('kl_400_Operating Expenses');
+
+    // Flip account to PRINCIPAL via the chip. Display reverts to raw keys.
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+    accountChip.vm.$emit('alias', '');
+    await settle();
+    expect(rowLabels(wrapper)).toContain('EXPENSE');
+
+    // The alias flip issued NO new query (display-only) — so to compare the QUERY
+    // for the same SELECTION on principal vs alias we re-run the query explicitly
+    // via a state change that DOES re-query but does NOT alter the selection: a
+    // suppress round-trip (off→on) returns the layout to its starting selection.
+    await setSuppress(wrapper, false);
+    await setSuppress(wrapper, true);
+    const payloadPrincipal = runTm1Query.mock.calls.at(-1)[0];
+    const mdxPrincipal = mdxEl().text();
+
+    // THE INVARIANT: same selection, same query — the alias choice did not change
+    // the payload NOR the MDX text. Both are byte-identical across the alias flip.
+    expect(payloadPrincipal).toEqual(payloadAliased);
+    expect(mdxPrincipal).toBe(mdxAliased);
+    // And specifically: the account row axis carries PRINCIPAL keys in BOTH.
+    const axisOf = (p) => p.rows.find((r) => r.dimension === 'account').members;
+    expect(axisOf(payloadAliased)).toEqual(['EXPENSE', 'COGS']);
+    expect(axisOf(payloadPrincipal)).toEqual(['EXPENSE', 'COGS']);
   });
 });

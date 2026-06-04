@@ -11,15 +11,18 @@
   funnel through the parent's moveDimension.
 
   Props:
-    dim      (String)  — dimension name shown on the chip
-    axis     ('rows'|'cols')  — which well this chip lives in (its current axis)
-    open     (Boolean) — controlled menu open state (single-open model in parent)
-    dragging (Boolean) — true while THIS chip is the drag source (dim-down state)
+    dim         (String)  — dimension name shown on the chip
+    axis        ('rows'|'cols')  — which well this chip lives in (current axis)
+    open        (Boolean) — controlled menu open state (single-open in parent)
+    dragging    (Boolean) — true while THIS chip is the drag source (dim-down)
+    aliases     (String[])— available display aliases for this dim (display-only)
+    activeAlias (String)  — the active display alias ('' = principal names)
 
   Emits:
     toggle    (Boolean)  — request to open/close this chip's menu
     move      (target)   — move this dimension to 'rows' | 'cols' | 'filter'
     edit      ()         — open the Set (Subset) Editor for this dimension
+    alias     (String)   — choose a display label ('' = principal names)
     dragstart (DragEvent) — grip drag started (parent records the dragged dim)
     dragend   (DragEvent) — grip drag ended (parent clears drag state)
 -->
@@ -104,6 +107,27 @@
       <KMenuItem @select="$emit('move', 'filter')">
         Move to Filter
       </KMenuItem>
+
+      <!-- Display label (alias) — only when the dim has aliases to pick. A flat
+           list (KMenu has no sub-menu primitive): the active choice carries a
+           check. Display-only — the pivot query is never aliased. -->
+      <template v-if="aliases.length">
+        <KMenuSeparator />
+        <KMenuItem
+          :icon="!activeAlias ? 'check' : null"
+          @select="$emit('alias', '')"
+        >
+          Label: principal name
+        </KMenuItem>
+        <KMenuItem
+          v-for="a in aliases"
+          :key="`chip-alias-${dim}-${a}`"
+          :icon="activeAlias === a ? 'check' : null"
+          @select="$emit('alias', a)"
+        >
+          Label: {{ a }}
+        </KMenuItem>
+      </template>
     </KMenu>
   </span>
 </template>
@@ -135,9 +159,19 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  /** Available display aliases for this dimension (display-only labels). */
+  aliases: {
+    type: Array,
+    default: () => [],
+  },
+  /** The active display alias ('' = principal member names). */
+  activeAlias: {
+    type: String,
+    default: '',
+  },
 });
 
-defineEmits(['toggle', 'move', 'edit', 'dragstart', 'dragend']);
+defineEmits(['toggle', 'move', 'edit', 'alias', 'dragstart', 'dragend']);
 </script>
 
 <style scoped>
