@@ -172,6 +172,22 @@ export async function getTm1DimensionAliases(dimension, hierarchy = null) {
   return resp.data;
 }
 
+// POST /tm1/element-labels/ { dimension, alias, elements?, hierarchy? }
+// -> { dimension, alias, labels: { element: label } }. Resolves principal element
+// keys (e.g. an entity UUID) to their alias value (e.g. "Klikk (Pty) Ltd") via the
+// }ElementAttributes_<dim> control cube. Pass the specific members you need labelled;
+// omit `elements` to resolve the whole (capped) hierarchy server-side. POST (not GET)
+// so the member list rides in the body: TM1 element keys can contain commas — a
+// querystring would corrupt them — and the body has no URL-length cap (no batching).
+export async function getTm1ElementLabels(dimension, alias, elements = null, hierarchy = null) {
+  const client = await getClient();
+  const body = { dimension, alias };
+  if (hierarchy) body.hierarchy = hierarchy;
+  if (Array.isArray(elements) && elements.length) body.elements = elements;
+  const resp = await client.post(API_ENDPOINTS.PA_TM1_ELEMENT_LABELS, body, { timeout: 60000 });
+  return resp.data;
+}
+
 // GET /tm1/dimension-children/?dimension=NAME&parent=ELEMENT -> the immediate
 // children of a consolidation, e.g. dimension=account&parent=All_Account ->
 // [{name:'EXPENSE',type}, {name:'ASSET',type}, …]. Used to (a) seed a populated

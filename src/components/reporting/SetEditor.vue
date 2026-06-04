@@ -356,7 +356,7 @@
       <div class="se-foot">
         <div class="se-foot__alias">
           <KSelect
-            :model-value="activeAlias"
+            :model-value="aliasModel"
             class="se-foot__alias-select"
             label="Display label"
             :options="aliasOptions"
@@ -403,6 +403,7 @@ import {
   getTm1Subsets,
   getTm1SubsetMembers,
   getTm1DimensionAliases,
+  getTm1ElementLabels,
 } from '../../api/planningAnalytics';
 
 const props = defineProps({
@@ -421,6 +422,27 @@ const emit = defineEmits(['update:modelValue', 'apply']);
 const INDENT_PX = 16; // per-level tree indent (matches the pivot grid hallmark).
 const TOP_ELEMENT_CAP = 1000; // cap the flat element scan used to find roots.
 const SUBSET_MEMBER_CAP = 500; // cap how many subset members we pull at once.
+// Non-empty sentinel for the "(principal name)" alias option. Reka/Radix's
+// SelectItem REJECTS an empty-string value (it's reserved to clear the field),
+// which made the alias picker unselectable and rendered the trigger blank. We
+// bind the picker to this sentinel and map it back to '' (= principal name)
+// internally, so activeAlias keeps its '' "no alias" semantics everywhere else.
+const PRINCIPAL_SENTINEL = '__principal__';
+
+// Module-level metadata memo. TM1 dimension metadata (hierarchies, aliases,
+// subsets, and the source element list + chosen roots) is stable within a portal
+// session, so we cache it across dialog opens and hierarchy toggle-backs — that's
+// what kills the repeated TM1 round-trips that made re-opening feel slow. A full
+// page reload clears it. Keyed by dimension (hierarchies) or dimension+hierarchy.
+// NOTE: cached arrays are shared by reference across editor instances and MUST be
+// treated as read-only by consumers (read via .map/.find/.length — never sort/push
+// in place, or the mutation bleeds into every other instance + future opens).
+const _metaCache = {
+  hierarchies: new Map(), // dim -> { hierarchies, hasAlternates, defaultHierarchy }
+  aliases: new Map(), // 'dim::hier' -> string[]
+  subsets: new Map(), // 'dim::hier' -> [{ name, dynamic }]
+  tree: new Map(), // 'dim::hier' -> { elements:[{name,type}], roots:[{name,type}], truncated }
+};
 
 // ── Defensive normalisers (backend lives in a separate repo) ────────────────
 function pickName(item) {
@@ -561,9 +583,13 @@ const subsetPlaceholder = computed(() => {
 });
 
 const aliasOptions = computed(() => [
-  { value: '', label: '(principal name)' },
+  { value: PRINCIPAL_SENTINEL, label: '(principal name)' },
   ...aliases.value.map((a) => ({ value: a, label: a })),
 ]);
+
+// The value the alias picker should show as selected: the active alias, or the
+// non-empty sentinel when on principal names (never '' — see PRINCIPAL_SENTINEL).
+const aliasModel = computed(() => activeAlias.value || PRINCIPAL_SENTINEL);
 
 // The visible tree rows: walk `order`, attach display label, filter by search.
 // A search term keeps any loaded row whose label OR principal name matches
@@ -602,6 +628,13 @@ function labelFor(member) {
 async function loadHierarchies() {
   hierarchiesLoading.value = true;
   try {
+    const memo = _metaCache.hierarchies.get(props.dimension);
+    if (memo) {
+      hierarchies.value = memo.hierarchies;
+      hasAlternates.value = memo.hasAlternates;
+      defaultHierarchy.value = memo.defaultHierarchy;
+      return;
+    }
     const data = await getTm1DimensionHierarchies(props.dimension);
     const list = Array.isArray(data?.hierarchies) ? data.hierarchies : [];
     hierarchies.value = list
@@ -613,6 +646,11 @@ async function loadHierarchies() {
     hasAlternates.value = !!data?.has_alternates && hierarchies.value.length > 1;
     const def = hierarchies.value.find((h) => h.is_default) || hierarchies.value[0];
     defaultHierarchy.value = data?.default ?? def?.name ?? null;
+    _metaCache.hierarchies.set(props.dimension, {
+      hierarchies: hierarchies.value,
+      hasAlternates: hasAlternates.value,
+      defaultHierarchy: defaultHierarchy.value,
+    });
   } catch {
     hierarchies.value = [];
     hasAlternates.value = false;
@@ -629,6 +667,11 @@ function hierarchyArg() {
   if (!h) return null;
   if (defaultHierarchy.value && h === defaultHierarchy.value) return null;
   return h;
+}
+
+// Cache key for per-(dimension, hierarchy) metadata in _metaCache. '' = default.
+function _hkey() {
+  return `${props.dimension}::${hierarchyArg() || ''}`;
 }
 
 // Load the SOURCE tree for the active hierarchy. The backend gives a flat
@@ -649,27 +692,35 @@ async function loadTree({ pruneSetToHierarchy = false } = {}) {
   // about to load (its elements/children repopulate it below).
   knownMembers.clear();
   try {
-    const data = await getTm1DimensionElements(props.dimension, hierarchyArg());
-    let elements = normaliseMemberList(data, ['elements']);
-    const truncated = elements.length > TOP_ELEMENT_CAP;
-    if (truncated) elements = elements.slice(0, TOP_ELEMENT_CAP);
-    // Every element belongs to the active hierarchy — record it so the
-    // hierarchy-prune (P2-E) keeps set members that exist here and drops the rest.
-    recordTypes(elements);
-    if (!elements.length) {
+    // Source elements + chosen roots are stable per (dim, hierarchy) — memoise the
+    // heavy element scan + root resolution so reopening / toggling back is instant.
+    const key = _hkey();
+    let memo = _metaCache.tree.get(key);
+    if (!memo) {
+      const data = await getTm1DimensionElements(props.dimension, hierarchyArg());
+      let elements = normaliseMemberList(data, ['elements']);
+      const truncated = elements.length > TOP_ELEMENT_CAP;
+      if (truncated) elements = elements.slice(0, TOP_ELEMENT_CAP);
+      const roots = elements.length ? await pickRoots(elements) : [];
+      memo = { elements, roots, truncated };
+      _metaCache.tree.set(key, memo);
+    }
+    // Record every element of the active hierarchy so the hierarchy-prune (P2-E)
+    // keeps set members that exist here and drops the rest.
+    recordTypes(memo.elements);
+    if (!memo.elements.length) {
       order.value = [];
-      if (pruneSetToHierarchy) pruneSetMembersToHierarchy(truncated);
+      if (pruneSetToHierarchy) pruneSetMembersToHierarchy(memo.truncated);
       return;
     }
-    const roots = await pickRoots(elements);
-    seedRoots(roots);
-    if (truncated) {
+    seedRoots(memo.roots);
+    if (memo.truncated) {
       treeNote.value = `Showing the first ${TOP_ELEMENT_CAP} members — refine with the filter or a saved subset to reach the rest.`;
     }
     // Prune the set to the new hierarchy's members BEFORE surfacing it as rows —
     // surfaceMembersAsRows records members into knownMembers, which would
     // otherwise re-admit the very members we mean to drop.
-    if (pruneSetToHierarchy) pruneSetMembersToHierarchy(truncated);
+    if (pruneSetToHierarchy) pruneSetMembersToHierarchy(memo.truncated);
     if (setMembers.value.length) {
       surfaceMembersAsRows(setMembers.value.map((m) => ({ name: m, type: null })));
     }
@@ -843,11 +894,18 @@ function toggleNode(row) {
 async function loadSubsets() {
   subsetsLoading.value = true;
   try {
+    const key = _hkey();
+    const memo = _metaCache.subsets.get(key);
+    if (memo) {
+      subsets.value = memo;
+      return;
+    }
     const data = await getTm1Subsets(props.dimension, hierarchyArg());
     const list = Array.isArray(data?.subsets) ? data.subsets : [];
     subsets.value = list
       .map((s) => ({ name: pickName(s), dynamic: !!(s && s.dynamic) }))
       .filter((s) => s.name);
+    _metaCache.subsets.set(key, subsets.value);
   } catch {
     subsets.value = [];
   } finally {
@@ -914,9 +972,18 @@ function surfaceMembersAsRows(members) {
 async function loadAliases() {
   aliasesLoading.value = true;
   try {
+    const key = _hkey();
+    const memo = _metaCache.aliases.get(key);
+    if (memo) {
+      aliases.value = memo;
+      return;
+    }
     const data = await getTm1DimensionAliases(props.dimension, hierarchyArg());
     const list = Array.isArray(data?.aliases) ? data.aliases : [];
-    aliases.value = list.map(pickName).filter(Boolean);
+    // Drop any alias literally named like the sentinel so it can never shadow the
+    // "(principal name)" option (astronomically unlikely in TM1, but cheap to rule out).
+    aliases.value = list.map(pickName).filter(Boolean).filter((a) => a !== PRINCIPAL_SENTINEL);
+    _metaCache.aliases.set(key, aliases.value);
   } catch {
     aliases.value = [];
   } finally {
@@ -924,19 +991,37 @@ async function loadAliases() {
   }
 }
 
-// Resolve display labels for the active alias. The API exposes aliases as a
-// LIST of names, not a name→label map, so to fetch the actual label text we'd
-// need a per-member attribute read the backend doesn't expose yet. For v1 the
-// alias picker still drives WHICH labelling is requested; until a label-map
-// endpoint exists we display the principal name (a documented v1 limitation,
-// surfaced in the picker hint). The plumbing below is the seam where a
-// member→label map would be filled.
-function ensureAliasLabels(/* memberNames */) {
-  // Placeholder seam — see note above. No-op until a label-map endpoint exists.
+// Resolve display labels for the active alias by reading the alias attribute
+// value per member (e.g. entity UUID -> "Klikk (Pty) Ltd") from the backend
+// element-labels endpoint, and fill the reactive aliasLabels map. Only fetches
+// members we don't already have, batches inside the API client, and drops the
+// result if the user switched alias mid-flight. On error we leave principal names
+// and DON'T cache, so a later call can retry. Fire-and-forget at call sites —
+// aliasLabels is reactive, so labelFor()/visibleRows re-render when labels land.
+async function ensureAliasLabels(memberNames) {
+  const alias = activeAlias.value;
+  if (!alias) return;
+  const hier = hierarchyArg();
+  const want = [...new Set(memberNames)].filter((m) => m && !(m in aliasLabels));
+  if (!want.length) return;
+  try {
+    const data = await getTm1ElementLabels(props.dimension, alias, want, hier);
+    // Discard if the alias OR the hierarchy changed while in-flight — aliasLabels
+    // is hierarchy-scoped and gets cleared on a hierarchy switch, so a late reply
+    // from the previous hierarchy must not re-pollute it.
+    if (activeAlias.value !== alias || hierarchyArg() !== hier) return;
+    const labels = data?.labels || {};
+    // Cache every requested member, falling back to its own key when the alias
+    // value is blank, so we never refetch the same members in a tight loop.
+    for (const m of want) aliasLabels[m] = labels[m] || m;
+  } catch {
+    // Network / TM1 error — keep principal names; do not poison the cache.
+  }
 }
 
 function onAliasChange(value) {
-  activeAlias.value = value || '';
+  // Map the non-empty sentinel back to '' (= principal names) — see PRINCIPAL_SENTINEL.
+  activeAlias.value = value === PRINCIPAL_SENTINEL ? '' : value || '';
   if (activeAlias.value) {
     // Refresh labels for everything currently visible + in the set.
     const visible = order.value.map((p) => nodes[p]?.member).filter(Boolean);

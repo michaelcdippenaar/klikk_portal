@@ -73,6 +73,7 @@ export const API_ENDPOINTS = {
   PA_TM1_SUBSETS: '/api/planning-analytics/tm1/subsets/',
   PA_TM1_SUBSET_MEMBERS: '/api/planning-analytics/tm1/subset-members/',
   PA_TM1_DIMENSION_ALIASES: '/api/planning-analytics/tm1/dimension-aliases/',
+  PA_TM1_ELEMENT_LABELS: '/api/planning-analytics/tm1/element-labels/',
   PA_TM1_QUERY: '/api/planning-analytics/tm1/query/',
   PA_COST_CUT: '/api/planning-analytics/cost-cut/',
   PA_COST_BEHAVIOUR: '/api/planning-analytics/cost-behaviour/',

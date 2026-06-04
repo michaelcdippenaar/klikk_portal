@@ -54,7 +54,12 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-// ── Mock the network boundary — the six TM1 HTTP functions SetEditor imports ──
+// ── Mock the network boundary — the TM1 HTTP functions SetEditor imports ──────
+// getTm1ElementLabels is the alias-relabel endpoint added with the fix: when an
+// alias is active, ensureAliasLabels() reads member principal name → alias value
+// from it and fills the reactive aliasLabels map. It MUST be in the mock (the
+// real fn batches HTTP GETs); without it the import is undefined and the editor
+// throws the moment an alias is chosen.
 vi.mock('../../../api/planningAnalytics', () => ({
   getTm1DimensionHierarchies: vi.fn(),
   getTm1DimensionElements: vi.fn(),
@@ -62,6 +67,7 @@ vi.mock('../../../api/planningAnalytics', () => ({
   getTm1Subsets: vi.fn(),
   getTm1SubsetMembers: vi.fn(),
   getTm1DimensionAliases: vi.fn(),
+  getTm1ElementLabels: vi.fn(),
 }));
 
 import SetEditor from '../SetEditor.vue';
@@ -74,6 +80,7 @@ import {
   getTm1Subsets,
   getTm1SubsetMembers,
   getTm1DimensionAliases,
+  getTm1ElementLabels,
 } from '../../../api/planningAnalytics';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -203,7 +210,20 @@ function installMocks() {
     SUBSET_MEMBERS[subset] || { subset, dynamic: false, members: [], truncated: false }
   ));
   getTm1DimensionAliases.mockResolvedValue({ dimension: 'account', aliases: ['name'] });
+  // Default alias-relabel: resolve to NO labels, so the editor falls back to
+  // principal names (labelFor(m) === m). Tests that exercise relabelling override
+  // this with mockResolvedValueOnce / a member→label map (see ALIAS_LABELS).
+  getTm1ElementLabels.mockResolvedValue({ labels: {} });
 }
+
+// A realistic alias-label map for the 'name' alias: a couple of principal names
+// resolve to human display labels (the rest fall back to their own key, exactly
+// as a real TM1 }ElementAttributes lookup with sparse alias values behaves).
+const ALIAS_LABELS = {
+  EXPENSE: 'Operating Expenses',
+  REVENUE: 'Total Revenue',
+  Rent: 'Premises Rent',
+};
 
 // ── Mount helper ─────────────────────────────────────────────────────────────
 // SetEditor's whole body teleports to <body> (Reka DialogPortal). attachTo:
@@ -258,6 +278,16 @@ function treeRow(name) {
   return treeRows().find((li) => li.querySelector('.kcheckbox-label')?.textContent.trim() === name);
 }
 
+// The set of PRINCIPAL names still surfaced on tree rows (the .se-tree__principal
+// span renders ONLY when the display label differs from the principal name, i.e.
+// when an alias has relabelled the row — so this proves the principal name is
+// still reachable after a relabel, per the design).
+function treePrincipals() {
+  return treeRows()
+    .map((li) => li.querySelector('.se-tree__principal')?.textContent.trim())
+    .filter(Boolean);
+}
+
 // Rows of the SET (right pane), real <li class="se-set__row">, in order.
 function setRows() {
   return [...D().querySelectorAll('.se-set__row')];
@@ -266,6 +296,13 @@ function setRows() {
 // The visible label text of each set row, in order.
 function setLabels() {
   return setRows().map((li) => li.querySelector('.se-set__label')?.textContent.trim());
+}
+
+// The `title` attr of each set row label, in order. When a row is relabelled the
+// editor sets title="Principal name: <member>" so the principal name stays
+// discoverable on hover — we assert it carries the principal after a relabel.
+function setLabelTitles() {
+  return setRows().map((li) => li.querySelector('.se-set__label')?.getAttribute('title') || '');
 }
 
 // The twisty (expand/collapse) button inside a tree row, or undefined for a leaf.
@@ -342,20 +379,22 @@ function selectByLabel(wrapper, labelText) {
     .find((s) => s.props('label') === labelText);
 }
 
-// ── KNOWN BUG containment (see report: BUG-1) ────────────────────────────────
-// SetEditor's alias picker feeds KSelect an option { value: '', label:
-// '(principal name)' }. KSelect renders <SelectItem :value="String(opt.value)">
+// ── Reka empty-string SelectItem guard (now a SAFETY NET, not a known bug) ────
+// History: the alias picker used to feed KSelect an option { value: '', label:
+// '(principal name)' }; KSelect renders <SelectItem :value="String(opt.value)">
 // → '' → Reka's SelectItem THROWS "A <SelectItem /> must have a value prop that
-// is not an empty string." Reka mounts the Select content eagerly under happy-dom,
-// so this surfaces as an async UNHANDLED REJECTION on every mount, unrelated to
-// what each test asserts. We capture ONLY that specific Reka rejection so it does
-// not pollute the run — the defect itself is asserted explicitly in the
-// "alias picker" describe block (and routed to the author in the report). Any
-// OTHER unhandled rejection is re-thrown so we never silently swallow a real one.
+// is not an empty string", which surfaced as an async unhandled rejection on
+// every mount. The fix replaced the empty value with the PRINCIPAL_SENTINEL
+// ('__principal__'), so this rejection should NO LONGER fire — the alias picker
+// describe block now asserts the FIX (non-empty sentinel, selectable). We keep
+// the matcher as a defensive net: if the empty-string regression ever returns it
+// is swallowed here only to keep the run readable, but the sentinel assertions
+// below would already be RED. Every OTHER unhandled rejection is re-thrown so we
+// never silently swallow a real one.
 const REKA_EMPTY_VALUE = 'must have a value prop that is not an empty string';
 function onUnhandled(err) {
   const msg = (err && (err.message || String(err))) || '';
-  if (msg.includes(REKA_EMPTY_VALUE)) return; // known BUG-1, asserted below
+  if (msg.includes(REKA_EMPTY_VALUE)) return; // regression net (see note above)
   throw err;
 }
 beforeAll(() => {
@@ -702,10 +741,12 @@ describe('SetEditor — hierarchy switch', () => {
 
     // P2-E: switching hierarchy PRUNES set members not present in the new
     // hierarchy, so Apply never ships members invalid for the active hierarchy.
-    // 'EXPENSE' exists only in the default account hierarchy (EBITDA's topology is
-    // EBIT/DA/…), so it is dropped on the switch — the set is not polluted AND not
-    // left holding cross-hierarchy members.
-    expect(setLabels()).toEqual([]);
+    // 'EXPENSE' exists only in the default account hierarchy → DROPPED. 'Rent'
+    // exists in EBITDA too → KEPT. So the set is neither polluted nor blanket-
+    // cleared: exactly the cross-hierarchy member survives.
+    expect(setLabels()).toEqual(['Rent']);
+    // And the drop is surfaced to the user (the "Dropped N member…" tree note).
+    expect(D().textContent).toMatch(/Dropped 1 member/i);
   });
 });
 
@@ -758,50 +799,307 @@ describe('SetEditor — apply', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 9 — Alias picker switches requested labelling without changing principal names
+// 9 — Alias picker: relabels BOTH panes (display only) while the EMITTED members
+//      stay principal names. Covers the fix: non-empty sentinel + ensureAliasLabels.
 // ════════════════════════════════════════════════════════════════════════════
 describe('SetEditor — alias picker (display only)', () => {
-  it('choosing an alias requests its labelling but the EMITTED members stay principal names (v1 seam)', async () => {
+  // REALIGNED from the obsolete "v1 seam" test. The v1 premise (choosing an alias
+  // is a no-op because there's no label endpoint) is dead: ensureAliasLabels now
+  // calls getTm1ElementLabels and relabels the rows reactively. We assert the
+  // relabel happens AND keep the load-bearing guarantee — Apply ships PRINCIPAL
+  // names regardless of the active alias (the alias is display-only).
+  it('choosing an alias relabels the rows but the EMITTED members stay principal names', async () => {
+    getTm1ElementLabels.mockResolvedValue({ alias: 'name', labels: ALIAS_LABELS });
     const wrapper = await mountEditor({ members: ['EXPENSE', 'REVENUE'] });
 
     const aliasPicker = selectByLabel(wrapper, 'Display label');
     expect(aliasPicker, 'alias picker renders').toBeTruthy();
-    // The alias options include the loaded alias ('name') plus the principal option.
+    // The alias options now lead with the NON-EMPTY principal sentinel (Reka
+    // rejects '' — see the sentinel test below), then the loaded alias ('name').
     const aliasValues = aliasPicker.props('options').map((o) => o.value);
-    expect(aliasValues).toEqual(['', 'name']);
+    expect(aliasValues).toEqual(['__principal__', 'name']);
 
-    // Switch the display label to the 'name' alias.
+    // Switch the display label to the 'name' alias → onAliasChange fires the
+    // relabel for everything visible + in the set.
     aliasPicker.vm.$emit('update:modelValue', 'name');
     await settle();
 
-    // DOCUMENTED v1 seam: the editor has no member→label map endpoint yet, so the
-    // rows STILL show principal names. The load-bearing guarantee is that the
-    // EMITTED members are principal names regardless of the active alias.
-    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']);
+    // The SET pane now shows the alias VALUES (not the principal names).
+    expect(setLabels()).toEqual(['Operating Expenses', 'Total Revenue']);
 
+    // The load-bearing guarantee: Apply still ships PRINCIPAL names — the alias is
+    // display only and must never leak into the emitted member list.
     await click(btnByText('Apply'));
     const payload = wrapper.emitted('apply')[0][0];
-    expect(payload.members).toEqual(['EXPENSE', 'REVENUE']); // principal names, not aliased
+    expect(payload.members).toEqual(['EXPENSE', 'REVENUE']); // principal, not aliased
   });
 
-  // ── BUG-1 (REAL defect, routed to author — see report) ─────────────────────
-  // The alias options lead with { value: '', label: '(principal name)' }. KSelect
-  // stringifies the value and hands '' to Reka's <SelectItem>, which THROWS
-  // "must have a value prop that is not an empty string". In the browser the
-  // alias dropdown errors the moment it opens, so the user cannot reset the label
-  // back to the principal name via this option. This test PINS the broken input
-  // contract so the fix is verifiable; it intentionally documents current (buggy)
-  // state, it does NOT bless it.
-  it('BUG-1: alias picker leads with an EMPTY-STRING option that Reka SelectItem rejects', async () => {
-    const wrapper = await mountEditor({ members: ['EXPENSE'] });
+  // REALIGNED from the obsolete "BUG-1 pins the empty-string option" test. The
+  // bug is fixed: the principal option uses a NON-EMPTY sentinel Reka accepts, and
+  // selecting it puts the editor back into principal-name mode.
+  it("alias picker's principal option uses a non-empty sentinel Reka accepts (and selecting it restores principal names)", async () => {
+    getTm1ElementLabels.mockResolvedValue({ alias: 'name', labels: ALIAS_LABELS });
+    const wrapper = await mountEditor({ members: ['EXPENSE', 'REVENUE'] });
     const aliasPicker = selectByLabel(wrapper, 'Display label');
+
+    // The lead option is the "(principal name)" entry — its value is the non-empty
+    // sentinel, which is exactly what KSelect hands to Reka's <SelectItem> as
+    // String(value). A non-empty string is renderable (the old '' threw).
     const first = aliasPicker.props('options')[0];
-    // The offending option: an empty-string value KSelect → Reka cannot render.
-    expect(first.value).toBe('');
-    // Reka's contract (the source of the thrown error) — asserted as the reason.
-    expect(String(first.value)).toBe(''); // === what KSelect passes to <SelectItem>
-    // A correct fix would use a non-empty sentinel (e.g. '__principal__') or rely
-    // on KSelect's `clearable` (emits null) instead of an empty-value option.
+    expect(first.label).toBe('(principal name)');
+    expect(first.value).toBe('__principal__');
+    expect(String(first.value)).not.toBe(''); // what KSelect passes to <SelectItem>
+
+    // Relabel via 'name', then pick the sentinel → the editor returns to
+    // principal-name mode and the rows revert to principal names.
+    aliasPicker.vm.$emit('update:modelValue', 'name');
+    await settle();
+    expect(setLabels()).toEqual(['Operating Expenses', 'Total Revenue']);
+
+    aliasPicker.vm.$emit('update:modelValue', '__principal__');
+    await settle();
+    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']); // back to principal names
+  });
+
+  it('relabels BOTH panes; the principal name stays discoverable; the sentinel reverts (clears aliasLabels)', async () => {
+    // Map a tree root + a leaf to alias values; REVENUE deliberately has NO alias
+    // value, proving sparse maps fall back to the principal key.
+    getTm1ElementLabels.mockResolvedValue({
+      alias: 'name',
+      labels: { EXPENSE: 'Operating Expenses', Rent: 'Premises Rent' },
+    });
+    const wrapper = await mountEditor({ members: ['EXPENSE', 'REVENUE'] });
+    await expand('EXPENSE'); // bring Rent (a leaf) into the tree so it can relabel
+
+    const aliasPicker = selectByLabel(wrapper, 'Display label');
+    aliasPicker.vm.$emit('update:modelValue', 'name');
+    await settle();
+
+    // TREE pane relabels: the EXPENSE row's checkbox label is now the alias value,
+    // and Rent's too; REVENUE (no alias value) keeps its principal name.
+    expect(treeLabels()).toEqual(
+      expect.arrayContaining(['Operating Expenses', 'Premises Rent', 'REVENUE']),
+    );
+    // …and the PRINCIPAL names of the relabelled rows are still reachable via the
+    // .se-tree__principal span (it renders only when label !== member).
+    expect(treePrincipals()).toEqual(expect.arrayContaining(['EXPENSE', 'Rent']));
+
+    // SET pane relabels too: EXPENSE → its alias value; REVENUE has no alias value
+    // in this map so it falls back to its principal name.
+    expect(setLabels()).toEqual(['Operating Expenses', 'REVENUE']);
+    // The relabelled set row keeps the principal name on its title for hover.
+    expect(setLabelTitles()).toContain('Principal name: EXPENSE');
+
+    // Pick the principal sentinel → aliasLabels is cleared, so EVERY label reverts
+    // to its principal key in BOTH panes (observable proof the map was emptied).
+    aliasPicker.vm.$emit('update:modelValue', '__principal__');
+    await settle();
+    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']);
+    expect(treeLabels()).toEqual(
+      expect.arrayContaining(['EXPENSE', 'Rent', 'REVENUE']),
+    );
+    // With no alias active, no row differs from its principal → no principal spans.
+    expect(treePrincipals()).toEqual([]);
+  });
+
+  it('onAliasChange maps the sentinel to principal-name mode (no relabel call); a real alias calls getTm1ElementLabels with the right args', async () => {
+    getTm1ElementLabels.mockResolvedValue({ alias: 'name', labels: ALIAS_LABELS });
+    const wrapper = await mountEditor({ members: ['EXPENSE', 'REVENUE'] });
+    const aliasPicker = selectByLabel(wrapper, 'Display label');
+
+    // Emitting the sentinel → principal-name mode. The else-branch of onAliasChange
+    // clears labels and never calls the label endpoint.
+    getTm1ElementLabels.mockClear();
+    aliasPicker.vm.$emit('update:modelValue', '__principal__');
+    await settle();
+    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']); // unchanged — principal mode
+    expect(getTm1ElementLabels).not.toHaveBeenCalled();
+
+    // Emitting a REAL alias → ensureAliasLabels calls the endpoint with the active
+    // dimension, the alias, the members to label, and the (default) hierarchy arg.
+    getTm1ElementLabels.mockClear();
+    aliasPicker.vm.$emit('update:modelValue', 'name');
+    await settle();
+    expect(getTm1ElementLabels).toHaveBeenCalledWith(
+      'account',
+      'name',
+      expect.arrayContaining(['EXPENSE', 'REVENUE']),
+      null, // default hierarchy → null arg
+    );
+  });
+
+  it('mid-flight guard: switching back to principal before the labels resolve does NOT apply the late labels', async () => {
+    // A DEFERRED label promise we resolve by hand, so we can interleave a second
+    // alias change before it lands.
+    let resolveLabels;
+    const deferred = new Promise((res) => {
+      resolveLabels = res;
+    });
+    getTm1ElementLabels.mockReturnValueOnce(deferred);
+
+    const wrapper = await mountEditor({ members: ['EXPENSE', 'REVENUE'] });
+    const aliasPicker = selectByLabel(wrapper, 'Display label');
+
+    // Choose 'name' → ensureAliasLabels is awaiting the deferred promise.
+    aliasPicker.vm.$emit('update:modelValue', 'name');
+    await settle();
+    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']); // not landed yet
+
+    // Switch back to principal BEFORE the labels resolve (activeAlias → '').
+    aliasPicker.vm.$emit('update:modelValue', '__principal__');
+    await settle();
+
+    // Now the late labels arrive — the in-flight guard (activeAlias !== alias)
+    // must DISCARD them: the rows stay principal, not relabelled to the alias.
+    resolveLabels({ alias: 'name', labels: ALIAS_LABELS });
+    await settle();
+    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']); // late labels discarded
+  });
+
+  it('error path: a rejected label fetch keeps principal names (no throw) and does not poison the cache', async () => {
+    // First alias activation rejects → rows must stay principal, no unhandled throw.
+    getTm1ElementLabels.mockRejectedValueOnce(new Error('TM1 element-labels 503'));
+    const wrapper = await mountEditor({ members: ['EXPENSE', 'REVENUE'] });
+    const aliasPicker = selectByLabel(wrapper, 'Display label');
+
+    aliasPicker.vm.$emit('update:modelValue', 'name');
+    await settle();
+    expect(setLabels()).toEqual(['EXPENSE', 'REVENUE']); // error swallowed → principal
+
+    // The cache wasn't poisoned: switch back to principal, then re-pick 'name' with
+    // a now-succeeding endpoint → the relabel resolves (the failed members weren't
+    // cached to their principal key, so the retry actually fetches + relabels).
+    aliasPicker.vm.$emit('update:modelValue', '__principal__');
+    await settle();
+    getTm1ElementLabels.mockResolvedValueOnce({ alias: 'name', labels: ALIAS_LABELS });
+    aliasPicker.vm.$emit('update:modelValue', 'name');
+    await settle();
+    expect(setLabels()).toEqual(['Operating Expenses', 'Total Revenue']);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 9b — Metadata memo (_metaCache): loaders hit the API once per (dim,hier) per
+//      session, across dialog reopens and hierarchy toggle-backs.
+// ════════════════════════════════════════════════════════════════════════════
+// _metaCache is MODULE-LEVEL in SetEditor.vue → it persists across mounts within
+// this file run and is NOT resettable from the test (no exported reset). The
+// `account` dim used by every other test warms its cache early, so a call-count
+// assertion there would be meaningless. We therefore measure against a FRESH
+// dimension ('project') that NO other test touches, keeping its cache cold until
+// this block runs. We also drive reopen via a real modelValue toggle on the SAME
+// wrapper (the open watcher fires on false→true) — remounting a new instance would
+// NOT re-run openFor, because the module-level lastSeededDim guard suppresses the
+// mount-time seed once the dim has been seen.
+describe('SetEditor — metadata memo (_metaCache)', () => {
+  // Project-scoped mocks: a default hierarchy + one alternate, distinct topology.
+  function installProjectMocks() {
+    getTm1DimensionHierarchies.mockResolvedValue({
+      dimension: 'project',
+      default: 'project',
+      hierarchies: [
+        { name: 'project', is_default: true },
+        { name: 'PHASE', is_default: false },
+      ],
+      has_alternates: true,
+    });
+    getTm1DimensionElements.mockImplementation(async (dimension, hierarchy = null) => {
+      if (hierarchy === 'PHASE') {
+        return { dimension, elements: [{ name: 'Phase1', type: 'C' }, { name: 'Task_P', type: 'N' }] };
+      }
+      return { dimension, elements: [{ name: 'Alpha', type: 'C' }, { name: 'Beta', type: 'N' }] };
+    });
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent) => {
+      if (parent === 'Alpha') return { dimension, parent, children: [{ name: 'Beta', type: 'N' }] };
+      if (parent === 'Phase1') return { dimension, parent, children: [{ name: 'Task_P', type: 'N' }] };
+      return { dimension, parent, children: [] };
+    });
+    getTm1Subsets.mockImplementation(async (dimension, hierarchy = null) => (
+      hierarchy === 'PHASE'
+        ? { subsets: [{ name: 'phase_set', dynamic: false }] }
+        : { subsets: [{ name: 'proj_set', dynamic: false }] }
+    ));
+    getTm1DimensionAliases.mockResolvedValue({ dimension: 'project', aliases: ['name'] });
+  }
+
+  it('reopening the SAME dimension+hierarchy serves metadata from the cache (each loader called once across both opens)', async () => {
+    installProjectMocks();
+    const wrapper = await mountEditor({ dimension: 'project', members: ['Alpha'] });
+
+    // First open hit each loader exactly once for project::default.
+    expect(getTm1DimensionHierarchies).toHaveBeenCalledTimes(1);
+    expect(getTm1DimensionElements).toHaveBeenCalledTimes(1);
+    expect(getTm1Subsets).toHaveBeenCalledTimes(1);
+    expect(getTm1DimensionAliases).toHaveBeenCalledTimes(1);
+
+    // Close (the open watcher will re-fire on the next open), then reopen the SAME
+    // dim+hierarchy. The reopen must serve everything from _metaCache → NO new calls.
+    wrapper.setProps({ modelValue: false });
+    await settle();
+    wrapper.setProps({ modelValue: true });
+    await settle();
+
+    // Still exactly once each — the reopen was fully cache-served.
+    expect(getTm1DimensionHierarchies).toHaveBeenCalledTimes(1);
+    expect(getTm1DimensionElements).toHaveBeenCalledTimes(1);
+    expect(getTm1Subsets).toHaveBeenCalledTimes(1);
+    expect(getTm1DimensionAliases).toHaveBeenCalledTimes(1);
+
+    // The dialog still rendered its tree from the cached metadata.
+    expect(treeLabels()).toEqual(expect.arrayContaining(['Alpha']));
+  });
+
+  it('toggling to an alternate hierarchy and back does NOT refetch the default (cache hit on return)', async () => {
+    installProjectMocks();
+    // Use a SECOND fresh dim so the warm project::default cache from the previous
+    // test does not mask this assertion (this dim starts cold).
+    getTm1DimensionHierarchies.mockResolvedValue({
+      dimension: 'product',
+      default: 'product',
+      hierarchies: [
+        { name: 'product', is_default: true },
+        { name: 'LINE', is_default: false },
+      ],
+      has_alternates: true,
+    });
+    getTm1DimensionElements.mockImplementation(async (dimension, hierarchy = null) => (
+      hierarchy === 'LINE'
+        ? { dimension, elements: [{ name: 'Line1', type: 'C' }] }
+        : { dimension, elements: [{ name: 'Prod1', type: 'C' }] }
+    ));
+    getTm1DimensionChildren.mockResolvedValue({ children: [] });
+    getTm1Subsets.mockImplementation(async (dimension, hierarchy = null) => (
+      hierarchy === 'LINE'
+        ? { subsets: [{ name: 'line_set', dynamic: false }] }
+        : { subsets: [{ name: 'prod_set', dynamic: false }] }
+    ));
+    getTm1DimensionAliases.mockResolvedValue({ dimension: 'product', aliases: ['name'] });
+
+    const wrapper = await mountEditor({ dimension: 'product' });
+    const hierPicker = selectByLabel(wrapper, 'Hierarchy');
+    expect(hierPicker).toBeTruthy();
+
+    // Switch to the alternate (cold → fetches LINE-scoped metadata).
+    hierPicker.vm.$emit('update:modelValue', 'LINE');
+    await settle();
+    expect(getTm1DimensionElements).toHaveBeenCalledWith('product', 'LINE');
+
+    // Clear the spies right before the round-trip BACK to default, so we measure
+    // ONLY the return. product::default is already warm from the initial open.
+    getTm1DimensionElements.mockClear();
+    getTm1Subsets.mockClear();
+    getTm1DimensionAliases.mockClear();
+
+    hierPicker.vm.$emit('update:modelValue', 'product'); // back to the default
+    await settle();
+
+    // The return to default served from cache → none of the loaders fired again.
+    expect(getTm1DimensionElements).not.toHaveBeenCalled();
+    expect(getTm1Subsets).not.toHaveBeenCalled();
+    expect(getTm1DimensionAliases).not.toHaveBeenCalled();
+
+    // And the default topology is back on screen (proving the cache served it).
+    expect(treeLabels()).toEqual(expect.arrayContaining(['Prod1']));
   });
 });
 
@@ -828,11 +1126,27 @@ describe('SetEditor — cancel', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// MUTATION VERIFICATION — flip the load-bearing logic and confirm a test catches
-// it. These are NOT left enabled; each mutates a CLONE behaviour locally to prove
-// the assertions above are not vacuous. (Documented in the report.)
+// MUTATION VERIFICATION (performed out-of-band — documented, not left in source)
 // ════════════════════════════════════════════════════════════════════════════
-// NOTE: we cannot edit the component (test-authorship split), so mutation-verify
-// is performed by an INVERTED-EXPECTATION probe: re-running the load-bearing
-// scenario and asserting the WRONG outcome would NOT hold. See the report for the
-// three mutations checked manually against the source.
+// Per the author≠tester doctrine the tester may not SHIP a source change, but the
+// load-bearing mechanisms here were proven non-vacuous by temporarily breaking
+// SetEditor.vue in a throwaway working copy, confirming a RED test, then reverting
+// (git diff --stat must show SetEditor.vue unchanged). Mechanisms → catcher:
+//
+//   (a) onAliasChange sentinel mapping — change the sentinel branch so the sentinel
+//       is NOT mapped back to '' (treat it as a real alias). Caught by:
+//       "alias picker's principal option uses a non-empty sentinel … restores
+//       principal names" and "onAliasChange maps the sentinel to principal-name
+//       mode" (rows fail to revert to principal names).
+//
+//   (b) ensureAliasLabels filling aliasLabels — early-return / no-op the function so
+//       it never writes aliasLabels. Caught by:
+//       "choosing an alias relabels the rows …" and "relabels BOTH panes …"
+//       (setLabels() stays principal, expected the alias values).
+//
+//   (c) the _metaCache.tree memo — bypass the tree-cache read (always re-fetch).
+//       Caught by: "reopening the SAME dimension+hierarchy serves metadata from the
+//       cache" and "toggling to an alternate hierarchy and back …" (the once-only /
+//       no-refetch call-count assertions go RED).
+//
+// See the returned report for the exact RED output captured for each.
