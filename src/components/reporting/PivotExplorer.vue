@@ -453,7 +453,7 @@
         >
           <table
             class="pivot-grid"
-            :aria-label="`${cube} pivot — ${displayRows.length} rows by ${displayColHeaders.length} columns`"
+            :aria-label="`${cube} pivot — ${isCapped ? `showing first ${renderRows.length.toLocaleString()} of ${displayRows.length.toLocaleString()}` : displayRows.length.toLocaleString()} rows by ${displayColHeaders.length} columns`"
           >
             <thead>
               <!-- NESTED COLUMN-HEADER BAND: one <tr> per column dimension
