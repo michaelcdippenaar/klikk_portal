@@ -688,12 +688,12 @@
         <span v-if="gridSizeLabel" class="pivot-footer__size">{{ gridSizeLabel }}</span>
 
         <button
-          v-if="hasExpansions"
+          v-if="hasExpansions || collapsedRowKeys.size"
           type="button"
           class="pivot-footer__reset"
           @click="resetToDefault"
         >
-          Collapse all
+          Reset view
         </button>
 
         <div class="pivot-footer__spacer" />
@@ -1495,7 +1495,9 @@ const gridRows = computed(() => {
         label: member,
         level: L,
         drillable: false,
-        expanded: !collapsed, // "showing children beneath" — excludes from totals.
+        expanded: !collapsed, // display-only, drives nothing today. NOT the totals
+        // signal — totalRows excludes parents via `!r.isOuterParent`; never filter
+        // totals on `.expanded` alone or collapsed parents would double-count.
         drillKey: null,
         path: null,
         isOuterParent: true,
