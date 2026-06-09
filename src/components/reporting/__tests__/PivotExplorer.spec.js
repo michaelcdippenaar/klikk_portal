@@ -2803,6 +2803,481 @@ describe('PivotExplorer — alias display (UUID → human name)', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// FIRST-CLASS PER-DIMENSION ALIAS SELECTOR — INDEPENDENT-TESTER DEEP COVERAGE
+// (author≠tester, 2026-05-26 doctrine; feature committed ea472f3).
+//
+// The author's `alias display` block above proves the relabel/MDX-invariant
+// MECHANICS with a SINGLE-alias world (account → `name`; entity → `name`). This
+// block locks the seams the brief flags as NOT yet covered there, on the REALISTIC
+// MULTI-alias shape: a `name`+`code` `entity` dim whose principals are UUIDs.
+//
+//   • Discoverability of the inline "· <label> ▾" control on ALL THREE surfaces in
+//     ONE realistic layout: a FILTER pill, a ROW chip, AND a NESTED COLUMN chip —
+//     and its ABSENCE for a dim with no aliases (month).
+//   • A 3-item menu (`principal name` / `name` / `code`), the ACTIVE one checked.
+//   • A live relabel through ALL THREE display states (code / name / principal →
+//     codes / human names / UUIDs) with the runTm1Query PAYLOAD *and* the "Show
+//     MDX" text BYTE-IDENTICAL across all three (display-only, never in the query).
+//   • Single-open across surfaces: opening one dim's alias menu closes another's
+//     (the shared `openAliasMenu` keyed ref).
+//   • KMenu controlled-open round-trip (Reka doctrine #43) + the full
+//     open→select→close cycle through the REAL rendered menu.
+//
+// Bar (per the KTable incident): MOUNT the REAL consumer (PivotExplorer + its real
+// PivotAxisChip + real KMenu/KMenuItem), feed the REALISTIC shapes (UUID
+// principals; `name`+`code` aliases), mock ONLY the network boundary, assert
+// OBSERVABLE DOM (rendered member text, teleported menu items, the captured query
+// payload). Stable classes / aria / text selectors only.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — alias selector (per-dim, multi-alias entity) [independent tester]', () => {
+  // entity has a top CONSOLIDATION (so on Rows/Cols its members are the two child
+  // UUIDs — a realistic "two companies" shape) and TWO display aliases: `name`
+  // (human company name) + `code` (a short ledger code). The consolidation root is
+  // NOT `All_`/`Total`-prefixed so topElement() picks it as the top WITHOUT it
+  // being mistaken for a grand-total bucket — the children below are the seed.
+  const ENTITY_ROOT = 'ENT_GROUP';
+  const UUID_A = '41ebfa0e-7c2b-4f1a-9d3e-2a6b8c0d1e2f';
+  const UUID_B = '9f2c1d77-5b3a-4e08-8c6d-1a2b3c4d5e6f';
+
+  // entity principal UUID → its `name`-alias label (the human company name).
+  const ENTITY_NAME = { [UUID_A]: 'Klikk (Pty) Ltd', [UUID_B]: 'Tremly Holdings' };
+  // entity principal UUID → its `code`-alias label (a short ledger code).
+  const ENTITY_CODE = { [UUID_A]: 'KLK', [UUID_B]: 'TRM' };
+  // account principal → its `name`-alias label (reused so account's auto-default to
+  // `name` resolves cleanly and never surfaces a raw key under that alias).
+  const ACCOUNT_NAME = {
+    EXPENSE: 'kl_400_Operating Expenses',
+    COGS: 'kl_500_Cost of Sales',
+    Rent: 'kl_410_Rent Paid',
+    Salaries: 'kl_420_Salaries & Wages',
+    Materials: 'kl_510_Raw Materials',
+    All_Account: 'kl_000_All Accounts',
+  };
+
+  // entity principal → a NON-ZERO scalar. The shared buildQueryResponse only knows
+  // account/year values (entity → 0), and Suppress-zeros is ON by default — so an
+  // all-zero entity row would be SUPPRESSED and the grid would render empty. Real
+  // companies carry balances; we give each entity member a distinct non-zero value
+  // so the entity-on-rows tests render their rows (and the relabel is observable).
+  const ENTITY_VALUE = { [ENTITY_ROOT]: 900, [UUID_A]: 500, [UUID_B]: 400 };
+
+  // Layer the entity dim onto the shared cube: its element list (root C + two UUID
+  // leaves) and its children (root → the two UUIDs). month/account/measure fall
+  // through to the base cube mocks unchanged.
+  function installEntityDim() {
+    const baseElements = getTm1DimensionElements.getMockImplementation();
+    getTm1DimensionElements.mockImplementation(async (dimension, hier) => {
+      if (dimension === 'entity') {
+        return {
+          elements: [
+            { name: ENTITY_ROOT, type: 'C' },
+            { name: UUID_A, type: 'N' },
+            { name: UUID_B, type: 'N' },
+          ],
+        };
+      }
+      return baseElements(dimension, hier);
+    });
+    const baseChildren = getTm1DimensionChildren.getMockImplementation();
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent, hier) => {
+      if (dimension === 'entity') {
+        return parent === ENTITY_ROOT
+          ? { children: [{ name: UUID_A, type: 'N' }, { name: UUID_B, type: 'N' }] }
+          : { children: [] };
+      }
+      return baseChildren(dimension, parent, hier);
+    });
+  }
+
+  // entity advertises `name`+`code`; account advertises `name`; month NONE — so the
+  // "dim WITHOUT aliases → no inline control" arm (month) is observable, and entity
+  // is the multi-alias dim the menu-contents / 3-state-relabel tests drive.
+  function installMultiAliasLists() {
+    getTm1DimensionAliases.mockImplementation(async (dimension) => {
+      if (dimension === 'entity') return { dimension, aliases: ['name', 'code'] };
+      if (dimension === 'account') return { dimension, aliases: ['name'] };
+      return { dimension, aliases: [] };
+    });
+  }
+
+  // The label resolver for this world. Returns ONLY the requested members (mirrors
+  // the real per-shown-member fetch) and answers per (dimension, alias): entity
+  // resolves `name`→ENTITY_NAME / `code`→ENTITY_CODE; account resolves `name`.
+  function installMultiLabelMap() {
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      const table =
+        dimension === 'entity'
+          ? alias === 'code'
+            ? ENTITY_CODE
+            : ENTITY_NAME
+          : dimension === 'account'
+            ? ACCOUNT_NAME
+            : {};
+      const labels = {};
+      for (const m of elements || Object.keys(table)) {
+        if (table[m] != null) labels[m] = table[m];
+      }
+      return { dimension, alias, labels };
+    });
+  }
+
+  // Entity-aware query: start from the shared single/multi-dim builder, then OVER-
+  // WRITE the cells of any ENTITY row/col occurrence with the entity member's
+  // non-zero scalar (whole value in Jul, 0 elsewhere — matching the suite's clean-
+  // arithmetic convention) so entity rows survive Suppress-zeros and render. The
+  // payload/MDX SHAPE is untouched (principal keys only) — this changes VALUES,
+  // never the axis members — so the display-only invariant assertions stay valid.
+  function buildEntityAwareResponse(payload) {
+    const resp = buildQueryResponse(payload);
+    const colMembers = (payload.cols?.[0]?.members || []).slice();
+    const julIdx = colMembers.indexOf('Jul');
+    const rowDimNames = (payload.rows || []).map((r) => r.dimension);
+    const entityRowPos = rowDimNames.indexOf('entity');
+    if (entityRowPos === -1) return resp; // entity not on rows → nothing to patch.
+    for (const row of resp.rows) {
+      const entityMember = row.members[entityRowPos];
+      const scalar = ENTITY_VALUE[entityMember];
+      if (scalar == null) continue;
+      row.cells = colMembers.map((cm, i) => ({
+        value: i === julIdx ? scalar : 0,
+        formatted: null,
+      }));
+    }
+    return resp;
+  }
+
+  // Wire the four mocks for a given dimension layout, then mount body-attached so
+  // the teleported KMenu items render + are clickable under happy-dom. runTm1Query
+  // is the entity-aware builder so an entity-on-rows layout renders non-zero rows.
+  async function mountAliasPivot(dimensions) {
+    installCubeMocks({ dimensions });
+    installEntityDim();
+    installMultiAliasLists();
+    installMultiLabelMap();
+    runTm1Query.mockImplementation(async (payload) => buildEntityAwareResponse(payload));
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    return wrapper;
+  }
+
+  // The teleported menu item (in <body>) whose trimmed text === label.
+  function bodyMenuItem(label) {
+    return [...document.body.querySelectorAll('.km-item')].find(
+      (el) => el.textContent.trim() === label,
+    );
+  }
+
+  // EVERY teleported menu item's trimmed text, in DOM order (to assert exact
+  // contents — `principal name` + each alias, nothing else).
+  function bodyMenuLabels() {
+    return [...document.body.querySelectorAll('.km-item')].map((el) => el.textContent.trim());
+  }
+
+  // The filter pill's rendered MEMBER text for a dim (displayMember output).
+  function pillMemberText(wrapper, dim) {
+    const pill = wrapper
+      .findAll('.pivot-pill')
+      .find((p) => (p.attributes('aria-label') || '').startsWith(`${dim}:`));
+    return pill ? pill.find('.pivot-pill__member') : undefined;
+  }
+
+  // The account ROW chip (account auto-goes to Rows under /account/).
+  function accountRowChip(wrapper) {
+    return wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+  }
+
+  // The entity chip on a given axis (after a placement), or undefined.
+  function entityChip(wrapper, axis) {
+    return wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === axis && c.props('dim') === 'entity');
+  }
+
+  // Put `entity` (a Filter pill) onto the Columns well via the proven drag WIRING
+  // (real grip + real role="group" cols zone + stubbed dataTransfer). After this
+  // colDims === [entity, month] → entity is a NESTED (outer) column chip.
+  async function dragEntityToCols(wrapper) {
+    const dt = makeDataTransfer('entity');
+    const colsWell = zone(wrapper, 'cols');
+    fireDrag(filterGrip(wrapper, 'entity').element, 'dragstart', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+  }
+
+  // ── 1 — DISCOVERABILITY across all three surfaces (+ absence for month) ───────
+  it('inline alias control renders on a FILTER pill, a ROW chip, AND a NESTED COLUMN chip for an aliased dim; ABSENT for a dim with no aliases (month)', async () => {
+    // Layout: account → Rows, month → Cols, entity + measure → Filters. entity is a
+    // Filter pill here; we then drag it to Cols to make it a nested column chip.
+    const wrapper = await mountAliasPivot(['account', 'entity', 'month', 'measure']);
+
+    // (a) FILTER PILL — entity carries the always-visible inline alias trigger
+    // (aria-label "Display label for entity: …"), showing its active alias inline.
+    // account auto-defaulted entity to `name` too (it has a `name` alias), so the
+    // inline label reads the active alias NAME ("name").
+    const entityAliasBtn = wrapper
+      .findAll('.pivot-pill__alias')
+      .find((b) => (b.attributes('aria-label') || '').startsWith('Display label for entity'));
+    expect(entityAliasBtn, 'entity FILTER pill has an inline alias control').toBeTruthy();
+    expect(entityAliasBtn.find('.pivot-pill__alias-name').text()).toBe('name');
+
+    // (b) ROW chip — account (a `name`-aliased dim) shows the inline control on its
+    // Rows chip.
+    const acct = accountRowChip(wrapper);
+    expect(acct, 'account row chip exists').toBeTruthy();
+    expect(acct.props('aliases')).toEqual(['name']);
+    expect(acct.find('.pivot-chip__alias').exists(), 'account row chip has inline control').toBe(true);
+    expect(acct.find('.pivot-chip__alias-name').text()).toBe('name');
+
+    // (c) The month COLUMN chip — month has NO aliases → NO inline control rendered.
+    const monthCol = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'cols' && c.props('dim') === 'month');
+    expect(monthCol, 'month is a column chip').toBeTruthy();
+    expect(monthCol.props('aliases')).toEqual([]);
+    expect(monthCol.find('.pivot-chip__alias').exists(), 'no inline control without aliases').toBe(false);
+
+    // (d) NESTED COLUMN chip — drag entity onto Cols → colDims [entity, month].
+    // entity is now an OUTER (nested) column chip and STILL carries the inline
+    // control (the affordance is per-dim, on every axis chip incl. nested cols).
+    await dragEntityToCols(wrapper);
+    expect(chipMap(wrapper)).toContain('cols:entity');
+    expect(chipMap(wrapper)).toContain('cols:month');
+    const entityCol = entityChip(wrapper, 'cols');
+    expect(entityCol, 'entity is now a nested column chip').toBeTruthy();
+    expect(entityCol.props('aliases')).toEqual(['name', 'code']);
+    expect(
+      entityCol.find('.pivot-chip__alias').exists(),
+      'nested column chip has inline alias control',
+    ).toBe(true);
+  });
+
+  // ── 2 — MENU CONTENTS: principal name + EVERY alias, active one checked ────────
+  it('opening the entity alias menu lists EXACTLY `principal name` + `name` + `code`, with the ACTIVE alias (name) carrying the check and the others not', async () => {
+    // entity on Rows so its chip's inline alias menu is the one under test. Layout
+    // [entity, month, measure]: month → Cols; entity → first Filter → promoted to
+    // Rows by the "guarantee a row dim" fallback. So entity is the Rows dim.
+    const wrapper = await mountAliasPivot(['entity', 'month', 'measure']);
+    expect(chipMap(wrapper)).toContain('rows:entity');
+
+    const entRow = entityChip(wrapper, 'rows');
+    expect(entRow, 'entity row chip exists').toBeTruthy();
+    // Auto-defaulted to `name` (it advertises a `name` alias).
+    expect(entRow.props('aliases')).toEqual(['name', 'code']);
+    expect(entRow.props('activeAlias')).toBe('name');
+
+    // Open the chip's inline alias menu via its REAL contract (the toggle-alias
+    // emit the inline KMenu fires). Items teleport into <body>.
+    entRow.vm.$emit('toggle-alias', true);
+    await settle();
+
+    // EXACTLY three items, in order: principal + every advertised alias. Nothing
+    // else (no move-menu items leaked in — this is the alias menu only).
+    expect(bodyMenuLabels()).toEqual(['principal name', 'name', 'code']);
+
+    // The ACTIVE alias (name) carries the check; principal + the inactive `code` do
+    // not. (KMenuItem renders .km-item__icon only when its `icon` prop is set, and
+    // the template sets icon="check" only on the active row.)
+    const principalItem = bodyMenuItem('principal name');
+    const nameItem = bodyMenuItem('name');
+    const codeItem = bodyMenuItem('code');
+    expect(nameItem.querySelector('.km-item__icon'), 'active alias (name) checked').toBeTruthy();
+    expect(principalItem.querySelector('.km-item__icon'), 'principal not checked').toBeFalsy();
+    expect(codeItem.querySelector('.km-item__icon'), 'inactive code not checked').toBeFalsy();
+  });
+
+  // ── 3 — LIVE RELABEL through ALL THREE states + DISPLAY-ONLY query invariant ──
+  it('selecting code/name/principal relabels the entity row members to codes/human names/UUIDs — while the runTm1Query payload AND the "Show MDX" text stay BYTE-IDENTICAL across all three (alias never reaches the query)', async () => {
+    // Make the MDX DEPEND on the requested members so any alias leak into the row
+    // axis would visibly change the MDX string (turning a silent leak into a hard
+    // failure). entity on Rows → its two UUID members are the row axis.
+    installCubeMocks({ dimensions: ['entity', 'month', 'measure'] });
+    installEntityDim();
+    installMultiAliasLists();
+    installMultiLabelMap();
+    runTm1Query.mockImplementation(async (payload) => {
+      // Entity-aware values (so the rows survive Suppress-zeros + render), with a
+      // member-DEPENDENT MDX so any alias leak into the row axis would change the
+      // MDX string (a silent leak → a hard failure).
+      const resp = buildEntityAwareResponse(payload);
+      const rowMembers = (payload.rows || []).flatMap((r) => r.members || []);
+      const colMembers = (payload.cols || []).flatMap((c) => c.members || []);
+      resp.mdx =
+        `SELECT {${colMembers.join(',')}} ON COLUMNS, ` +
+        `{${rowMembers.join(',')}} ON ROWS FROM [${payload.cube}]`;
+      return resp;
+    });
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    expect(chipMap(wrapper)).toContain('rows:entity');
+
+    // Open the "Show MDX" disclosure (semantic: the toggle button text).
+    const mdxToggle = wrapper
+      .findAll('button')
+      .find((b) => ['Show MDX', 'Hide MDX'].includes(b.text().trim()));
+    expect(mdxToggle, 'MDX disclosure toggle should render').toBeTruthy();
+    if (mdxToggle.text().trim() === 'Show MDX') {
+      await mdxToggle.trigger('click');
+      await settle();
+    }
+    const mdxText = () => wrapper.find('#pivot-mdx-body').text();
+
+    const entRow = entityChip(wrapper, 'rows');
+    // The entity row members the grid is showing are the two child UUIDs.
+    expect(entRow.props('aliases')).toEqual(['name', 'code']);
+
+    // ── STATE 1: `name` (auto-defaulted). Rows show the human company names. ──
+    expect(rowLabels(wrapper)).toEqual(
+      expect.arrayContaining(['Klikk (Pty) Ltd', 'Tremly Holdings']),
+    );
+    expect(rowLabels(wrapper)).not.toContain(UUID_A);
+    const payloadName = runTm1Query.mock.calls.at(-1)[0];
+    const mdxName = mdxText();
+    // The MDX carries the raw UUID principals even though the DISPLAY shows names.
+    expect(mdxName).toContain(UUID_A);
+    expect(mdxName).not.toContain('Klikk (Pty) Ltd');
+    const callsAfterName = runTm1Query.mock.calls.length;
+
+    // ── STATE 2: switch to `code` via the chip's REAL emit. Rows show the codes. ──
+    entRow.vm.$emit('alias', 'code');
+    await settle();
+    expect(rowLabels(wrapper)).toEqual(expect.arrayContaining(['KLK', 'TRM']));
+    expect(rowLabels(wrapper)).not.toContain('Klikk (Pty) Ltd');
+    expect(rowLabels(wrapper)).not.toContain(UUID_A);
+    // The alias flip issued NO new query (display-only).
+    expect(runTm1Query.mock.calls.length).toBe(callsAfterName);
+    const payloadCode = runTm1Query.mock.calls.at(-1)[0];
+    const mdxCode = mdxText();
+
+    // ── STATE 3: switch to principal. Rows revert to the raw UUIDs. ──
+    entRow.vm.$emit('alias', '');
+    await settle();
+    expect(rowLabels(wrapper)).toEqual(expect.arrayContaining([UUID_A, UUID_B]));
+    expect(rowLabels(wrapper)).not.toContain('KLK');
+    expect(rowLabels(wrapper)).not.toContain('Klikk (Pty) Ltd');
+    expect(runTm1Query.mock.calls.length).toBe(callsAfterName);
+    const payloadPrincipal = runTm1Query.mock.calls.at(-1)[0];
+    const mdxPrincipal = mdxText();
+
+    // ── THE INVARIANT: the alias is DISPLAY-ONLY. Across name / code / principal
+    // the LAST query payload AND the rendered MDX are BYTE-IDENTICAL — the display
+    // attribute never reached the query in ANY of the three states. (No query ran
+    // since name, so all three captured payloads are the SAME object; we still
+    // assert equality explicitly to lock the contract against future re-queries.)
+    expect(payloadCode).toEqual(payloadName);
+    expect(payloadPrincipal).toEqual(payloadName);
+    expect(mdxCode).toBe(mdxName);
+    expect(mdxPrincipal).toBe(mdxName);
+    // And specifically: the entity row axis carries the raw UUID PRINCIPALS in all
+    // three states (the principals never become names/codes in the query).
+    const entityAxisOf = (p) => p.rows.find((r) => r.dimension === 'entity').members;
+    expect(entityAxisOf(payloadName)).toEqual([UUID_A, UUID_B]);
+    expect(entityAxisOf(payloadCode)).toEqual([UUID_A, UUID_B]);
+    expect(entityAxisOf(payloadPrincipal)).toEqual([UUID_A, UUID_B]);
+  });
+
+  // ── 4 — SINGLE-OPEN across surfaces (the shared openAliasMenu keyed ref) ──────
+  it('single-open: opening the ENTITY filter pill alias menu, then opening the ACCOUNT row chip alias menu, CLOSES the entity one (only one alias menu floats at a time)', async () => {
+    // Layout with BOTH an entity FILTER pill AND an account ROW chip, each with its
+    // own inline alias control → two distinct keys in the shared openAliasMenu ref.
+    const wrapper = await mountAliasPivot(['account', 'entity', 'month', 'measure']);
+
+    // The entity pill's inline alias KMenu (trigger aria-label "Display label for
+    // entity: …") — open it (controlled) and confirm its items are in <body>.
+    const entityAliasMenu = wrapper
+      .findAllComponents(KMenu)
+      .find((m) => m.html().includes('Display label for entity'));
+    expect(entityAliasMenu, 'entity pill inline alias menu exists').toBeTruthy();
+    entityAliasMenu.vm.$emit('update:modelValue', true);
+    await settle();
+    // entity's menu is open: its `code` item (unique to entity, account has no code)
+    // is in the DOM.
+    expect(bodyMenuItem('code'), 'entity alias menu open (code item present)').toBeTruthy();
+    expect(entityAliasMenu.props('modelValue'), 'entity menu model is open').toBe(true);
+
+    // Now open the ACCOUNT row chip's alias menu (a DIFFERENT key).
+    const acct = accountRowChip(wrapper);
+    acct.vm.$emit('toggle-alias', true);
+    await settle();
+
+    // Single-open: the entity pill's menu is now CLOSED (its controlled model-value
+    // flipped to false because openAliasMenu moved to the account key), so entity's
+    // `code` item is GONE; the account menu (no `code`) is the one now open.
+    expect(entityAliasMenu.props('modelValue'), 'entity menu closed after account opened').toBe(false);
+    expect(bodyMenuItem('code'), 'entity-only code item gone — entity menu closed').toBeFalsy();
+    expect(acct.props('aliasOpen'), 'account chip alias menu now open').toBe(true);
+    // The account alias menu IS the open one (its principal/name items are present).
+    expect(bodyMenuItem('principal name'), 'account alias menu open').toBeTruthy();
+  });
+
+  // ── 5 — KMenu controlled-open ROUND-TRIP + full open→select→close cycle ───────
+  // Reka doctrine #43 JUDGEMENT: the inline alias control uses KMenu, whose
+  // `modelValue` is the OPEN-STATE of a teleported DropdownMenu OVERLAY (Reka
+  // DropdownMenu*), NOT a value-carrying primitive (a select's selected value / a
+  // toggle's domain boolean). It is the overlay-open-state class the suite already
+  // documents driving via controlled emit (KMenu/KPopover/KSelect) because Reka's
+  // internal trigger click does not fire under happy-dom. Per the scope grep that
+  // makes the v-model an OVERLAY OPEN-STATE binding — I judge KMenu's open binding
+  // a "controlled-overlay" round-trip rather than a value-primitive round-trip.
+  // BOTH are exercised here regardless: the controlled open via :model-value +
+  // re-emit on @update:model-value opens AND closes the real teleported menu, and
+  // the open→select→close cycle runs through the real rendered items.
+  it('KMenu round-trip: controlled :model-value opens the real teleported menu; @update:model-value(false) closes it; and an open→select→close cycle relabels then auto-closes', async () => {
+    const wrapper = await mountAliasPivot(['entity', 'month', 'measure']);
+    const entRow = entityChip(wrapper, 'rows');
+    expect(entRow, 'entity row chip exists').toBeTruthy();
+
+    // The chip's inline alias KMenu instance (the one whose trigger advertises the
+    // entity alias control). It is CONTROLLED (open driven by aliasOpen prop).
+    const aliasMenu = entRow
+      .findAllComponents(KMenu)
+      .find((m) => m.html().includes('Display label for entity'));
+    expect(aliasMenu, 'entity chip inline alias KMenu exists').toBeTruthy();
+
+    // CLOSED at rest → no menu items teleported.
+    expect(aliasMenu.props('modelValue')).toBe(false);
+    expect(bodyMenuItem('code')).toBeFalsy();
+
+    // CONTROLLED OPEN: parent drives openAliasMenu via the chip's toggle-alias emit
+    // → aliasMenu.modelValue flips true → Reka teleports the items into <body>.
+    entRow.vm.$emit('toggle-alias', true);
+    await settle();
+    expect(aliasMenu.props('modelValue'), 'menu opened (controlled)').toBe(true);
+    expect(bodyMenuItem('principal name'), 'items teleported on open').toBeTruthy();
+    expect(bodyMenuItem('code')).toBeTruthy();
+
+    // ROUND-TRIP CLOSE via the KMenu's OWN @update:model-value(false) (e.g. Esc /
+    // outside-click in production). The chip re-emits toggle-alias(false) → parent
+    // clears openAliasMenu → modelValue flips false → items un-teleport.
+    aliasMenu.vm.$emit('update:modelValue', false);
+    await settle();
+    expect(aliasMenu.props('modelValue'), 'menu closed (round-trip)').toBe(false);
+    expect(bodyMenuItem('code'), 'items un-teleported on close').toBeFalsy();
+
+    // FULL open→SELECT→close CYCLE through the REAL rendered menu: re-open, click
+    // the real `code` item → it relabels the rows to codes AND auto-closes the menu
+    // (chooseAlias clears openAliasMenu before/with setDimAlias).
+    expect(rowLabels(wrapper)).toEqual(
+      expect.arrayContaining(['Klikk (Pty) Ltd', 'Tremly Holdings']),
+    );
+    entRow.vm.$emit('toggle-alias', true);
+    await settle();
+    bodyMenuItem('code').dispatchEvent(new Event('click', { bubbles: true }));
+    await settle();
+    // Selecting relabelled the rows to codes…
+    expect(rowLabels(wrapper)).toEqual(expect.arrayContaining(['KLK', 'TRM']));
+    expect(entRow.props('activeAlias')).toBe('code');
+    // …and the menu auto-closed (single floating layer: openAliasMenu cleared).
+    expect(aliasMenu.props('modelValue'), 'menu auto-closed after select').toBe(false);
+    expect(bodyMenuItem('code'), 'menu closed — no items in body').toBeFalsy();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // NESTED COLUMNS — Step-1 SMOKE (feature-author minimal; the comprehensive
 // mount-based coverage is owned by the INDEPENDENT tester per the authorship
 // split). This locks ONLY that the nested-column band wires end-to-end: a real

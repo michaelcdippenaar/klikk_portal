@@ -50,10 +50,16 @@
             <span>Swap</span>
           </button>
 
+          <!-- Refresh runs/re-runs the query. While a fetch is in flight it is
+               REPLACED by Cancel (interim freeze-guard companion): Cancel aborts
+               the in-flight TM1 fetch, leaves the previous grid intact, and flips
+               back to Refresh. The render-freeze itself is handled by the row cap;
+               Cancel is purely for aborting a slow/large NETWORK fetch. -->
           <button
+            v-if="!running"
             type="button"
             class="pivot-toolbar__btn"
-            :disabled="!canRun || running"
+            :disabled="!canRun"
             @click="runQuery"
           >
             <svg
@@ -72,6 +78,32 @@
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
             <span>Refresh</span>
+          </button>
+
+          <button
+            v-else
+            type="button"
+            class="pivot-toolbar__btn pivot-toolbar__btn--cancel"
+            title="Cancel the in-flight TM1 query"
+            aria-label="Cancel the in-flight TM1 query"
+            @click="cancelQuery"
+          >
+            <svg
+              class="pivot-toolbar__btn-icon"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+            <span>Cancel</span>
           </button>
 
           <span v-if="running" class="pivot-toolbar__busy" role="status">
@@ -481,8 +513,12 @@
             </thead>
 
             <tbody>
+              <!-- INTERIM FREEZE-GUARD: iterate the CAPPED renderRows, never the
+                   full displayRows — capping the rendered body is what stops a
+                   wide view freezing the tab. Totals (tfoot below) still sum the
+                   full displayRows via colTotals / grandTotal. -->
               <tr
-                v-for="row in displayRows"
+                v-for="row in renderRows"
                 :key="row.key"
                 class="pivot-grid__row"
                 :class="{ 'pivot-grid__row--consol': row.drillable }"
@@ -586,6 +622,24 @@
         </div>
       </template>
 
+      <!-- INTERIM FREEZE-GUARD banner — shown ONLY when the surviving row set
+           exceeds MAX_RENDER_ROWS, i.e. the body was truncated. The totals footer
+           below still reflects the FULL set; this only tells the user the BODY is
+           capped and how to narrow it. Removed when virtualisation supersedes the
+           cap. role="status" so it's announced; aria-live polite (non-error). -->
+      <p
+        v-if="cube && result && isCapped"
+        class="pivot-banner pivot-banner--notice"
+        data-test="pivot-cap-banner"
+        role="status"
+        aria-live="polite"
+      >
+        Showing the first {{ MAX_RENDER_ROWS.toLocaleString() }} of
+        {{ displayRows.length.toLocaleString() }} rows — refine your selection
+        (drill in, filter, or turn on Suppress zeros), or wait for full
+        virtualisation.
+      </p>
+
       <!-- ════════════════════════════════════════════════════════════════════
            Footer — grid size + Show MDX disclosure (kept).
            ═════════════════════════════════════════════════════════════════ -->
@@ -680,6 +734,16 @@ import {
 const DEFAULT_CUBE = 'gl_src_trial_balance';
 const MAX_MEMBER_OPTIONS = 500; // cap the picker for very large dimensions.
 const INDENT_PX = 16; // per-level row-header indent (PAW exploration hallmark).
+
+// INTERIM FREEZE-GUARD — pending true row virtualisation (a separate,
+// architect-led build). The grid renders every cell synchronously, so a wide
+// view (hundreds of rows × 13+ cols) blocks the main thread and the tab goes
+// unresponsive. Until virtualisation lands we cap the number of rows actually
+// rendered to the DOM. The totals footer still sums the FULL surviving set
+// (see colTotals / grandTotal below) — only the rendered BODY is capped, never
+// the maths. Easy to tune: bump this one constant. Remove when virtualisation
+// supersedes it.
+const MAX_RENDER_ROWS = 1000;
 
 // ── Defensive normalisers — backend lives in a separate repo, so every shape
 // is coerced and the raw payload is logged once for easy adjustment. ─────────
@@ -1117,6 +1181,12 @@ const runError = ref('');
 // Monotonic token so a stale query response (user changed the slice mid-flight)
 // is dropped — last query wins.
 let querySeq = 0;
+// AbortController for the in-flight pivot fetch. The toolbar's Cancel button
+// aborts it; runQuery aborts any prior controller before starting a new run so
+// only one fetch is ever live. Cancelling aborts the NETWORK fetch (the UI stays
+// responsive during the fetch); the synchronous-render freeze is handled
+// separately by the MAX_RENDER_ROWS cap, which Cancel cannot help with.
+let queryAbort = null;
 
 // ── Options / derived ──────────────────────────────────────────────────────
 const cubeOptions = computed(() => cubes.value.map((c) => ({ value: c, label: c })));
@@ -1407,8 +1477,24 @@ const suppressed = computed(() => {
   return { rows, colIndices };
 });
 
-// The rows actually rendered (post-suppression when the toggle is on).
+// The FULL surviving row set (post-suppression when the toggle is on). This is
+// the authoritative set the TOTALS sum over — it is NOT capped. The rendered
+// body iterates `renderRows` (capped) below; everything totals-related (totalRows
+// / colTotals / grandTotal) keeps deriving from displayRows so the footer stays
+// correct even when the body is truncated.
 const displayRows = computed(() => suppressed.value.rows);
+
+// INTERIM FREEZE-GUARD: the rows actually written to the DOM — at most
+// MAX_RENDER_ROWS of the full surviving set. The grid <tbody> v-for binds to
+// THIS, never displayRows, so a huge view can't block the main thread. slice()
+// is a no-op (returns the same members) when the set is within the cap.
+const renderRows = computed(() => displayRows.value.slice(0, MAX_RENDER_ROWS));
+
+// True only when the full surviving set exceeds the cap — gates the cap banner
+// and the "X of Y rows" footer wording. When false the grid shows every row and
+// the footer reads as before.
+const isCapped = computed(() => displayRows.value.length > MAX_RENDER_ROWS);
+
 // The surviving column indices (drives header + cell + total column selection).
 const displayColIndices = computed(() => suppressed.value.colIndices);
 // The column headers actually rendered, in surviving order.
@@ -1531,13 +1617,22 @@ const hasExpansions = computed(() =>
   Object.values(rowNodes).some((n) => n.expanded),
 );
 
-// "6 rows × 12 cols" badge — counts the RENDERED (post-suppression) grid.
+// Footer size badge. Within the cap it reads "6 rows × 12 cols" (full grid
+// shown, unchanged). When the body is capped it reads honestly "1,000 of 3,184
+// rows × 12 cols" so the count never silently misrepresents what's on screen vs
+// what the totals cover. Column count is the full surviving column set (cols are
+// not capped). Thousands grouped for legibility on big slices.
 const gridSizeLabel = computed(() => {
   if (!result.value) return '';
-  const r = displayRows.value.length;
+  const total = displayRows.value.length;
+  const shown = renderRows.value.length;
   const c = displayColHeaders.value.length;
-  if (!r && !c) return '';
-  return `${r} ${r === 1 ? 'row' : 'rows'} × ${c} ${c === 1 ? 'col' : 'cols'}`;
+  if (!total && !c) return '';
+  const colPart = `${c.toLocaleString()} ${c === 1 ? 'col' : 'cols'}`;
+  if (isCapped.value) {
+    return `${shown.toLocaleString()} of ${total.toLocaleString()} rows × ${colPart}`;
+  }
+  return `${total.toLocaleString()} ${total === 1 ? 'row' : 'rows'} × ${colPart}`;
 });
 
 // ── Element-cache helpers (lazy per picker) ─────────────────────────────────
@@ -1960,7 +2055,10 @@ function resolveShownLabels() {
     }
     set.add(member);
   };
-  for (const row of displayRows.value) {
+  // Only the RENDERED (capped) rows — we never show, so never relabel, rows
+  // beyond MAX_RENDER_ROWS. This bounds the element-labels fan-out to the same
+  // ceiling as the DOM (no fetch for members the user can't see).
+  for (const row of renderRows.value) {
     for (const hc of row.headerCells || []) addMember(hc.dim, hc.member);
   }
   // Column band: alias EVERY segment of EVERY surviving column tuple, keyed by
@@ -2123,11 +2221,16 @@ async function runQuery() {
     suppress: suppressEmpty.value,
   };
 
+  // Abort any fetch still in flight before starting a new one — only one live.
+  if (queryAbort) queryAbort.abort();
+  const controller = new AbortController();
+  queryAbort = controller;
+
   running.value = true;
   runError.value = '';
   const seq = ++querySeq;
   try {
-    const data = await runTm1Query(payload);
+    const data = await runTm1Query(payload, { signal: controller.signal });
     if (seq !== querySeq) return;
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
@@ -2136,12 +2239,45 @@ async function runQuery() {
     result.value = data;
   } catch (error) {
     if (seq !== querySeq) return;
+    // Intentional cancel (Cancel button → controller.abort()) is NOT an error:
+    // swallow it, keep the previous grid intact, show no banner. axios surfaces
+    // an abort as CanceledError (code 'ERR_CANCELED'); the underlying fetch/DOM
+    // signal surfaces an AbortError — handle both.
+    if (isAbortError(error)) return;
     result.value = null;
     runError.value =
       error?.response?.data?.error || error?.message || 'TM1 query failed.';
   } finally {
-    if (seq === querySeq) running.value = false;
+    // Only clear loading / drop the controller ref if THIS run is still current
+    // (a newer run already owns running + queryAbort otherwise).
+    if (seq === querySeq) {
+      running.value = false;
+      if (queryAbort === controller) queryAbort = null;
+    }
   }
+}
+
+// True for an intentionally-cancelled request — axios CanceledError (name
+// 'CanceledError' / code 'ERR_CANCELED') or the DOM AbortError. Used to swallow
+// the abort path so a deliberate Cancel never flashes an error banner.
+function isAbortError(error) {
+  return (
+    error?.code === 'ERR_CANCELED' ||
+    error?.name === 'CanceledError' ||
+    error?.name === 'AbortError'
+  );
+}
+
+// Cancel the in-flight pivot fetch (Cancel button). Aborts the controller — the
+// runQuery catch swallows the resulting CanceledError and leaves the previous
+// grid untouched — and immediately drops the busy state so the toolbar flips
+// back to Refresh without waiting on the rejected promise to unwind.
+function cancelQuery() {
+  if (queryAbort) {
+    queryAbort.abort();
+    queryAbort = null;
+  }
+  running.value = false;
 }
 
 function needsSeed(dim) {
@@ -2463,16 +2599,17 @@ watch(suppressEmpty, () => {
 // resolve the display labels for the newly-shown members under each dim's active
 // alias. Reactive deps: the rendered rows + columns (which recompute on all of
 // the above) and the filter selections. Per-dim no-op when on principal names;
-// only un-cached members are fetched. `resolveShownLabels` itself reads the
-// current displayRows/displayColHeaders, so this watcher's job is purely to
-// re-trigger it on change (the returned arrays are the change signal). It does
+// only un-cached members are fetched. `resolveShownLabels` reads the RENDERED
+// (capped) rows + the current displayColHeaders, so this watcher's job is purely
+// to re-trigger it on change (the returned arrays are the change signal). It does
 // NOT touch the query — labels are display-only.
 watch(
-  // Include colDims so the dep set matches what resolveShownLabels actually reads
-  // (it maps col headers via colDims.value[0]); displayRows/displayColHeaders cover
-  // the row/col member changes, filterSelections the filter pills. Direct callers
-  // (setDimAlias / applySet) own alias/hierarchy-change triggers.
-  () => [displayRows.value, displayColHeaders.value, colDims.value, { ...filterSelections }],
+  // Use renderRows (the capped, on-screen set) so the dep matches what
+  // resolveShownLabels actually iterates — no relabel churn for rows past the
+  // cap. Include colDims (it maps col headers via colDims.value[0]);
+  // displayColHeaders covers col member changes, filterSelections the pills.
+  // Direct callers (setDimAlias / applySet) own alias/hierarchy-change triggers.
+  () => [renderRows.value, displayColHeaders.value, colDims.value, { ...filterSelections }],
   () => resolveShownLabels(),
 );
 
@@ -2550,6 +2687,35 @@ loadCubes();
   color: var(--kdl-text-hint);
 }
 
+/* Cancel — replaces Refresh while a fetch is in flight. A quiet interrupt: the
+   documented cost-direction / error red (same token used by .pivot-banner--error
+   in this stylesheet — KDL gap, not a new colour) on border + label, so it reads
+   as "stop" without shouting. Hover deepens the same red. */
+.pivot-toolbar__btn--cancel {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.pivot-toolbar__btn--cancel .pivot-toolbar__btn-icon {
+  color: #dc2626;
+}
+
+.pivot-toolbar__btn--cancel:hover:not(:disabled) {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+:root[data-theme="dark"] .pivot-toolbar__btn--cancel,
+:root[data-theme="dark"] .pivot-toolbar__btn--cancel .pivot-toolbar__btn-icon {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+:root[data-theme="dark"] .pivot-toolbar__btn--cancel:hover:not(:disabled) {
+  border-color: #fca5a5;
+  color: #fca5a5;
+}
+
 .pivot-toolbar__busy {
   display: inline-flex;
   align-items: center;
@@ -2581,6 +2747,15 @@ loadCubes();
 :root[data-theme="dark"] .pivot-banner--error {
   color: #f87171;
   border-color: #f87171;
+}
+
+/* Notice variant — the interim row-cap advisory. Not an error: a quiet accent-
+   tinted notice (same accent token the dropzones use), primary text so the
+   guidance is legible. All colour via KDL tokens / color-mix — no raw hex. */
+.pivot-banner--notice {
+  border-color: color-mix(in srgb, var(--kdl-accent) 45%, var(--kdl-border));
+  background: color-mix(in srgb, var(--kdl-accent) 7%, var(--kdl-page-bg));
+  color: var(--kdl-text-primary);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

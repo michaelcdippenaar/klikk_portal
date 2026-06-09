@@ -217,10 +217,15 @@ export async function getTm1DimensionChildren(dimension, parent, hierarchy = nul
 // header band (tuples-as-arrays, not joined strings). The full response is passed
 // through verbatim; PivotExplorer.vue normalises defensively and falls back to the
 // legacy `columns` + requested col dims when the envelope is absent.
-export async function runTm1Query(payload) {
+//
+// `options.signal` (an AbortSignal) is threaded straight to axios so a slow/large
+// fetch can be cancelled from the UI (the Refresh→Cancel affordance). Aborting
+// rejects this promise with a CanceledError/AbortError — the caller swallows it.
+export async function runTm1Query(payload, { signal } = {}) {
   const client = await getClient();
   const resp = await client.post(API_ENDPOINTS.PA_TM1_QUERY, payload, {
     timeout: 120000,
+    signal,
   });
   return resp.data;
 }
