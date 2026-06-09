@@ -2146,8 +2146,11 @@ describe('PivotExplorer — multi-dimension row drill', () => {
 // Selectors are SEMANTIC / stable-class (no data-test): `.pivot-grid__row-label`
 // (text = displayMember, :title = rowSegTitle = the principal when relabelled),
 // `th.pivot-grid__col-head` (text = colHeadLabel), `.pivot-pill__member` (filter
-// pill, :title = filterPrincipalTitle). The per-dim "Display label" control items
-// render as teleported `.km-item` text ("Label: principal name" / "Label: name").
+// pill, :title = filterPrincipalTitle). The per-dim alias control is now a
+// first-class, always-visible inline "· <label> ▾" picker on each filter pill
+// (`.pivot-pill__alias`, trigger aria-label "Display label for <dim>: …") and
+// each Rows/Columns axis chip (`.pivot-chip__alias`); its menu items render as
+// teleported `.km-item` text ("principal name" / "<alias>").
 // ════════════════════════════════════════════════════════════════════════════
 describe('PivotExplorer — alias display (UUID → human name)', () => {
   // The entity UUID principal (a single filter-bar element) and its human alias.
@@ -2385,8 +2388,14 @@ describe('PivotExplorer — alias display (UUID → human name)', () => {
     expect(bodyRows(wrapper).length).toBeGreaterThan(0);
   });
 
-  // ── Per-dim control: CHIP menu ────────────────────────────────────────────────
-  it('chip menu: "Label: principal name" reverts the row headers to the raw key; "Label: name" re-applies the alias; the active item carries the check', async () => {
+  // ── Per-dim control: CHIP inline alias picker ─────────────────────────────────
+  // Realigned 2026-06-09: alias selection moved OUT of the chip's kebab move-menu
+  // into a first-class, always-visible inline "· <label> ▾" control on the chip
+  // (PAW-style). The control is its own controlled KMenu, driven by the chip's
+  // `aliasOpen` prop / `toggle-alias` emit; its items now read "name" / "principal
+  // name" (no "Label:" prefix). The LOCKED behaviours (revert-to-key, re-apply,
+  // active check, display-only) are unchanged — only the control's home + labels.
+  it('chip inline picker: "principal name" reverts the row headers to the raw key; "name" re-applies the alias; the active item carries the check', async () => {
     const wrapper = await mountEntityPivot();
     // Auto-defaulted: rows show the kl_… alias.
     expect(rowLabels(wrapper)).toContain('kl_400_Operating Expenses');
@@ -2399,19 +2408,20 @@ describe('PivotExplorer — alias display (UUID → human name)', () => {
     expect(accountChip.props('aliases')).toEqual(['name']);
     expect(accountChip.props('activeAlias')).toBe('name');
 
-    // Open the chip menu (controlled) → its alias items teleport into <body>. The
+    // Open the chip's INLINE alias menu via its real contract (the toggle-alias
+    // emit the inline control's KMenu fires) → its items teleport into <body>. The
     // ACTIVE alias item carries the check icon (km-item__icon present); principal
     // does not.
-    accountChip.findComponent(KMenu).vm.$emit('update:modelValue', true);
+    accountChip.vm.$emit('toggle-alias', true);
     await settle();
-    const nameItem = bodyMenuItem('Label: name');
-    const principalItem = bodyMenuItem('Label: principal name');
-    expect(nameItem, '"Label: name" item should render').toBeTruthy();
-    expect(principalItem, '"Label: principal name" item should render').toBeTruthy();
+    const nameItem = bodyMenuItem('name');
+    const principalItem = bodyMenuItem('principal name');
+    expect(nameItem, '"name" item should render').toBeTruthy();
+    expect(principalItem, '"principal name" item should render').toBeTruthy();
     expect(nameItem.querySelector('.km-item__icon'), 'active alias carries the check').toBeTruthy();
     expect(principalItem.querySelector('.km-item__icon')).toBeFalsy();
 
-    // Click "Label: principal name" → reverts the rows to the raw principal keys.
+    // Click "principal name" → reverts the rows to the raw principal keys.
     principalItem.dispatchEvent(new Event('click', { bubbles: true }));
     await settle();
     expect(rowLabels(wrapper)).toContain('EXPENSE');
@@ -2419,10 +2429,10 @@ describe('PivotExplorer — alias display (UUID → human name)', () => {
     // The chip now reflects principal as active.
     expect(accountChip.props('activeAlias')).toBe('');
 
-    // Re-open + click "Label: name" → re-applies the alias.
-    accountChip.findComponent(KMenu).vm.$emit('update:modelValue', true);
+    // Re-open + click "name" → re-applies the alias.
+    accountChip.vm.$emit('toggle-alias', true);
     await settle();
-    bodyMenuItem('Label: name').dispatchEvent(new Event('click', { bubbles: true }));
+    bodyMenuItem('name').dispatchEvent(new Event('click', { bubbles: true }));
     await settle();
     expect(rowLabels(wrapper)).toContain('kl_400_Operating Expenses');
     expect(rowLabels(wrapper)).not.toContain('EXPENSE');
@@ -2454,38 +2464,84 @@ describe('PivotExplorer — alias display (UUID → human name)', () => {
     expect(runTm1Query.mock.calls.at(-1)[0]).toEqual(payloadBefore);
   });
 
-  // ── Per-dim control: CONTEXT-PILL menu ────────────────────────────────────────
-  it('context-pill menu: the entity pill exposes "Label: name"/"Label: principal name"; flipping to principal shows the UUID, re-applying shows the human name', async () => {
+  // ── Inline alias control DISCOVERABILITY (author smoke — NOT full coverage) ───
+  // Minimal mount-based smoke for the new first-class inline "· <label> ▾" control
+  // the feature added (per author≠tester, this is presence/discoverability only;
+  // the independent tester owns the comprehensive round-trip + entity→code +
+  // suppress/drill/nested-cols-intact coverage). It asserts (1) the control is
+  // ALWAYS visible (not buried in a kebab) on a filter pill AND a row chip for a
+  // dim WITH aliases, showing the active label, and (2) a dim WITHOUT aliases
+  // renders NO inline control. The relabel BEHAVIOUR is locked by the two
+  // realigned per-dim tests below + the auto-default test above.
+  it('inline alias control: a dim WITH aliases shows an always-visible "· <label> ▾" affordance on its pill + chip; a dim WITHOUT aliases shows none', async () => {
+    // account + entity advertise `name`; month does NOT (the default alias list).
+    const wrapper = await mountEntityPivot();
+
+    // (1a) The entity FILTER pill carries the inline alias trigger (aria-label
+    // "Display label for entity: …"), showing the active alias name inline.
+    const entityAliasBtn = wrapper
+      .findAll('.pivot-pill__alias')
+      .find((b) => (b.attributes('aria-label') || '').startsWith('Display label for entity'));
+    expect(entityAliasBtn, 'entity pill has an inline alias control').toBeTruthy();
+    expect(entityAliasBtn.find('.pivot-pill__alias-name').text()).toBe('name');
+
+    // (1b) The account ROW chip carries the inline alias trigger too (the chip
+    // renders .pivot-chip__alias when it has aliases; auto-defaulted to `name`).
+    const accountChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'rows' && c.props('dim') === 'account');
+    const chipAliasBtn = accountChip.find('.pivot-chip__alias');
+    expect(chipAliasBtn.exists(), 'account chip has an inline alias control').toBe(true);
+    expect(chipAliasBtn.find('.pivot-chip__alias-name').text()).toBe('name');
+
+    // (2) The month COLUMN chip has NO `name` alias (empty list) → NO inline
+    // control rendered (the affordance only appears when there's something to pick).
+    const monthChip = wrapper
+      .findAllComponents(PivotAxisChip)
+      .find((c) => c.props('axis') === 'cols' && c.props('dim') === 'month');
+    expect(monthChip, 'month is a column chip').toBeTruthy();
+    expect(monthChip.props('aliases')).toEqual([]);
+    expect(monthChip.find('.pivot-chip__alias').exists(), 'no inline control without aliases').toBe(false);
+  });
+
+  // ── Per-dim control: CONTEXT-PILL inline alias picker ─────────────────────────
+  // Realigned 2026-06-09: alias selection moved OUT of the entity pill's kebab
+  // move-menu into a first-class, always-visible inline "· <label> ▾" control on
+  // the pill itself (its own controlled KMenu, trigger aria-label "Display label
+  // for entity: …"). Items now read "name" / "principal name" (no "Label:"
+  // prefix). The move-menu is movement-only now. Locked behaviour (flip to
+  // principal → UUID; re-apply → human name; active check) unchanged.
+  it('context-pill inline picker: the entity pill exposes "name"/"principal name"; flipping to principal shows the UUID, re-applying shows the human name', async () => {
     const wrapper = await mountEntityPivot();
     // entity pill auto-defaulted to the human name.
     expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_NAME);
 
-    // The entity context-pill move menu (aria-label "Move entity to Rows…") carries
-    // the alias items below the move targets. Open it (controlled).
-    const ctxMenu = wrapper
+    // The entity pill's INLINE alias menu (trigger aria-label "Display label for
+    // entity: …") holds principal + every alias. Open it (controlled).
+    const aliasMenu = wrapper
       .findAllComponents(KMenu)
-      .find((m) => m.html().includes('Move entity to Rows'));
-    expect(ctxMenu, 'entity context-pill move menu should exist').toBeTruthy();
-    ctxMenu.vm.$emit('update:modelValue', true);
+      .find((m) => m.html().includes('Display label for entity'));
+    expect(aliasMenu, 'entity inline alias menu should exist').toBeTruthy();
+    aliasMenu.vm.$emit('update:modelValue', true);
     await settle();
 
-    const principalItem = bodyMenuItem('Label: principal name');
-    const nameItem = bodyMenuItem('Label: name');
-    expect(principalItem, 'context "Label: principal name" item').toBeTruthy();
-    expect(nameItem, 'context "Label: name" item').toBeTruthy();
+    const principalItem = bodyMenuItem('principal name');
+    const nameItem = bodyMenuItem('name');
+    expect(principalItem, 'context "principal name" item').toBeTruthy();
+    expect(nameItem, 'context "name" item').toBeTruthy();
     // Active alias (name) carries the check; principal does not.
     expect(nameItem.querySelector('.km-item__icon')).toBeTruthy();
     expect(principalItem.querySelector('.km-item__icon')).toBeFalsy();
 
-    // Click "Label: principal name" → the pill shows the raw UUID.
+    // Click "principal name" → the pill shows the raw UUID.
     principalItem.dispatchEvent(new Event('click', { bubbles: true }));
     await settle();
     expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_UUID);
 
-    // Re-open + "Label: name" → back to the human name.
-    ctxMenu.vm.$emit('update:modelValue', true);
+    // Re-open + "name" → back to the human name.
+    aliasMenu.vm.$emit('update:modelValue', true);
     await settle();
-    bodyMenuItem('Label: name').dispatchEvent(new Event('click', { bubbles: true }));
+    bodyMenuItem('name').dispatchEvent(new Event('click', { bubbles: true }));
     await settle();
     expect(pillMemberText(wrapper, 'entity').text()).toBe(ENTITY_NAME);
   });

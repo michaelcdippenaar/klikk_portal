@@ -210,9 +210,65 @@
               </div>
             </KPopover>
 
+            <!-- INLINE ALIAS PICKER — the first-class, always-visible "display
+                 attribute" control (PAW shows it right on the dimension). Shown
+                 whenever the dim has ≥1 alias; reads "· <active label> ▾" and
+                 opens a compact menu of principal + every alias (the active one
+                 checked). Display-only — selecting one relabels the pills/grid
+                 live via setDimAlias; the pivot query is never aliased. -->
+            <KMenu
+              v-if="dimAliasList[dim] && dimAliasList[dim].length"
+              align="start"
+              :model-value="openAliasMenu === `filter:${dim}`"
+              @update:model-value="(o) => toggleAliasMenu(`filter:${dim}`, o)"
+            >
+              <template #trigger>
+                <button
+                  type="button"
+                  class="pivot-pill__alias"
+                  draggable="false"
+                  :aria-label="`Display label for ${dim}: ${aliasButtonLabel(dim)} — change`"
+                  :title="`Display ${dim} elements under: ${aliasButtonLabel(dim)}`"
+                >
+                  <span class="pivot-pill__alias-sep" aria-hidden="true">·</span>
+                  <span class="pivot-pill__alias-name">{{ aliasButtonLabel(dim) }}</span>
+                  <svg
+                    class="pivot-pill__alias-chevron"
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              </template>
+
+              <KMenuItem
+                :icon="!dimAlias[dim] ? 'check' : null"
+                @select="chooseAlias(`filter:${dim}`, dim, '')"
+              >
+                principal name
+              </KMenuItem>
+              <KMenuItem
+                v-for="a in dimAliasList[dim]"
+                :key="`ctx-inline-alias-${dim}-${a}`"
+                :icon="dimAlias[dim] === a ? 'check' : null"
+                @select="chooseAlias(`filter:${dim}`, dim, a)"
+              >
+                {{ a }}
+              </KMenuItem>
+            </KMenu>
+
             <!-- Move menu — keyboard-operable equivalent of dragging this pill
                  onto an axis well. Current role is filter, so only the two axis
-                 targets are offered. -->
+                 targets are offered. (Alias selection is the inline control above
+                 now — the discoverable, always-visible path.) -->
             <KMenu
               align="end"
               :model-value="openCtxMenu === dim"
@@ -245,27 +301,6 @@
 
               <KMenuItem @select="moveCtxDimension(dim, 'rows')">Move to Rows</KMenuItem>
               <KMenuItem @select="moveCtxDimension(dim, 'cols')">Move to Columns</KMenuItem>
-
-              <!-- Display label (alias) — only when the dim has aliases to pick.
-                   A flat list (KMenu has no sub-menu primitive): the active
-                   choice carries a check. Display-only; the query is untouched. -->
-              <template v-if="dimAliasList[dim] && dimAliasList[dim].length">
-                <KMenuSeparator />
-                <KMenuItem
-                  :icon="!dimAlias[dim] ? 'check' : null"
-                  @select="chooseCtxAlias(dim, '')"
-                >
-                  Label: principal name
-                </KMenuItem>
-                <KMenuItem
-                  v-for="a in dimAliasList[dim]"
-                  :key="`ctx-alias-${dim}-${a}`"
-                  :icon="dimAlias[dim] === a ? 'check' : null"
-                  @select="chooseCtxAlias(dim, a)"
-                >
-                  Label: {{ a }}
-                </KMenuItem>
-              </template>
             </KMenu>
           </div>
         </div>
@@ -297,13 +332,15 @@
               :dim="dim"
               axis="rows"
               :open="openChipMenu === `rows:${dim}`"
+              :alias-open="openAliasMenu === `rows:${dim}`"
               :dragging="draggingDim === dim"
               :aliases="dimAliasList[dim] || []"
               :active-alias="dimAlias[dim] || ''"
               @toggle="(o) => toggleChipMenu(`rows:${dim}`, o)"
+              @toggle-alias="(o) => toggleAliasMenu(`rows:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
               @edit="openSetEditor(dim)"
-              @alias="(a) => chooseChipAlias(`rows:${dim}`, dim, a)"
+              @alias="(a) => chooseAlias(`rows:${dim}`, dim, a)"
               @dragstart="(e) => onDimDragStart(e, dim)"
               @dragend="onDimDragEnd"
             />
@@ -329,13 +366,15 @@
               :dim="dim"
               axis="cols"
               :open="openChipMenu === `cols:${dim}`"
+              :alias-open="openAliasMenu === `cols:${dim}`"
               :dragging="draggingDim === dim"
               :aliases="dimAliasList[dim] || []"
               :active-alias="dimAlias[dim] || ''"
               @toggle="(o) => toggleChipMenu(`cols:${dim}`, o)"
+              @toggle-alias="(o) => toggleAliasMenu(`cols:${dim}`, o)"
               @move="(target) => moveDimension(dim, target)"
               @edit="openSetEditor(dim)"
-              @alias="(a) => chooseChipAlias(`cols:${dim}`, dim, a)"
+              @alias="(a) => chooseAlias(`cols:${dim}`, dim, a)"
               @dragstart="(e) => onDimDragStart(e, dim)"
               @dragend="onDimDragEnd"
             />
@@ -625,7 +664,6 @@ import KSpinner from '../klikk/KSpinner.vue';
 import KPopover from '../klikk/KPopover.vue';
 import KMenu from '../klikk/KMenu.vue';
 import KMenuItem from '../klikk/KMenuItem.vue';
-import KMenuSeparator from '../klikk/KMenuSeparator.vue';
 import EmptyState from '../klikk/EmptyState.vue';
 import PivotAxisChip from './PivotAxisChip.vue';
 import SetEditor from './SetEditor.vue';
@@ -973,6 +1011,14 @@ const openChipMenu = ref('');
 // Which context-pill MOVE menu is open (separate from the member-picker popover,
 // single-open model). Keyed by dim so only one move menu shows at a time.
 const openCtxMenu = ref('');
+// Which INLINE alias picker is open. This is the first-class, always-visible
+// "· <label> ▾" control on every filter pill and every Rows/Columns axis chip
+// (PAW shows the display attribute right on the dimension). Single-open across
+// ALL surfaces, keyed `${role}:${dim}` (filter: / rows: / cols:) so a context
+// pill and an axis chip for the same dim never both float open. The legacy
+// alias items at the bottom of the move/kebab menus still work — this is the
+// primary, discoverable path; those are the fallback.
+const openAliasMenu = ref('');
 
 // ── Set (Subset) Editor modal ────────────────────────────────────────────────
 // editorOpen drives the KDialog; editorDim is the dimension being edited (kept
@@ -1003,6 +1049,7 @@ function onDimDragStart(event, dim) {
   openPicker.value = '';
   openChipMenu.value = '';
   openCtxMenu.value = '';
+  openAliasMenu.value = '';
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
     // A payload is required for Firefox to start a drag; the dim is the source
@@ -2163,17 +2210,29 @@ function moveCtxDimension(dim, target) {
   moveDimension(dim, target);
 }
 
-// Choose a display alias from the context-pill move menu. Closes the menu, then
-// sets the dim's alias (display-only — the query is never aliased). '' = principal.
-function chooseCtxAlias(dim, alias) {
-  openCtxMenu.value = '';
-  setDimAlias(dim, alias, { user: true });
+// ── INLINE alias control (the first-class, always-visible picker) ─────────────
+// The short label shown on the inline "· <label> ▾" affordance: the active alias
+// NAME when one is set (e.g. "name", "code"), else "principal" — so the user can
+// see WHICH display attribute the dim's elements are labelled under without
+// opening anything (PAW shows the attribute on the dimension).
+function aliasButtonLabel(dim) {
+  return dimAlias[dim] || 'principal';
 }
 
-// Choose a display alias from an axis chip's menu. Closes that chip's menu (by
-// key), then sets the dim's alias. Display-only — the query is never aliased.
-function chooseChipAlias(menuKey, dim, alias) {
-  if (openChipMenu.value === menuKey) openChipMenu.value = '';
+// Open/close an inline alias picker. Single-open across ALL surfaces (filter
+// pills + Rows/Columns chips), keyed `${role}:${dim}`, so only one floats at a
+// time. Closing the member-picker popover / move menus here too keeps a single
+// floating layer.
+function toggleAliasMenu(key, open) {
+  openAliasMenu.value = open ? key : '';
+}
+
+// Choose a display alias from an INLINE picker (pill or chip). Closes the inline
+// menu (by key), then sets the dim's alias through the SAME setDimAlias funnel
+// the legacy paths use — display-only, the pivot query is never aliased; '' =
+// principal names. setDimAlias relabels the grid + pills live (plumbing is done).
+function chooseAlias(key, dim, alias) {
+  if (openAliasMenu.value === key) openAliasMenu.value = '';
   setDimAlias(dim, alias, { user: true });
 }
 
@@ -2730,6 +2789,62 @@ loadCubes();
   flex: 0 0 auto;
   margin-left: 1px;
   color: var(--kdl-text-hint);
+}
+
+/* The INLINE ALIAS picker trigger — a secondary segment sitting between the
+   member button and the trailing move button. A flat-sided middle segment (the
+   move button still rounds the trailing edge), reading SUBORDINATE to the
+   member: muted text, a leading "·" hairline divider glyph, the active label,
+   and a small chevron. Only rendered when the dim has aliases, so the pill
+   connects straight to the move button when there are none. */
+.pivot-pill__alias {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--kdl-border);
+  border-radius: 0;
+  border-right-width: 0;
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-hint);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              background var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+              color var(--duration-short, 150ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.pivot-pill__alias:hover {
+  border-color: var(--kdl-text-muted);
+  background: var(--kdl-hover-bg);
+  color: var(--kdl-text-secondary);
+}
+
+.pivot-pill__alias-sep {
+  color: var(--kdl-border);
+  font-weight: 700;
+}
+
+.pivot-pill__alias-name {
+  color: var(--kdl-text-secondary);
+  font-weight: 600;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pivot-pill__alias-chevron {
+  flex: 0 0 auto;
+  color: var(--kdl-text-hint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-pill__alias {
+    transition: none;
+  }
 }
 
 /* Popover body (the member picker) — rendered inside teleported .kp-content. */
