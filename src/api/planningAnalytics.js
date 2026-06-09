@@ -203,6 +203,20 @@ export async function getTm1DimensionChildren(dimension, parent, hierarchy = nul
 
 // POST /tm1/query/ — body { cube, rows, cols, filters, suppress } -> pivot cellset.
 // A TM1 query can be slow on a wide slice; give it a generous timeout.
+//
+// Response (additive, non-breaking — legacy `columns`/`rows` still present):
+//   {
+//     columns: [[member], …],                       // legacy flat leaf headers
+//     rows:    [{ members:[…], cells:[{value,formatted}] }],
+//     colAxis: { dimensions:["year","month",…ordered outer→inner],
+//                tuples:[["2024","Jan"],["2024","Feb"],…] },  // leaf order == rows[r].cells order
+//     rowAxis: { dimensions:["account",…], tuples:[["EXPENSE"],…] },
+//     mdx
+//   }
+// The axis envelope (`colAxis`/`rowAxis`) lets the grid render a TRUE nested
+// header band (tuples-as-arrays, not joined strings). The full response is passed
+// through verbatim; PivotExplorer.vue normalises defensively and falls back to the
+// legacy `columns` + requested col dims when the envelope is absent.
 export async function runTm1Query(payload) {
   const client = await getClient();
   const resp = await client.post(API_ENDPOINTS.PA_TM1_QUERY, payload, {

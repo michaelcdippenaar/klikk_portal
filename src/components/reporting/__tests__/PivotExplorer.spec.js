@@ -296,9 +296,25 @@ function buildQueryResponse(payload) {
     });
   }
 
+  // Additive axis envelope (the live backend now returns this alongside the
+  // legacy columns/rows). colAxis.dimensions/tuples drive the nested header band;
+  // leaf order matches each row's cells. Single col dim here → 1-segment tuples.
+  // The component still works WITHOUT this (legacy fallback) — included so the
+  // envelope path is exercised and the nested-column tester has a realistic seam.
+  const colAxis = {
+    dimensions: (colDims[0]?.dimension ? [colDims[0].dimension] : []),
+    tuples: columns.map((c) => c.slice()),
+  };
+  const rowAxis = {
+    dimensions: rowDims.map((d) => d.dimension),
+    tuples: rows.map((r) => r.members.slice()),
+  };
+
   return {
     columns,
     rows,
+    colAxis,
+    rowAxis,
     mdx: `SELECT FROM [${payload.cube}]`,
   };
 }
@@ -644,7 +660,15 @@ function buildMultiDimResponse(payload) {
       rows.push({ members: [om, im], cells: cellsFor(value) });
     }
   }
-  return { columns, rows, mdx: `SELECT FROM [${payload.cube}]` };
+  const colAxis = {
+    dimensions: (payload.cols?.[0]?.dimension ? [payload.cols[0].dimension] : []),
+    tuples: columns.map((c) => c.slice()),
+  };
+  const rowAxis = {
+    dimensions: rowDims.map((d) => d.dimension),
+    tuples: rows.map((r) => r.members.slice()),
+  };
+  return { columns, rows, colAxis, rowAxis, mdx: `SELECT FROM [${payload.cube}]` };
 }
 
 // Mount with account as the INNERMOST row dim by declaring [year, account,
@@ -2719,5 +2743,516 @@ describe('PivotExplorer — alias display (UUID → human name)', () => {
     const axisOf = (p) => p.rows.find((r) => r.dimension === 'account').members;
     expect(axisOf(payloadAliased)).toEqual(['EXPENSE', 'COGS']);
     expect(axisOf(payloadPrincipal)).toEqual(['EXPENSE', 'COGS']);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// NESTED COLUMNS — Step-1 SMOKE (feature-author minimal; the comprehensive
+// mount-based coverage is owned by the INDEPENDENT tester per the authorship
+// split). This locks ONLY that the nested-column band wires end-to-end: a real
+// two-col-dim colAxis envelope (year › month) renders a SPANNING <thead> band
+// (year cells spanning their months) over the drilled account rows — not a flat
+// "FY24 / Jul" string row. Anything deeper (suppression interaction with the
+// band, multi-dim alias relabel across the band, ragged spans, span arithmetic
+// under partial suppression) is the tester's surface — see the seams in the report.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — nested columns (Step 1 smoke)', () => {
+  // A genuine 2-col-dim crossjoin response: colAxis.dimensions = [year, month]
+  // (declaration order — see colDims), tuples = the leaf crossjoin in outer
+  // (year) slowest / inner (month) fastest order, cells aligned to that order.
+  function build2ColResponse(payload) {
+    const rowDims = payload.rows || [];
+    const cols = payload.cols || [];
+    // colDims arrive in dimension-declaration order; with [account,year,month,
+    // measure] that is [year, month] once year joins month on the axis.
+    const colMemberLists = cols.map((c) => c.members || []);
+    // Leaf tuples = crossjoin, outer-slowest. matches the engine's _axis_set.
+    const tuples = colMemberLists.reduce(
+      (acc, list) => acc.flatMap((t) => list.map((m) => [...t, m])),
+      [[]],
+    );
+    const cellsFor = (scalar) => tuples.map(() => ({ value: scalar, formatted: null }));
+    // Single row dim (account) — walk the flat member list like the hero path.
+    let scope = null;
+    const rows = (rowDims[0]?.members || []).map((member) => {
+      const { value, scope: next } = leafValueFor(member, scope);
+      scope = next;
+      return { members: [member], cells: cellsFor(value) };
+    });
+    return {
+      columns: tuples.map((t) => t.slice()), // legacy flat (multi-member tuples)
+      rows,
+      colAxis: { dimensions: cols.map((c) => c.dimension), tuples },
+      rowAxis: { dimensions: rowDims.map((d) => d.dimension), tuples: rows.map((r) => r.members.slice()) },
+      mdx: `SELECT FROM [${payload.cube}]`,
+    };
+  }
+
+  async function mountTwoColDim() {
+    installCubeMocks({ dimensions: ['account', 'year', 'month', 'measure'] });
+    // Single col dim before the drag (month) uses the hero builder; once year
+    // joins (2 col dims) the 2-col builder produces the nested envelope.
+    runTm1Query.mockImplementation(async (payload) =>
+      (payload.cols || []).length > 1 ? build2ColResponse(payload) : buildQueryResponse(payload),
+    );
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    // Drag the `year` filter pill onto the COLUMNS well → colDims [year, month].
+    const dt = makeDataTransfer('year');
+    const colsWell = zone(wrapper, 'cols');
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+    return wrapper;
+  }
+
+  it('renders a nested SPANNING band: two thead rows, year cells span their months, innermost row carries the month leaves', async () => {
+    const wrapper = await mountTwoColDim();
+
+    // Layout: account on Rows, year + month BOTH on Cols.
+    expect(chipMap(wrapper)).toContain('rows:account');
+    expect(chipMap(wrapper)).toContain('cols:year');
+    expect(chipMap(wrapper)).toContain('cols:month');
+
+    // TWO band rows (one per col dim) — decisively NOT one flat row.
+    const bandRows = wrapper.findAll('thead tr.pivot-grid__col-band-row');
+    expect(bandRows.length).toBe(2);
+
+    // OUTER row = year group cells; each spans its 2 month leaves (colspan=2).
+    const groupCells = wrapper.findAll('thead th.pivot-grid__col-group');
+    expect(groupCells.length).toBe(2); // FY24, FY25
+    const groupTexts = groupCells.map((th) => th.text().trim());
+    expect(groupTexts).toContain('FY24');
+    expect(groupTexts).toContain('FY25');
+    groupCells.forEach((th) => expect(th.attributes('colspan')).toBe('2'));
+
+    // INNERMOST row = month leaves the cells align to; they keep the legacy
+    // col-head class so cell-alignment / alias / total contracts are intact.
+    const leafHeads = wrapper
+      .findAll('thead th.pivot-grid__col-head:not(.pivot-grid__total-head)')
+      .map((th) => th.text().trim());
+    // Suppress is ON by default; Aug is all-zero (colFactor 0) so it is dropped —
+    // BUT every FY block keeps Jul, so the surviving leaves are FY24/Jul + FY25/Jul.
+    expect(leafHeads.filter((t) => t === 'Jul').length).toBeGreaterThanOrEqual(1);
+
+    // CORNER spans the full band depth (rowspan = 2) and sits once.
+    const corner = wrapper.findAll('thead th.pivot-grid__corner');
+    expect(corner.length).toBe(1);
+    expect(corner[0].attributes('rowspan')).toBe('2');
+
+    // TOTAL head spans the full band depth too (rowspan = 2), rendered once.
+    const totalHeads = wrapper.findAll('thead th.pivot-grid__total-head');
+    expect(totalHeads.length).toBe(1);
+    expect(totalHeads[0].attributes('rowspan')).toBe('2');
+  });
+
+  it('suppress OFF: the FULL nested grid renders (FY24/FY25 × Jul/Aug = 4 leaves) with the body intact', async () => {
+    const wrapper = await mountTwoColDim();
+    await setSuppress(wrapper, false);
+
+    // 4 leaf columns now survive (no suppression): FY24/Jul, FY24/Aug, FY25/Jul, FY25/Aug.
+    const leafHeads = wrapper.findAll('thead th.pivot-grid__col-head:not(.pivot-grid__total-head)');
+    expect(leafHeads.length).toBe(4);
+    // Each year group now spans 2 months across the full band.
+    const groupCells = wrapper.findAll('thead th.pivot-grid__col-group');
+    groupCells.forEach((th) => expect(th.attributes('colspan')).toBe('2'));
+
+    // The body rendered real account rows under the nested band (drillable EXPENSE
+    // present) — the band did not break the row render.
+    expect(rowLabels(wrapper)).toContain('EXPENSE');
+    expect(wrapper.find('tfoot').exists()).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// NESTED COLUMNS — INDEPENDENT-TESTER DEEP COVERAGE (author≠tester, 2026-05-26
+// doctrine). The author shipped a Step-1 SMOKE above (band wires end-to-end);
+// this block locks the FIVE seams the author flagged as deliberately uncovered
+// PLUS the single-col-dim invariant the existing suites + alias logic rely on.
+//
+// Bar (per the KTable incident): MOUNT the REAL consumer (PivotExplorer + its
+// real KDL children), feed the REALISTIC nested-column envelope shape the LIVE
+// backend now returns (architect ARCHITECTURE-AND-ROADMAP.md §1.1: colAxis =
+// {dimensions:[…outer→inner], tuples:[[…],…]}, cells row-major ri*ncols+ci),
+// and assert OBSERVABLE DOM (band <tr> count, group colspans, leaf headers,
+// data-cell alignment, totals, :title). Selectors are STABLE classes only.
+//
+// ── The flexible nested-column builder ───────────────────────────────────────
+// The author's build2ColResponse hard-wires a single scalar per row across every
+// leaf. The seam tests need per-(row,leaf) control (ragged suppression, cell-to-
+// leaf alignment), 3-deep crossjoins, and an alias world — so this builder takes
+// a `valueAt(rowMember, leafTuple)` and is parametric in the column dims. The
+// crossjoin is built OUTER-SLOWEST / inner-fastest (the engine's _axis_set order,
+// §1.1) and cells are emitted in that exact leaf order — so a test that asserts a
+// cell lands under a leaf is locking the colAxis.tuples↔row.cells order contract.
+function buildNestedColResponse(payload, valueAt) {
+  const rowDims = payload.rows || [];
+  const cols = payload.cols || [];
+  const colMemberLists = cols.map((c) => c.members || []);
+  const tuples = colMemberLists.reduce(
+    (acc, list) => acc.flatMap((t) => list.map((m) => [...t, m])),
+    [[]],
+  );
+  // Single row dim (account) — the drillable hero path; one row per requested
+  // member, cells in leaf-tuple order. valueAt decides each (rowMember, tuple)
+  // cell so a test can zero a SPECIFIC leaf under a SPECIFIC year.
+  const rows = (rowDims[0]?.members || []).map((member) => ({
+    members: [member],
+    cells: tuples.map((t) => ({ value: valueAt(member, t), formatted: null })),
+  }));
+  return {
+    columns: tuples.map((t) => t.slice()),
+    rows,
+    colAxis: { dimensions: cols.map((c) => c.dimension), tuples },
+    rowAxis: {
+      dimensions: rowDims.map((d) => d.dimension),
+      tuples: rows.map((r) => r.members.slice()),
+    },
+    mdx: `SELECT FROM [${payload.cube}]`,
+  };
+}
+
+// Mount a layout where `extra` dims join `month` on the COLUMNS axis via the
+// proven drag WIRING, with runTm1Query driven by a per-test `valueAt`. Declaration
+// order fixes the band order: dimensions:[account, ...extra, month] → colDims in
+// that order once each extra is dragged across (month stays innermost). Before any
+// drag the single-col-dim hero builder runs (auto-open grid identical to the base
+// suites); once >1 col dim is present the nested builder takes over.
+async function mountNestedCols({ dimensions, dragToCols, valueAt }) {
+  installCubeMocks({ dimensions });
+  runTm1Query.mockImplementation(async (payload) =>
+    (payload.cols || []).length > 1
+      ? buildNestedColResponse(payload, valueAt)
+      : buildQueryResponse(payload),
+  );
+  const wrapper = mount(PivotExplorer, { attachTo: document.body });
+  attachedWrappers.push(wrapper);
+  await settle();
+  // Drag each requested dim onto the Columns well, in order (outer dims first so
+  // the colDims order = declaration order, the band order the envelope reports).
+  for (const dim of dragToCols) {
+    const dt = makeDataTransfer(dim);
+    const colsWell = zone(wrapper, 'cols');
+    fireDrag(filterGrip(wrapper, dim).element, 'dragstart', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+  }
+  return wrapper;
+}
+
+// The trimmed text of the leaf (innermost) col-head cells, EXCLUDING Total, in
+// DOM order — these are the columns the data cells align to.
+function leafHeadTexts(wrapper) {
+  return wrapper
+    .findAll('thead th.pivot-grid__col-head:not(.pivot-grid__total-head)')
+    .map((th) => th.text().trim());
+}
+
+// The group (outer-band, spanning) cells of a given band <tr> (0 = outermost).
+function groupCellsAtLevel(wrapper, level) {
+  const bandRows = wrapper.findAll('thead tr.pivot-grid__col-band-row');
+  if (level >= bandRows.length) return [];
+  return bandRows[level].findAll('th.pivot-grid__col-group');
+}
+
+// The data <td> cells of the body row whose row-label === label, EXCLUDING the
+// trailing per-row Total cell — i.e. exactly the surviving leaf columns, in order.
+function dataCellsOf(wrapper, label) {
+  const row = bodyRows(wrapper).find(
+    (tr) => tr.find('.pivot-grid__row-label').text() === label,
+  );
+  if (!row) return [];
+  return row
+    .findAll('td.pivot-grid__cell:not(.pivot-grid__total-cell)')
+    .map((td) => td.text().trim());
+}
+
+describe('PivotExplorer — nested columns (tester deep coverage)', () => {
+  // ── SEAM 1: suppression × RAGGED spans ──────────────────────────────────────
+  // One month (Aug) is all-zero under ONE year (FY25) only; under FY24 both months
+  // carry value. With Suppress ON, FY25/Aug drops → FY25 spans 1 while FY24 still
+  // spans 2 (a RAGGED band). Totals + cell alignment must recompute over the THREE
+  // surviving leaves (FY24/Jul, FY24/Aug, FY25/Jul) — not the four nominal ones.
+  it('SEAM 1 — ragged spans: an all-zero month under ONE year shrinks THAT year\'s colspan to 1 while its sibling still spans 2; totals recompute over survivors', async () => {
+    // valueAt: FY24 gives Jul=10, Aug=5 (both survive). FY25 gives Jul=20, Aug=0
+    // (Aug drops under suppression). EXPENSE only (single non-zero account row keeps
+    // the arithmetic legible); COGS contributes 0 everywhere so it suppresses out.
+    const VAL = {
+      EXPENSE: { 'FY24 Jul': 10, 'FY24 Aug': 5, 'FY25 Jul': 20, 'FY25 Aug': 0 },
+    };
+    const valueAt = (member, tuple) => VAL[member]?.[tuple.join(' ')] ?? 0;
+    const wrapper = await mountNestedCols({
+      dimensions: ['account', 'year', 'month', 'measure'],
+      dragToCols: ['year'],
+      valueAt,
+    });
+    // Suppress is ON by default — exactly the seam.
+
+    expect(chipMap(wrapper)).toContain('cols:year');
+    expect(chipMap(wrapper)).toContain('cols:month');
+
+    // THREE leaves survive (FY24/Jul, FY24/Aug, FY25/Jul); FY25/Aug dropped.
+    expect(leafHeadTexts(wrapper)).toEqual(['Jul', 'Aug', 'Jul']);
+
+    // RAGGED outer band: FY24 spans 2, FY25 spans 1 — read the colspans by year.
+    const groups = groupCellsAtLevel(wrapper, 0);
+    expect(groups.map((th) => th.text().trim())).toEqual(['FY24', 'FY25']);
+    const spanByYear = Object.fromEntries(
+      groups.map((th) => [th.text().trim(), th.attributes('colspan')]),
+    );
+    expect(spanByYear.FY24).toBe('2'); // Jul + Aug both survived
+    expect(spanByYear.FY25).toBe('1'); // only Jul survived → span SHRANK
+    // The total span across the outer band equals the surviving-leaf count (3),
+    // so the header band stays rectangular over the body.
+    const totalSpan = groups.reduce((s, th) => s + Number(th.attributes('colspan')), 0);
+    expect(totalSpan).toBe(leafHeadTexts(wrapper).length);
+
+    // CELL ALIGNMENT over survivors: EXPENSE row cells land under [FY24/Jul=10,
+    // FY24/Aug=5, FY25/Jul=20] in that exact surviving order (FY25/Aug is gone).
+    expect(dataCellsOf(wrapper, 'EXPENSE')).toEqual(['10', '5', '20']);
+
+    // TOTALS recompute over the survivors: per-column footer = 10, 5, 20 (only
+    // EXPENSE contributes); grand total = 35. NOT 35+0 with a phantom Aug column.
+    expect(colTotalTexts(wrapper).slice(0, 3)).toEqual(['10', '5', '20']);
+    expect(grandTotalText(wrapper)).toBe('35');
+  });
+
+  // ── SEAM 2: multi-dim alias ACROSS the band ──────────────────────────────────
+  // BOTH year AND month advertise a `name` alias simultaneously; each band LEVEL
+  // relabels independently from its OWN dimension's label map, and the principal
+  // key stays in the cell :title. Locks architect §1.1 "alias EVERY segment of
+  // EVERY col tuple, keyed by that segment's dimension" — not just colDims[0].
+  it('SEAM 2 — multi-dim alias: year AND month both relabel independently across the band; principal kept in :title', async () => {
+    const YEAR_LABELS = { FY24: 'FY 2024', FY25: 'FY 2025' };
+    const MONTH_LABELS = { Jul: 'July', Aug: 'August' };
+    installCubeMocks({ dimensions: ['account', 'year', 'month', 'measure'] });
+    // year + month BOTH advertise `name`; account too (base default) so it does not
+    // matter here. Drive the nested builder once >1 col dim is on the axis.
+    getTm1DimensionAliases.mockImplementation(async (dimension) => ({
+      dimension,
+      aliases: ['year', 'month', 'account'].includes(dimension) ? ['name'] : [],
+    }));
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      const MAP = { year: YEAR_LABELS, month: MONTH_LABELS, account: {} };
+      const all = MAP[dimension] || {};
+      const labels = {};
+      for (const m of elements || []) if (all[m] != null) labels[m] = all[m];
+      return { dimension, alias, labels };
+    });
+    // Every leaf non-zero so suppression keeps the full FY24/FY25 × Jul/Aug band.
+    runTm1Query.mockImplementation(async (payload) =>
+      (payload.cols || []).length > 1
+        ? buildNestedColResponse(payload, () => 7)
+        : buildQueryResponse(payload),
+    );
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    const dt = makeDataTransfer('year');
+    const colsWell = zone(wrapper, 'cols');
+    fireDrag(filterGrip(wrapper, 'year').element, 'dragstart', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+
+    // OUTER band (year): relabelled to FY 2024 / FY 2025 — NOT the raw FY24/FY25.
+    const yearGroups = groupCellsAtLevel(wrapper, 0).map((th) => th.text().trim());
+    expect(yearGroups).toEqual(['FY 2024', 'FY 2025']);
+    expect(yearGroups).not.toContain('FY24');
+
+    // INNER band (month): relabelled to July / August INDEPENDENTLY — proves the
+    // alias is per-segment by dimension, not a single colDims[0] relabel.
+    expect(leafHeadTexts(wrapper)).toEqual(['July', 'August', 'July', 'August']);
+
+    // PRINCIPAL kept in :title on BOTH band levels (audit affordance).
+    const fy24 = groupCellsAtLevel(wrapper, 0).find((th) => th.text().trim() === 'FY 2024');
+    expect(fy24.attributes('title')).toBe('FY24');
+    const julLeaf = wrapper
+      .findAll('thead th.pivot-grid__col-head:not(.pivot-grid__total-head)')
+      .find((th) => th.text().trim() === 'July');
+    expect(julLeaf.attributes('title')).toBe('Jul');
+  });
+
+  // ── SEAM 3: 3-DEEP band (year › month › measure) ─────────────────────────────
+  // Corner + Total rowspan=3; TWO group-band rows (year, month) + ONE leaf row
+  // (measure); leaf headers present. Locks colBandDepth=3 driving the rowspans and
+  // the level→class split (outer two = col-group, innermost = col-head).
+  it('SEAM 3 — 3-deep band: corner & Total rowspan=3, two group rows + one leaf row, leaf headers present', async () => {
+    // measure dim with TWO members so the innermost band has >1 leaf per month.
+    const MEASURE2 = {
+      top: 'All_Measure',
+      children: { All_Measure: [{ name: 'amount', type: 'N' }, { name: 'growth', type: 'N' }] },
+    };
+    installCubeMocks({ dimensions: ['account', 'year', 'month', 'measure2'] });
+    // Teach the element/children mocks about measure2 (base ELEMENTS/CHILDREN lack
+    // it). Auto-default seeds measure2's children when it lands on the col axis.
+    const baseElements = getTm1DimensionElements.getMockImplementation();
+    getTm1DimensionElements.mockImplementation(async (dimension, hier) =>
+      dimension === 'measure2'
+        ? { elements: [{ name: 'All_Measure', type: 'C' }, { name: 'amount', type: 'N' }, { name: 'growth', type: 'N' }] }
+        : baseElements(dimension, hier),
+    );
+    const baseChildren = getTm1DimensionChildren.getMockImplementation();
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent, hier) =>
+      dimension === 'measure2'
+        ? { children: MEASURE2.children[parent] || [] }
+        : baseChildren(dimension, parent, hier),
+    );
+    runTm1Query.mockImplementation(async (payload) =>
+      (payload.cols || []).length > 1
+        ? buildNestedColResponse(payload, () => 3)
+        : buildQueryResponse(payload),
+    );
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    // Drag year THEN measure2 onto cols → colDims [year, month, measure2]
+    // (declaration order: account, year, month, measure2 → month already on cols).
+    for (const dim of ['year', 'measure2']) {
+      const dt = makeDataTransfer(dim);
+      const colsWell = zone(wrapper, 'cols');
+      fireDrag(filterGrip(wrapper, dim).element, 'dragstart', { dataTransfer: dt });
+      fireDrag(colsWell.element, 'dragover', { dataTransfer: dt });
+      fireDrag(colsWell.element, 'drop', { dataTransfer: dt });
+      await settle();
+    }
+
+    // THREE col dims live on the axis.
+    expect(chipMap(wrapper)).toContain('cols:year');
+    expect(chipMap(wrapper)).toContain('cols:month');
+    expect(chipMap(wrapper)).toContain('cols:measure2');
+
+    // THREE band rows (one per col dim).
+    const bandRows = wrapper.findAll('thead tr.pivot-grid__col-band-row');
+    expect(bandRows.length).toBe(3);
+
+    // Corner + Total both rowspan the full depth (3), each rendered once.
+    const corner = wrapper.findAll('thead th.pivot-grid__corner');
+    expect(corner.length).toBe(1);
+    expect(corner[0].attributes('rowspan')).toBe('3');
+    const totalHead = wrapper.findAll('thead th.pivot-grid__total-head');
+    expect(totalHead.length).toBe(1);
+    expect(totalHead[0].attributes('rowspan')).toBe('3');
+
+    // TWO group-band rows (year, month) carry ONLY col-group cells; the THIRD row
+    // (measure) carries the leaf col-head cells. (The corner + Total head sit on the
+    // FIRST band row and rowspan downward — the Total head IS a col-head + total-head,
+    // so we EXCLUDE total-head when asserting "no LEAF col-head on the group rows".)
+    expect(bandRows[0].findAll('th.pivot-grid__col-group').length).toBeGreaterThan(0);
+    expect(bandRows[1].findAll('th.pivot-grid__col-group').length).toBeGreaterThan(0);
+    expect(
+      bandRows[0].findAll('th.pivot-grid__col-head:not(.pivot-grid__total-head)').length,
+    ).toBe(0);
+    expect(
+      bandRows[1].findAll('th.pivot-grid__col-head:not(.pivot-grid__total-head)').length,
+    ).toBe(0);
+    // Innermost leaf headers are the measure members, repeated under each month.
+    const leaves = leafHeadTexts(wrapper);
+    expect(leaves).toContain('amount');
+    expect(leaves).toContain('growth');
+    // FY24/FY25 × Jul/Aug × {amount,growth} = 8 leaves.
+    expect(leaves.length).toBe(8);
+    // The year group spans all 4 leaves beneath it (2 months × 2 measures).
+    const yearSpans = groupCellsAtLevel(wrapper, 0).map((th) => th.attributes('colspan'));
+    expect(yearSpans).toEqual(['4', '4']);
+    // Each month group spans its 2 measures.
+    groupCellsAtLevel(wrapper, 1).forEach((th) => expect(th.attributes('colspan')).toBe('2'));
+  });
+
+  // ── SEAM 4: cell-to-leaf ALIGNMENT under a multi-col crossjoin ────────────────
+  // A SPECIFIC row's value lands under the correct [year,month] leaf. This locks
+  // the contract that colAxis.tuples ORDER matches rows[r].cells ORDER — the single
+  // most load-bearing invariant of the whole feature. We give EXPENSE four DISTINCT
+  // values keyed to the four leaves; the rendered cells must read back in leaf order.
+  it('SEAM 4 — cell-to-leaf alignment: EXPENSE\'s four distinct values land under FY24/Jul, FY24/Aug, FY25/Jul, FY25/Aug in tuple order', async () => {
+    // Distinct, non-zero values per leaf so suppression keeps all four AND any
+    // off-by-one or transposed mapping is visible as a wrong number under a header.
+    const VAL = {
+      EXPENSE: { 'FY24 Jul': 11, 'FY24 Aug': 22, 'FY25 Jul': 33, 'FY25 Aug': 44 },
+    };
+    const valueAt = (member, tuple) => VAL[member]?.[tuple.join(' ')] ?? 0;
+    const wrapper = await mountNestedCols({
+      dimensions: ['account', 'year', 'month', 'measure'],
+      dragToCols: ['year'],
+      valueAt,
+    });
+    await setSuppress(wrapper, false); // keep ALL FOUR leaves visible.
+
+    // The four leaves render in crossjoin order under their year groups.
+    expect(leafHeadTexts(wrapper)).toEqual(['Jul', 'Aug', 'Jul', 'Aug']);
+    expect(groupCellsAtLevel(wrapper, 0).map((th) => th.text().trim())).toEqual(['FY24', 'FY25']);
+
+    // THE ALIGNMENT CONTRACT: EXPENSE's cells read back in EXACT leaf-tuple order.
+    // 11 under FY24/Jul, 22 under FY24/Aug, 33 under FY25/Jul, 44 under FY25/Aug.
+    expect(dataCellsOf(wrapper, 'EXPENSE')).toEqual(['11', '22', '33', '44']);
+
+    // Cross-check the per-column footer totals land under the same leaves (only
+    // EXPENSE is non-zero, COGS rolls 0 here) — proving the footer aligns with the
+    // header band leaf-for-leaf, not just the body.
+    expect(colTotalTexts(wrapper).slice(0, 4)).toEqual(['11', '22', '33', '44']);
+  });
+
+  // ── SEAM 5: ENVELOPE-ABSENT fallback ─────────────────────────────────────────
+  // A response with ONLY legacy `columns` (no colAxis) must render a FLAT single-row
+  // band (one band row, every cell a leaf col-head, no col-group), no crash. Locks
+  // normalisePivot's legacy fallback + colBandDepth defaulting to 1.
+  it('SEAM 5 — envelope absent: legacy `columns` only (no colAxis) renders a flat single-row band, no crash', async () => {
+    installCubeMocks();
+    // Strip the colAxis/rowAxis envelope the base builder adds — emulate an OLD
+    // backend that returns ONLY the flat legacy shape.
+    runTm1Query.mockImplementation(async (payload) => {
+      const full = buildQueryResponse(payload);
+      return { columns: full.columns, rows: full.rows, mdx: full.mdx }; // NO colAxis
+    });
+    const wrapper = await mountExplorer();
+    await setSuppress(wrapper, false); // show both Jul/Aug legacy columns.
+
+    // Mounted + rendered a grid (no crash) over the legacy shape.
+    expect(wrapper.find('table.pivot-grid').exists()).toBe(true);
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE', 'COGS']);
+
+    // EXACTLY ONE band row (flat), and it carries NO group (spanning) cells.
+    const bandRows = wrapper.findAll('thead tr.pivot-grid__col-band-row');
+    expect(bandRows.length).toBe(1);
+    expect(wrapper.findAll('thead th.pivot-grid__col-group').length).toBe(0);
+
+    // Every column header is a leaf col-head (the legacy flat contract) — Jul/Aug.
+    const leaves = leafHeadTexts(wrapper);
+    expect(leaves).toContain('Jul');
+    expect(leaves).toContain('Aug');
+
+    // Corner + Total rowspan collapse to 1 (depth=1) — single-row band.
+    expect(wrapper.find('thead th.pivot-grid__corner').attributes('rowspan')).toBe('1');
+    expect(wrapper.find('thead th.pivot-grid__total-head').attributes('rowspan')).toBe('1');
+  });
+
+  // ── SEAM 6: single-col-dim UNCHANGED (the invariant) ─────────────────────────
+  // depth=1 → ONE band row, ALL cells .pivot-grid__col-head, ZERO .pivot-grid__
+  // col-group. This is the contract the pre-existing suites + the alias logic rely
+  // on; the nested feature must NOT regress it for the common single-col case.
+  it('SEAM 6 — single col dim: ONE band row, all col-head, NO col-group (the invariant the existing suites rely on)', async () => {
+    const wrapper = await mountExplorer(); // base layout: month is the ONLY col dim.
+    await setSuppress(wrapper, false);
+
+    // Exactly ONE band row.
+    const bandRows = wrapper.findAll('thead tr.pivot-grid__col-band-row');
+    expect(bandRows.length).toBe(1);
+
+    // ZERO group cells (no spanning) — the single-col invariant.
+    expect(wrapper.findAll('thead th.pivot-grid__col-group').length).toBe(0);
+
+    // The col headers are leaf col-heads (Jul, Aug + the Total head).
+    const leaves = leafHeadTexts(wrapper);
+    expect(leaves).toEqual(['Jul', 'Aug']);
+    // Corner + Total rowspan=1 (band depth 1).
+    expect(wrapper.find('thead th.pivot-grid__corner').attributes('rowspan')).toBe('1');
+    expect(wrapper.find('thead th.pivot-grid__total-head').attributes('rowspan')).toBe('1');
+
+    // And the leaf cells still align (Jul=100 for EXPENSE, Aug=0) — the legacy
+    // single-col cell contract every existing test reads.
+    expect(dataCellsOf(wrapper, 'EXPENSE')).toEqual(['100', '0']);
   });
 });

@@ -385,22 +385,57 @@
             :aria-label="`${cube} pivot — ${displayRows.length} rows by ${displayColHeaders.length} columns`"
           >
             <thead>
-              <tr>
-                <!-- The frozen row-header band shows one segment per row dim; the
-                     corner spans the whole band and labels it (e.g. "year /
-                     entity / account"). Drill twisties live on the INNERMOST
-                     (last) segment of each row's header below. -->
-                <th class="pivot-grid__corner" scope="col">{{ rowAxisLabel }}</th>
+              <!-- NESTED COLUMN-HEADER BAND: one <tr> per column dimension
+                   (outer→inner). Each band cell colspan-spans the surviving leaf
+                   columns beneath its tuple-prefix (classic merged-header pivot,
+                   the column-side dual of the row outer-tuple grouping). The
+                   frozen CORNER (rowspan = full band depth, one frozen column
+                   wide) and the TOTAL head (rowspan = full band depth) sit on the
+                   FIRST band row and span downward. The INNERMOST band row's cells
+                   carry the per-leaf labels the data cells align to and keep the
+                   `pivot-grid__col-head` contract (alias/:title) verbatim. -->
+              <tr
+                v-for="(band, bi) in colBand"
+                :key="`band-${band.level}`"
+                class="pivot-grid__col-band-row"
+                :style="{ '--band-level': band.level }"
+              >
+                <!-- Corner + Total only on the first band row; they rowspan the band. -->
                 <th
-                  v-for="(col, ci) in displayColHeaders"
-                  :key="`col-${ci}`"
-                  class="pivot-grid__col-head pivot-num"
+                  v-if="bi === 0"
+                  class="pivot-grid__corner"
                   scope="col"
-                  :title="colHeadTitle(col)"
+                  :rowspan="colBandDepth"
                 >
-                  {{ colHeadLabel(col) }}
+                  {{ rowAxisLabel }}
                 </th>
-                <th class="pivot-grid__col-head pivot-grid__total-head pivot-num" scope="col">
+
+                <!-- The INNERMOST band row carries the per-leaf labels the data
+                     cells align to → it keeps the `pivot-grid__col-head` contract
+                     (the selector every existing test + the alias logic reads as
+                     "a leaf column header"). OUTER (group) cells get ONLY
+                     `pivot-grid__col-group` so that contract still means LEAVES,
+                     not the spanning year/measure bands above them. -->
+                <th
+                  v-for="cell in band.cells"
+                  :key="cell.key"
+                  :scope="cell.isInner ? 'col' : 'colgroup'"
+                  :colspan="cell.span"
+                  :class="[
+                    'pivot-num',
+                    cell.isInner ? 'pivot-grid__col-head' : 'pivot-grid__col-group',
+                  ]"
+                  :title="bandCellTitle(cell)"
+                >
+                  {{ bandCellLabel(cell) }}
+                </th>
+
+                <th
+                  v-if="bi === 0"
+                  class="pivot-grid__col-head pivot-grid__total-head pivot-num"
+                  scope="col"
+                  :rowspan="colBandDepth"
+                >
                   Total
                 </th>
               </tr>
@@ -694,9 +729,22 @@ function isConsolidation(type) {
 
 // A pivot cellset is { rows: [{ members:[...], cells:[{value}] }] }. Members may
 // be strings or {name}; cells may be {value}/{Value}/{number} or bare numbers.
-// Column headers may live on `data.columns` / `data.cols` / `data.col_headers`,
-// or be reconstructable from the requested column members. We accept all.
-function normalisePivot(data, requestedColMembers, rowDimLabels) {
+//
+// The COLUMN axis is the load-bearing part for nested columns. The authoritative
+// shape is the additive envelope `data.colAxis = { dimensions:[…outer→inner],
+// tuples:[[m,…], …] }` — leaf-column order matches each row's `cells` order. We
+// derive THREE column views from it:
+//   colTuples    — one ARRAY per leaf column (["2024","Jan"]); drives the nested
+//                  spanning band (group by outer-prefix, exactly like the rows).
+//   colDimNames  — the ordered column dimension names (one per band row).
+//   colHeaders   — the FLAT innermost-member label per leaf (legacy contract:
+//                  every existing consumer — cell indexing, the aria-label count,
+//                  the size badge, single-col-dim aliasing — reads this and stays
+//                  intact). For a single col dim colHeaders === the members.
+// FALLBACK (envelope absent — never break): reconstruct leaf headers from the
+// legacy flat `columns`/`col_headers`/requested members and treat each as a
+// 1-segment tuple under the request's col dim names.
+function normalisePivot(data, requestedColMembers, rowDimLabels, colDimNamesReq) {
   const rawRows = data?.rows || data?.cellset?.rows || data?.data || [];
   const rows = (Array.isArray(rawRows) ? rawRows : []).map((r) => {
     const rawMembers = r?.members ?? r?.row_members ?? r?.tuple ?? [];
@@ -708,29 +756,58 @@ function normalisePivot(data, requestedColMembers, rowDimLabels) {
     return { members, cells };
   });
 
-  // Column headers, in priority order: explicit header arrays from the payload,
-  // else the members we asked for on the column axis.
-  const headerSource =
-    data?.col_headers ||
-    data?.columns ||
-    data?.cols ||
-    data?.column_members ||
-    requestedColMembers ||
-    [];
-  let colHeaders = (Array.isArray(headerSource) ? headerSource : [])
-    .map(pickName)
-    .filter(Boolean);
-
-  // If the cellset is wider than the headers we resolved, pad so every cell has
-  // a column label (defensive — keeps the table rectangular).
   const widest = rows.reduce((max, r) => Math.max(max, r.cells.length), 0);
-  if (colHeaders.length < widest) {
-    for (let i = colHeaders.length; i < widest; i += 1) {
-      colHeaders.push(`Col ${i + 1}`);
-    }
-  } else if (colHeaders.length > widest && widest > 0) {
-    colHeaders = colHeaders.slice(0, widest);
+
+  // Authoritative path: the colAxis envelope (tuples-as-arrays).
+  const colAxis = data?.colAxis || data?.col_axis || null;
+  let colTuples = [];
+  let colDimNames = [];
+  if (colAxis && Array.isArray(colAxis.tuples)) {
+    colDimNames = (Array.isArray(colAxis.dimensions) ? colAxis.dimensions : [])
+      .map(pickName)
+      .filter(Boolean);
+    colTuples = colAxis.tuples.map((t) =>
+      (Array.isArray(t) ? t : [t]).map(pickName).filter((m) => m != null),
+    );
+  } else {
+    // Fallback: legacy flat headers (each a member string OR a 1-element tuple).
+    const headerSource =
+      data?.col_headers ||
+      data?.columns ||
+      data?.cols ||
+      data?.column_members ||
+      requestedColMembers ||
+      [];
+    colTuples = (Array.isArray(headerSource) ? headerSource : []).map((h) => {
+      // A legacy entry may already be a tuple array (multi-member) or a scalar.
+      if (Array.isArray(h)) return h.map(pickName).filter((m) => m != null);
+      const name = pickName(h);
+      return name != null ? [name] : [];
+    });
+    colDimNames = Array.isArray(colDimNamesReq) ? colDimNamesReq.slice() : [];
   }
+
+  // Keep the column band rectangular against the actual cell width (defensive):
+  // pad short / trim long so every leaf cell has a header tuple and vice-versa.
+  if (colTuples.length < widest) {
+    for (let i = colTuples.length; i < widest; i += 1) colTuples.push([`Col ${i + 1}`]);
+  } else if (colTuples.length > widest && widest > 0) {
+    colTuples = colTuples.slice(0, widest);
+  }
+
+  // The depth of the column band = the longest tuple (outer→inner). Normalise
+  // every tuple to that depth so the band rows align (a short tuple repeats its
+  // last segment forward — degenerate, but keeps the grid rectangular).
+  const colDepth = colTuples.reduce((max, t) => Math.max(max, t.length), 0);
+  if (colDimNames.length < colDepth) {
+    for (let i = colDimNames.length; i < colDepth; i += 1) colDimNames.push(`Col ${i + 1}`);
+  } else if (colDimNames.length > colDepth && colDepth > 0) {
+    colDimNames = colDimNames.slice(0, colDepth);
+  }
+
+  // The FLAT leaf labels (legacy `colHeaders`): the innermost member of each
+  // tuple — exactly the single-col-dim string the old code rendered.
+  const colHeaders = colTuples.map((t) => (t.length ? t[t.length - 1] : ''));
 
   // Row headers: one per row-axis dimension. Fall back to the deepest row tuple.
   const depth = rows.reduce((max, r) => Math.max(max, r.members.length), 0);
@@ -739,7 +816,7 @@ function normalisePivot(data, requestedColMembers, rowDimLabels) {
       ? rowDimLabels.slice(0, Math.max(depth, 1))
       : Array.from({ length: Math.max(depth, 1) }, (_, i) => `Row ${i + 1}`);
 
-  return { rows, colHeaders, rowHeaders };
+  return { rows, colHeaders, colTuples, colDimNames, rowHeaders };
 }
 
 // Cells normalise to { value, formatted } so the table can prefer the backend's
@@ -838,20 +915,19 @@ function filterPrincipalTitle(dim) {
   return memberPrincipalTitle(dim, filterSelections[dim]);
 }
 
-// Column-header display. The dominant case is a SINGLE column dimension (e.g.
-// month): every displayColHeaders entry is then a principal member of
-// colDims[0], so we resolve its alias label. With MULTIPLE column dimensions the
-// header is a composite tuple string ("Jul / FY24") that doesn't map cleanly to
-// one member, so we degrade to the raw header verbatim — never mislabelled,
-// never crashes. (Single-col-dim is the contract that MUST be correct.)
-function colHeadLabel(col) {
-  if (colDims.value.length === 1) return displayMember(colDims.value[0], col);
-  return col;
+// A nested-band header cell's display label + tooltip. Every cell carries its own
+// (dim, member), so aliasing is per-segment and uniform across the band depth —
+// the same `displayMember`/`memberPrincipalTitle` the rows use. This supersedes
+// the old single-col-dim-only path: ALL column dimensions alias now (architect
+// §1.1). A cell with no dim (degenerate/padded) falls back to its raw member.
+function bandCellLabel(cell) {
+  if (cell?.dim == null || cell?.member == null) return cell?.label ?? cell?.member ?? '';
+  return displayMember(cell.dim, cell.member);
 }
 
-function colHeadTitle(col) {
-  if (colDims.value.length === 1) return memberPrincipalTitle(colDims.value[0], col);
-  return undefined;
+function bandCellTitle(cell) {
+  if (cell?.dim == null || cell?.member == null) return undefined;
+  return memberPrincipalTitle(cell.dim, cell.member);
 }
 
 // A row-header segment's tooltip. When an alias has relabelled it, surface the
@@ -1038,11 +1114,23 @@ const pivot = computed(() =>
         result.value,
         colDims.value.flatMap((d) => memberSelections[d] || []),
         rowDims.value,
+        colDims.value,
       )
-    : { rows: [], colHeaders: [], rowHeaders: [] },
+    : { rows: [], colHeaders: [], colTuples: [], colDimNames: [], rowHeaders: [] },
 );
 
 const colHeaders = computed(() => pivot.value.colHeaders);
+// One tuple-as-array per LEAF column (["2024","Jan"]); drives the nested band.
+const colTuples = computed(() => pivot.value.colTuples);
+// The ordered column dimension names (outer→inner); one per band row. Prefer the
+// envelope's authoritative names, fall back to the assigned col dims.
+const colDimNames = computed(() => {
+  const fromEnvelope = pivot.value.colDimNames;
+  if (fromEnvelope && fromEnvelope.length) return fromEnvelope;
+  return colDims.value.slice();
+});
+// The depth of the column-header band (number of stacked header rows).
+const colBandDepth = computed(() => Math.max(colDimNames.value.length, 1));
 
 // Duplicate-safe row assembly is handled by GROUPING the backend rows by their
 // OUTER tuple (the row tuple minus its innermost member) and walking each group
@@ -1280,6 +1368,71 @@ const displayColIndices = computed(() => suppressed.value.colIndices);
 const displayColHeaders = computed(() =>
   displayColIndices.value.map((ci) => colHeaders.value[ci]),
 );
+
+// The surviving column TUPLES, in surviving order (parallel to displayColHeaders
+// / displayColIndices). One array per leaf column (["2024","Jan"]).
+const displayColTuples = computed(() =>
+  displayColIndices.value.map((ci) => colTuples.value[ci] || []),
+);
+
+// ── THE NESTED COLUMN-HEADER BAND (the column-side mirror of the row grouping) ─
+// The row side groups backend rows by their OUTER tuple (tuple minus the inner
+// member) and spans nothing — each row is one <tr>. The COLUMN side is the dual:
+// the SAME outer-prefix grouping, but expressed as colspans across one <thead>
+// row PER dimension (outer→inner). At band level L (0 = outermost), a header cell
+// spans the maximal run of consecutive SURVIVING leaf columns whose tuple shares
+// the same prefix tuple[0..L]. The innermost row (L = depth-1) is one cell per
+// leaf column — these carry the per-leaf labels the cells align to, so they keep
+// the legacy `pivot-grid__col-head` contract (text, :title, alias) verbatim.
+//
+// Grouping is over the SURVIVING (post-suppress) tuples in surviving order, so a
+// suppressed leaf simply shortens its parent's span (or drops an outer cell whose
+// every leaf was suppressed) — totals + alignment stay coherent because every
+// band cell records the surviving-leaf index it starts at.
+//
+// Each band cell: { label, dim, member, span, leafCi, isInner, key }.
+//   leafCi  — the surviving-column index (into displayColIndices) where the
+//             group starts; the innermost row's leafCi is the cell column it heads.
+//   span    — colspan (count of surviving leaves under this prefix).
+const colBand = computed(() => {
+  const tuples = displayColTuples.value;
+  const depth = colBandDepth.value;
+  const dims = colDimNames.value;
+  // Pre-suppression empty (no result yet) → an empty band; the <thead> guards on
+  // displayColHeaders.length anyway.
+  if (!tuples.length) return [];
+
+  const rows = [];
+  for (let level = 0; level < depth; level += 1) {
+    const cells = [];
+    let start = 0;
+    while (start < tuples.length) {
+      // The prefix that defines this group at this level: tuple[0..level].
+      const prefixKey = tupleKey(tuples[start].slice(0, level + 1));
+      let end = start + 1;
+      while (
+        end < tuples.length &&
+        tupleKey(tuples[end].slice(0, level + 1)) === prefixKey
+      ) {
+        end += 1;
+      }
+      const member = tuples[start][level];
+      cells.push({
+        label: member,
+        dim: dims[level] ?? null,
+        member,
+        span: end - start,
+        leafCi: start,
+        isInner: level === depth - 1,
+        // Unique within the band: level + the starting surviving-leaf index.
+        key: `cb-${level}-${start}`,
+      });
+      start = end;
+    }
+    rows.push({ level, dim: dims[level] ?? null, cells });
+  }
+  return rows;
+});
 
 // Rows that contribute to a column / grand total: ONE level only, over the
 // SURVIVING rows. TM1 returns a consolidation's rolled-up value on the
@@ -1744,46 +1897,33 @@ async function ensureAliasLabels(dim, members) {
 }
 
 // Resolve labels for every member the grid is currently SHOWING — the displayed
-// row members (one segment per row dim), the displayed column members (single
-// col dim — the dominant case), and each filter pill's member. Called whenever
-// the display set, an alias, or a hierarchy changes. Per-dim no-op when that dim
-// is on principal names.
+// row members (one segment per row dim), EVERY segment of every displayed column
+// tuple (multi-dim aliasing — architect §1.1), and each filter pill's member.
+// Called whenever the display set, an alias, or a hierarchy changes. Per-dim
+// no-op when that dim is on principal names.
 function resolveShownLabels() {
   // Row dims: the rendered row header cells already carry their (dim, member).
   const perDim = new Map();
-  for (const row of displayRows.value) {
-    for (const hc of row.headerCells || []) {
-      if (!hc.dim || hc.member == null) continue;
-      let set = perDim.get(hc.dim);
-      if (!set) {
-        set = new Set();
-        perDim.set(hc.dim, set);
-      }
-      set.add(hc.member);
-    }
-  }
-  // Single col dim: every displayed header is a member of colDims[0]. Multi col
-  // dims degrade to principal (composite headers — documented; never mislabelled).
-  if (colDims.value.length === 1) {
-    const cd = colDims.value[0];
-    let set = perDim.get(cd);
-    if (!set) {
-      set = new Set();
-      perDim.set(cd, set);
-    }
-    for (const col of displayColHeaders.value) if (col != null) set.add(col);
-  }
-  // Filter pills.
-  for (const dim of filterDims.value) {
-    const m = filterSelections[dim];
-    if (m == null) continue;
+  const addMember = (dim, member) => {
+    if (!dim || member == null) return;
     let set = perDim.get(dim);
     if (!set) {
       set = new Set();
       perDim.set(dim, set);
     }
-    set.add(m);
+    set.add(member);
+  };
+  for (const row of displayRows.value) {
+    for (const hc of row.headerCells || []) addMember(hc.dim, hc.member);
   }
+  // Column band: alias EVERY segment of EVERY surviving column tuple, keyed by
+  // that segment's dimension (architect §1.1 — multi-dim aliasing). The band
+  // cells already carry their (dim, member); walk them across the full depth.
+  for (const band of colBand.value) {
+    for (const cell of band.cells) addMember(cell.dim, cell.member);
+  }
+  // Filter pills.
+  for (const dim of filterDims.value) addMember(dim, filterSelections[dim]);
   for (const [dim, set] of perDim) {
     if (dimAlias[dim]) ensureAliasLabels(dim, [...set]);
   }
@@ -2725,6 +2865,10 @@ loadCubes();
   --pivot-rowhead-min: 220px;
   --pivot-rowhead-max: 360px;
   --pivot-num-min: 96px;
+  /* Header-band row height — also the per-level cumulative sticky-top offset so a
+     multi-row nested band freezes as a STACK (level L sticks at L × this) rather
+     than collapsing every band row onto top:0. */
+  --pivot-head-h: 34px;
   /* Total band tints — derived from the brand-navy token via color-mix (the
      house pattern, see KTable / EmptyState). The band is a real navy FILL, not
      a near-white grey, so it reads as a band distinct from the zebra. */
@@ -2746,18 +2890,27 @@ loadCubes();
 }
 
 /* Numeric columns get a sensible min-width so a few-column slice doesn't let a
-   single column stretch across the viewport. */
+   single column stretch across the viewport. Group (outer-band) cells share it so
+   a single-leaf group doesn't collapse narrower than its leaf below. */
 .pivot-grid__col-head,
+.pivot-grid__col-group,
 .pivot-grid__cell {
   min-width: var(--pivot-num-min);
 }
 
 /* ── Column-header band (frozen on vertical scroll) ───────────────────────── */
+/* Each band ROW carries --band-level (0 = outermost); its cells stick at a
+   cumulative top offset so a multi-row nested band freezes as a stack rather than
+   collapsing onto top:0. Single-col-dim → one row at level 0 → top:0 (unchanged). */
+.pivot-grid__col-band-row {
+  --band-level: 0;
+}
+
 .pivot-grid thead th {
   position: sticky;
-  top: 0;
+  top: calc(var(--pivot-head-h) * var(--band-level, 0));
   z-index: 2;
-  height: 34px;
+  height: var(--pivot-head-h);
   background: var(--kdl-page-bg);
   /* 11px uppercase header → small text, so it must clear AA 4.5:1. The muted
      token (#6B7280 on #F5F5F8 ≈ 4.3:1) fell short; secondary (#4B5563 ≈ 7:1)
@@ -2774,7 +2927,20 @@ loadCubes();
   text-align: right;
 }
 
-/* Corner cell — row/col intersection: highest stack, frozen on both axes. */
+/* Outer (group) band cells — a year spanning its months. Centred over their span
+   with a hairline divider between sibling groups so the nesting reads as merged
+   header bands. The innermost band row keeps the right-aligned numeric col-head
+   style above (it heads the data columns); the group rows centre instead. */
+.pivot-grid__col-group {
+  text-align: center;
+  border-left: 1px solid var(--kdl-border-subtle);
+}
+.pivot-grid__col-group:first-of-type {
+  border-left: none;
+}
+
+/* Corner cell — row/col intersection: highest stack, frozen on both axes. It
+   rowspans the full band depth, so it stays pinned at top:0 (band level 0). */
 .pivot-grid__corner {
   position: sticky;
   left: 0;
@@ -2785,6 +2951,7 @@ loadCubes();
   color: var(--kdl-text-secondary);
   background: var(--kdl-page-bg);
   border-right: 1px solid var(--kdl-border);
+  vertical-align: bottom;
 }
 
 /* ── Row-header column (frozen on horizontal scroll) ──────────────────────── */
