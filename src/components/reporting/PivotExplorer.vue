@@ -453,7 +453,7 @@
         >
           <table
             class="pivot-grid"
-            :aria-label="`${cube} pivot — ${isCapped ? `showing first ${renderRows.length.toLocaleString()} of ${displayRows.length.toLocaleString()}` : displayRows.length.toLocaleString()} rows by ${displayColHeaders.length} columns`"
+            :aria-label="`${cube} pivot — ${isCapped ? `showing first ${renderRows.length.toLocaleString()} of ${visibleRows.length.toLocaleString()}` : visibleRows.length.toLocaleString()} rows by ${displayColHeaders.length} columns`"
           >
             <thead>
               <!-- NESTED COLUMN-HEADER BAND: one <tr> per column dimension
@@ -521,28 +521,69 @@
                 v-for="row in renderRows"
                 :key="row.key"
                 class="pivot-grid__row"
-                :class="{ 'pivot-grid__row--consol': row.drillable }"
+                :class="{
+                  'pivot-grid__row--consol': row.drillable,
+                  'pivot-grid__row--parent': row.isOuterParent,
+                }"
                 :aria-level="row.level + 1"
               >
                 <th
                   class="pivot-grid__row-head"
-                  :class="{ 'pivot-grid__row-head--consol': row.drillable }"
+                  :class="{
+                    'pivot-grid__row-head--consol': row.drillable,
+                    'pivot-grid__row-head--parent': row.isOuterParent,
+                  }"
                   scope="row"
                 >
-                  <!-- One segment per row dim, laid horizontally inside the single
-                       frozen header column (keeps the sticky-left pane intact —
-                       no cumulative multi-column offsets). Outer dims are plain
-                       labels; the innermost segment carries the twisty + indent
-                       and is the drill affordance. -->
+                  <!-- The frozen row-header band. In the PAW-style nested shape each
+                       row carries ONE segment for its own level — an OUTER-PARENT
+                       group header (collapse twisty, no re-query) or the INNERMOST
+                       drill node (drill twisty, re-queries) — indented by depth.
+                       The pre-response / no-tree fallback lays its plain segments
+                       side-by-side (legacy). Either way it stays one frozen column,
+                       so the sticky-left pane is intact (no per-column offsets). -->
                   <span class="pivot-grid__row-head-band">
                     <span
                       v-for="hcell in row.headerCells"
                       :key="hcell.key"
                       class="pivot-grid__row-seg"
-                      :class="{ 'pivot-grid__row-seg--inner': hcell.isInner }"
-                      :style="hcell.isInner ? { '--row-indent': `${hcell.level * INDENT_PX}px` } : null"
+                      :class="{
+                        'pivot-grid__row-seg--inner': hcell.isInner,
+                        'pivot-grid__row-seg--parent': hcell.isOuterParent,
+                      }"
+                      :style="(hcell.isInner || hcell.isOuterParent)
+                        ? { '--row-indent': `${hcell.level * INDENT_PX}px` }
+                        : null"
                     >
-                      <template v-if="hcell.isInner">
+                      <!-- OUTER-PARENT: client-side collapse twisty (toggleOuter,
+                           never re-queries). aria-expanded = NOT collapsed. -->
+                      <button
+                        v-if="hcell.isOuterParent"
+                        type="button"
+                        class="pivot-grid__twisty"
+                        :aria-expanded="!hcell.collapsed"
+                        :aria-label="`${hcell.collapsed ? 'Expand' : 'Collapse'} ${displayMember(hcell.dim, hcell.member)}`"
+                        @click="toggleOuter(hcell.outerKey)"
+                      >
+                        <svg
+                          class="pivot-grid__twisty-icon"
+                          :class="{ 'pivot-grid__twisty-icon--open': !hcell.collapsed }"
+                          width="10"
+                          height="10"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="9 6 15 12 9 18" />
+                        </svg>
+                      </button>
+                      <!-- INNERMOST drill: the existing consolidation drill (re-
+                           queries children). Leaves get a spacer to align labels. -->
+                      <template v-else-if="hcell.isInner">
                         <button
                           v-if="hcell.drillable"
                           type="button"
@@ -635,9 +676,9 @@
         aria-live="polite"
       >
         Showing the first {{ MAX_RENDER_ROWS.toLocaleString() }} of
-        {{ displayRows.length.toLocaleString() }} rows — refine your selection
-        (drill in, filter, or turn on Suppress zeros), or wait for full
-        virtualisation.
+        {{ visibleRows.length.toLocaleString() }} rows — refine your selection
+        (drill in, collapse a group, filter, or turn on Suppress zeros), or wait
+        for full virtualisation.
       </p>
 
       <!-- ════════════════════════════════════════════════════════════════════
@@ -1060,6 +1101,32 @@ function rowSegTitle(hcell) {
 const rowNodes = reactive({}); // path -> node
 const rowOrder = ref([]); // ordered visible PATHS (the row axis)
 
+// ── OUTER-GROUP collapse state (PAW-style per-level row hierarchy) ────────────
+// With ≥2 row dims the OUTER dims (every dim except the innermost) render as
+// COLLAPSIBLE PARENT rows — each outer member shown ONCE, its descendant rows
+// indented beneath — instead of the outer label repeating on every inner row.
+// Collapsing an outer parent hides its descendants. This is a PURELY CLIENT-SIDE
+// view fold over the ALREADY-FETCHED crossjoin tuples — it issues NO re-query
+// (contrast the INNERMOST-dim drill, toggleRow/expandRow, which DOES re-query a
+// consolidation's children). The set holds the outer-tuple PATH key of every
+// COLLAPSED parent (e.g. tupleKey(["FY24"]) or tupleKey(["FY24","Klikk"])); a row
+// is hidden when ANY prefix of its outer path is in the set. Vue 3 makes Set
+// mutations (add/delete/has) reactive, so visibleRows recomputes on toggle. reka
+// v-model VALUE primitive is N/A (Doctrine #43) — these twisties are plain
+// <button>s, so there is no state primitive in play.
+const collapsedRowKeys = reactive(new Set());
+
+function isOuterCollapsed(outerKey) {
+  return collapsedRowKeys.has(outerKey);
+}
+
+// Toggle one outer parent's collapse state (client-side only — NO re-query).
+function toggleOuter(outerKey) {
+  if (!outerKey) return;
+  if (collapsedRowKeys.has(outerKey)) collapsedRowKeys.delete(outerKey);
+  else collapsedRowKeys.add(outerKey);
+}
+
 // Build a node's ancestry path from its parent's path + its bare member name.
 function makePath(parentPath, member) {
   return parentPath ? `${parentPath}::${member}` : member;
@@ -1266,16 +1333,33 @@ function tupleKey(members) {
 // THE RENDERED GRID ROWS (pre-suppression). The drill tree always owns the
 // INNERMOST row dim's member set; the rendered rows are the crossjoin of the
 // OUTER row dims × that inner tree, in TM1/PAW order (outer dims slowest, inner
-// dim fastest). Each row carries: key, headerCells (one per row dim, the inner
-// one drillable), label, level, drillable, expanded, drillKey, path, cells,
-// rowTotal. Drill (twisty) lives on the inner-dim header cell — expanding it
-// augments the inner member set and re-queries; the crossjoin handles the outer
-// tuples. Single-row-dim is the degenerate case (no outer dims → one block).
+// dim fastest).
+//
+// PAW-STYLE NESTED ROW HIERARCHY (the shape this builder produces with ≥2 row
+// dims): each OUTER member is shown ONCE as a COLLAPSIBLE PARENT row, with its
+// descendant rows INDENTED beneath it — rather than the outer label repeating on
+// every inner row. For >2 row dims the outer levels nest recursively (FY24 ▸ then
+// Klikk ▸ then the inner account rows). Every row carries exactly ONE header
+// segment (its own level's member, indented by depth):
+//   • OUTER-PARENT rows: { isOuterParent:true, outerKey, collapsed, level=outer
+//     depth } — a twisty bound to toggleOuter (CLIENT-SIDE fold, no re-query),
+//     cells = the rolled values TM1 returned on the bare outer-prefix tuple if
+//     any, else [] (blank).
+//   • INNER rows: { isInner:true, drillable, expanded, drillKey, path,
+//     level=outerCount+treeLevel } — the existing innermost-dim DRILL twisty
+//     (toggleRow → expandRow/collapseRow, which DOES re-query). outerKey = the
+//     full outer-tuple path the inner row sits under (so outer collapse can hide
+//     it). Single-row-dim is the degenerate case (outerCount 0 → no parents, the
+//     tree IS the rows, exactly as before).
+// Each row also carries: key, label, level (drives indent + aria-level), cells,
+// rowTotal.
 const gridRows = computed(() => {
   const dim = innerRowDim.value;
 
   // No tree yet (cube still seeding, or no row dim) → render whatever backend
-  // rows exist flat, with one header cell per tuple member (no drill).
+  // rows exist flat, with one header cell per tuple member (no drill, no outer
+  // grouping). This pre-response/no-tree fallback keeps the legacy side-by-side
+  // segment band (each member a plain label).
   if (!dim || !rowOrder.value.length) {
     return pivot.value.rows.map((r, i) => {
       const { sum, has } = sumCells(r.cells);
@@ -1292,6 +1376,8 @@ const gridRows = computed(() => {
             level: 0,
             drillable: false,
             isInner: false,
+            isOuterParent: false,
+            outerKey: null,
             key: `h-${i}-${hi}`,
           }),
         ),
@@ -1301,6 +1387,8 @@ const gridRows = computed(() => {
         expanded: false,
         drillKey: null,
         path: null,
+        isOuterParent: false,
+        outerKey: '',
         cells: r.cells,
         rowTotal: has ? sum : null,
       };
@@ -1325,7 +1413,24 @@ const gridRows = computed(() => {
   const outerCount = outerRowDims.value.length;
   const groupsOrder = []; // outer-tuple keys, first-seen order
   const groups = new Map(); // outerKey -> { outerTuple, queues:Map<member,row[]> }
+  // Backend rows keyed by their BARE outer-prefix tuple (e.g. ["FY24"] or
+  // ["FY24","Klikk"]) — the rolled values TM1 may return ON the outer member
+  // itself. Today's crossjoin only returns full tuples, so these are usually
+  // absent (parent rows render blank); we honour them if a future query asks for
+  // the consolidation tuple too. First occurrence wins (a prefix is one member).
+  const prefixRow = new Map();
   for (const r of pivot.value.rows) {
+    // A ROLLED PREFIX row lands on an outer-prefix tuple (arity ≤ outerCount, so
+    // it carries no inner member beyond the outer dims). Record its cells for the
+    // matching parent and DON'T add it as an inner-queue entry. A full crossjoin
+    // row has arity outerCount+1 (outer dims + the inner dim). (Usually no prefix
+    // rows arrive — today's crossjoin returns only full tuples — so parents render
+    // blank; this honours them if a future query also asks for the rolled tuple.)
+    if (outerCount && r.members.length <= outerCount) {
+      const pk = tupleKey(r.members);
+      if (r.members.length && !prefixRow.has(pk)) prefixRow.set(pk, r.cells);
+      continue;
+    }
     const outerTuple = outerCount ? r.members.slice(0, outerCount) : [];
     const outerKey = tupleKey(outerTuple);
     let bucket = groups.get(outerKey);
@@ -1347,12 +1452,64 @@ const gridRows = computed(() => {
   }
 
   const out = [];
+  // Outer-prefix keys already emitted as parent rows — so each outer member is
+  // shown ONCE (PAW style), even though many backend groups share the same outer
+  // prefix. Walking groups in first-seen order keeps parents adjacent to their
+  // first child block; recursive levels (FY24 ▸ Klikk ▸ …) emit only the NEW
+  // prefix levels each group introduces.
+  const emittedParents = new Set();
   groupsOrder.forEach((outerKey, gi) => {
     const { outerTuple, queues } = groups.get(outerKey);
+
+    // 1) Emit any not-yet-seen OUTER-PARENT rows for this group's prefix path,
+    //    outermost first. Level L's parent key is the prefix tuple[0..L].
+    for (let L = 0; L < outerCount; L += 1) {
+      const prefix = outerTuple.slice(0, L + 1);
+      const parentKey = tupleKey(prefix);
+      if (emittedParents.has(parentKey)) continue;
+      emittedParents.add(parentKey);
+      const member = outerTuple[L];
+      const pdim = outerRowDims.value[L] ?? null;
+      const cells = prefixRow.get(parentKey) || [];
+      const { sum, has } = sumCells(cells);
+      const collapsed = isOuterCollapsed(parentKey);
+      // ONE header segment — the parent's own member, indented to its outer depth,
+      // carrying the CLIENT-SIDE collapse twisty (toggleOuter, no re-query).
+      const headerCells = [
+        {
+          member,
+          dim: pdim,
+          label: member,
+          level: L,
+          drillable: false,
+          isInner: false,
+          isOuterParent: true,
+          outerKey: parentKey,
+          collapsed,
+          key: `p-${parentKey}`,
+        },
+      ];
+      out.push({
+        key: `p::${parentKey}`,
+        headerCells,
+        label: member,
+        level: L,
+        drillable: false,
+        expanded: !collapsed, // "showing children beneath" — excludes from totals.
+        drillKey: null,
+        path: null,
+        isOuterParent: true,
+        outerKey: parentKey,
+        collapsed,
+        cells,
+        rowTotal: has ? sum : null,
+      });
+    }
+
+    // 2) Emit this group's INNER rows, indented PAST the deepest outer parent.
     // Per-group cursors track how many rows of each inner member we've consumed
     // this render pass, so duplicate inner members de-queue in request order.
     const cursors = new Map();
-    // Walk this group's inner tree in order. A missing/short queue → blank cells.
     innerPaths.forEach((path, j) => {
       const node = rowNodes[path] || { member: path, path, level: 0, expanded: false };
       const member = node.member ?? path;
@@ -1363,29 +1520,23 @@ const gridRows = computed(() => {
       const cells = backendRow ? backendRow.cells : [];
       const { sum, has } = sumCells(cells);
       const drillable = isConsolidation(memberType(dim, member));
-      // Header cells: one per row dim. Outer dims show their tuple member (no
-      // twisty); the inner dim shows this tree node (drillable + indented).
+      // Total render depth: the outer dims sit at levels 0..outerCount-1, so the
+      // inner tree starts at outerCount and adds its own drill level on top.
+      const depth = outerCount + (node.level || 0);
+      // ONE header segment — this inner tree node, indented + carrying the
+      // existing innermost-dim DRILL twisty (toggleRow → expandRow, re-queries).
       const headerCells = [
-        ...outerTuple.map((om, oi) => ({
-          // `member`/`dim` drive the display-label lookup; `label` is the
-          // principal fallback. Outer segment oi maps to outerRowDims[oi].
-          member: om,
-          dim: outerRowDims.value[oi] ?? null,
-          label: om,
-          level: 0,
-          drillable: false,
-          isInner: false,
-          key: `o-${gi}-${oi}`,
-        })),
         {
           member,
           dim,
           label: member,
-          level: node.level || 0,
+          level: depth,
           drillable,
           expanded: !!node.expanded,
           drillKey: drillable ? path : null,
           isInner: true,
+          isOuterParent: false,
+          outerKey,
           key: `i-${gi}-${path}`,
         },
       ];
@@ -1396,11 +1547,13 @@ const gridRows = computed(() => {
         key: `g${gi}::${path}::${j}`,
         headerCells,
         label: member,
-        level: node.level || 0,
+        level: depth,
         drillable,
         expanded: !!node.expanded,
         drillKey: drillable ? path : null,
         path,
+        isOuterParent: false,
+        outerKey, // the full outer-tuple path this inner row sits under.
         cells,
         rowTotal: has ? sum : null,
       });
@@ -1457,14 +1610,19 @@ const suppressed = computed(() => {
   if (!suppressEmpty.value) {
     return { rows: allRows, colIndices: allColIndices };
   }
-  // 1) Drop rows whose every data cell is zero/empty. Two rows are KEPT
-  //    regardless: a row with NO cells yet (pre-response structural row, nothing
-  //    to suppress), and an EXPANDED consolidation — it is a structural rollup
-  //    whose (possibly non-zero) children are shown beneath it, so dropping it
-  //    would orphan those children and strip the collapse twisty. PAW keeps the
-  //    expanded parent and suppresses its zero CHILDREN individually; a COLLAPSED
-  //    all-zero consolidation (its rolled value is the row) is dropped.
+  // 1) Drop rows whose every data cell is zero/empty. Rows KEPT regardless:
+  //    - a row with NO cells yet (pre-response structural row, nothing to suppress);
+  //    - an EXPANDED inner consolidation — a structural rollup whose (possibly
+  //      non-zero) children are shown beneath it, so dropping it would orphan them
+  //      and strip the collapse twisty (PAW keeps the expanded parent and
+  //      suppresses its zero CHILDREN individually; a COLLAPSED all-zero
+  //      consolidation, whose rolled value IS the row, is dropped);
+  //    - an OUTER-PARENT group header (PAW row hierarchy) — it is a navigational
+  //      rollup whose descendant rows live in this same set; suppression targets
+  //      the inner data rows, never the group headers, so the hierarchy + the
+  //      collapse twisty stay intact even when a group's data is all zero.
   const rows = allRows.filter((r) => {
+    if (r.isOuterParent) return true;
     if (r.drillable && r.expanded) return true;
     const cells = r.cells || [];
     if (!cells.length) return true;
@@ -1477,23 +1635,53 @@ const suppressed = computed(() => {
   return { rows, colIndices };
 });
 
-// The FULL surviving row set (post-suppression when the toggle is on). This is
-// the authoritative set the TOTALS sum over — it is NOT capped. The rendered
-// body iterates `renderRows` (capped) below; everything totals-related (totalRows
-// / colTotals / grandTotal) keeps deriving from displayRows so the footer stays
-// correct even when the body is truncated.
+// The FULL surviving row set (post-suppression when the toggle is on), BEFORE the
+// client-side outer-collapse fold. This is the authoritative set the TOTALS sum
+// over — it is NOT capped and is INDEPENDENT of outer collapse, so folding a
+// group never changes colTotals / grandTotal. Everything totals-related (totalRows
+// / colTotals / grandTotal) derives from displayRows so the footer stays correct
+// regardless of which groups are collapsed or whether the body is truncated.
 const displayRows = computed(() => suppressed.value.rows);
 
-// INTERIM FREEZE-GUARD: the rows actually written to the DOM — at most
-// MAX_RENDER_ROWS of the full surviving set. The grid <tbody> v-for binds to
-// THIS, never displayRows, so a huge view can't block the main thread. slice()
-// is a no-op (returns the same members) when the set is within the cap.
-const renderRows = computed(() => displayRows.value.slice(0, MAX_RENDER_ROWS));
+// The OUTER-COLLAPSE fold (PAW per-level row hierarchy) — a PURELY CLIENT-SIDE
+// view over displayRows: drop any row that has a COLLAPSED outer-parent ancestor.
+// A row is hidden when ANY prefix of its outerKey path is in collapsedRowKeys.
+// The collapsed PARENT itself stays (it owns the re-expand twisty); only its
+// descendants (deeper parents + inner rows) are folded away. No re-query — these
+// rows are already fetched; collapse just hides them. Totals are unaffected
+// (they read displayRows, above).
+const visibleRows = computed(() => {
+  const rows = displayRows.value;
+  if (!collapsedRowKeys.size) return rows;
+  return rows.filter((r) => {
+    const key = r.outerKey || '';
+    if (!key) return true; // single-dim / flat rows have no outer ancestor.
+    // The row's OWN key is a collapsed parent → keep it (it's the fold handle);
+    // any segment ABOVE it being collapsed hides it. We test each ancestor prefix
+    // of the outer path (split on the NUL tuple separator) EXCEPT the row's own
+    // full key when the row is itself that parent.
+    const segs = key.split(TUPLE_SEP);
+    const upTo = r.isOuterParent ? segs.length - 1 : segs.length;
+    let prefix = '';
+    for (let i = 0; i < upTo; i += 1) {
+      prefix = i === 0 ? segs[0] : `${prefix}${TUPLE_SEP}${segs[i]}`;
+      if (collapsedRowKeys.has(prefix)) return false;
+    }
+    return true;
+  });
+});
 
-// True only when the full surviving set exceeds the cap — gates the cap banner
-// and the "X of Y rows" footer wording. When false the grid shows every row and
-// the footer reads as before.
-const isCapped = computed(() => displayRows.value.length > MAX_RENDER_ROWS);
+// INTERIM FREEZE-GUARD: the rows actually written to the DOM — at most
+// MAX_RENDER_ROWS of the VISIBLE (post-outer-collapse) set. The grid <tbody>
+// v-for binds to THIS, never displayRows, so a huge view can't block the main
+// thread. Collapsing a group reduces this set (fewer rows to render). slice() is
+// a no-op (returns the same members) when the set is within the cap.
+const renderRows = computed(() => visibleRows.value.slice(0, MAX_RENDER_ROWS));
+
+// True only when the VISIBLE set exceeds the cap — gates the cap banner and the
+// "X of Y rows" footer wording. Collapsing groups can bring a capped view back
+// under the cap (the rendered count drops), which is the intended escape hatch.
+const isCapped = computed(() => visibleRows.value.length > MAX_RENDER_ROWS);
 
 // The surviving column indices (drives header + cell + total column selection).
 const displayColIndices = computed(() => suppressed.value.colIndices);
@@ -1567,16 +1755,25 @@ const colBand = computed(() => {
   return rows;
 });
 
-// Rows that contribute to a column / grand total: ONE level only, over the
-// SURVIVING rows. TM1 returns a consolidation's rolled-up value on the
-// consolidation's own row, so summing an EXPANDED parent AND its children
-// double-counts (EXPENSE 100 + Rent 60 + Salaries 40 = 200). An expanded parent
-// is represented by its children in the grid, so we EXCLUDE it; a collapsed
-// consolidation correctly contributes its own rolled value; leaves always
-// contribute. Net: sum surviving rows that are NOT currently expanded.
+// Rows that contribute to a column / grand total: ONE level only, over the FULL
+// surviving set (displayRows — NOT the outer-collapse-folded visibleRows), so
+// folding a group NEVER changes the totals. TM1 returns a consolidation's
+// rolled-up value on the consolidation's own row, so summing an EXPANDED parent
+// AND its children double-counts (EXPENSE 100 + Rent 60 + Salaries 40 = 200). Two
+// kinds of rollup are excluded:
+//   • an EXPANDED inner consolidation — represented by its children in the set;
+//   • an OUTER-PARENT group header — always a rollup of its descendant inner rows,
+//     which are ALWAYS present in displayRows (outer collapse is a render-only
+//     fold, it never removes rows from this set), so the parent must be excluded
+//     regardless of its collapsed state to avoid double-counting.
+// A collapsed inner consolidation correctly contributes its own rolled value;
+// leaves always contribute. Net: sum surviving NON-parent rows that are NOT
+// currently expanded.
 //   After expanding EXPENSE: column total = Rent + Salaries + (every OTHER top
 //   row) — and crucially NOT EXPENSE itself. The per-row rowTotal is unaffected.
-const totalRows = computed(() => displayRows.value.filter((r) => !r.expanded));
+const totalRows = computed(() =>
+  displayRows.value.filter((r) => !r.expanded && !r.isOuterParent),
+);
 
 // Column totals (one per SURVIVING column) + grand total, over the one-level set.
 // Indexed by the surviving column indices so a suppressed column contributes
@@ -1617,14 +1814,17 @@ const hasExpansions = computed(() =>
   Object.values(rowNodes).some((n) => n.expanded),
 );
 
-// Footer size badge. Within the cap it reads "6 rows × 12 cols" (full grid
-// shown, unchanged). When the body is capped it reads honestly "1,000 of 3,184
-// rows × 12 cols" so the count never silently misrepresents what's on screen vs
-// what the totals cover. Column count is the full surviving column set (cols are
-// not capped). Thousands grouped for legibility on big slices.
+// Footer size badge. Counts the VISIBLE (post-outer-collapse) rows — collapsing
+// a PAW group genuinely reduces how many rows there are to show, so the count
+// drops with it (honest about what the current expansion/collapse state renders).
+// Within the cap it reads "6 rows × 12 cols" (full visible grid shown). When the
+// body is capped it reads "1,000 of 3,184 rows × 12 cols" — the rendered count vs
+// the visible count, so it never misrepresents what's on screen. The TOTALS
+// footer is independent of this (it always rolls up the full set). Column count
+// is the full surviving column set (cols are not capped). Thousands grouped.
 const gridSizeLabel = computed(() => {
   if (!result.value) return '';
-  const total = displayRows.value.length;
+  const total = visibleRows.value.length;
   const shown = renderRows.value.length;
   const c = displayColHeaders.value.length;
   if (!total && !c) return '';
@@ -2157,6 +2357,7 @@ function applyDefaultAssignments(dims) {
   for (const k of Object.keys(aliasSeq)) delete aliasSeq[k];
   for (const k of Object.keys(rowNodes)) delete rowNodes[k];
   rowOrder.value = [];
+  collapsedRowKeys.clear(); // stale outer-collapse keys are for the prior cube.
 
   let rowsAssigned = false;
   let colsAssigned = false;
@@ -2314,6 +2515,8 @@ async function resetToDefault() {
     if (d === dim) continue;
     if (defaultMembers[d]?.length) memberSelections[d] = defaultMembers[d].slice();
   }
+  // Also restore every PAW outer group to expanded (clear the client-side fold).
+  collapsedRowKeys.clear();
   if (canRun.value) runQuery();
 }
 
@@ -2386,6 +2589,9 @@ async function reseedAndRun() {
   // Reset the row tree (the primary row dimension may have changed).
   for (const k of Object.keys(rowNodes)) delete rowNodes[k];
   rowOrder.value = [];
+  // Outer-collapse keys are keyed by the prior layout's outer tuples — a new
+  // axis arrangement invalidates them, so clear the fold back to fully expanded.
+  collapsedRowKeys.clear();
 
   // Re-seed members appropriately for the (possibly new) axis roles.
   await Promise.all([
@@ -3268,11 +3474,20 @@ loadCubes();
   font-weight: 600;
 }
 
-/* The row-header BAND: one horizontal segment per row dimension, all inside the
-   single frozen header column (so the sticky-left pane stays one column — no
-   cumulative multi-column offsets). The innermost segment flexes to fill and
-   carries the twisty + indent; outer segments are fixed-content labels with a
-   hairline divider so year | entity | account read as sub-columns. */
+/* OUTER-PARENT group-header rows (PAW per-level row hierarchy): bolder weight so
+   each collapsible group reads as a heading over its indented descendants. The
+   cohesive row wash lives on .pivot-grid__row--parent (below) so header + cells
+   tint as one band. */
+.pivot-grid__row-head--parent {
+  font-weight: 600;
+}
+
+/* The row-header BAND: all inside the single frozen header column (so the sticky-
+   left pane stays one column — no cumulative multi-column offsets). In the PAW
+   nested shape each row has ONE segment — an OUTER-PARENT group header or the
+   INNERMOST drill node — that flexes to fill and indents per level. The pre-
+   response / no-tree fallback lays its plain (non-inner, non-parent) segments
+   side-by-side as fixed-content labels with a hairline divider. */
 .pivot-grid__row-head-band {
   display: flex;
   align-items: stretch;
@@ -3288,9 +3503,9 @@ loadCubes();
   padding: 0 14px;
 }
 
-/* Outer-dim segments: fixed to their content, divided by a hairline, quieter
-   than the inner (drillable) segment so the hierarchy column reads as the focus. */
-.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) {
+/* Fallback plain segments (neither a parent nor the inner drill node): fixed to
+   their content, divided by a hairline, quieter — the legacy side-by-side band. */
+.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner):not(.pivot-grid__row-seg--parent) {
   flex: 0 0 auto;
   max-width: 160px;
   border-right: 1px solid var(--kdl-border-subtle);
@@ -3298,12 +3513,21 @@ loadCubes();
   font-weight: 500;
 }
 
-/* Innermost-dim segment: the drill column. Flexes to fill, indents per level via
-   a data-driven custom property (set inline) rather than inline padding — the
-   house no-inline-style-for-design-values pattern. */
-.pivot-grid__row-seg--inner {
+/* Hierarchy segments (the inner drill node AND outer-parent group headers): flex
+   to fill, indent per level via a data-driven custom property (set inline) rather
+   than inline padding — the house no-inline-style-for-design-values pattern (the
+   sanctioned --row-indent exception). */
+.pivot-grid__row-seg--inner,
+.pivot-grid__row-seg--parent {
   flex: 1 1 auto;
   padding-left: calc(14px + var(--row-indent, 0px));
+}
+
+/* Outer-parent group header: a touch bolder + primary-toned so a group reads as a
+   heading over its indented children (PAW group rows). */
+.pivot-grid__row-seg--parent {
+  font-weight: 600;
+  color: var(--kdl-text-primary);
 }
 
 .pivot-grid__row-label {
@@ -3404,6 +3628,20 @@ loadCubes();
 
 :root[data-theme="dark"] .pivot-grid__row--consol .pivot-grid__row-head {
   color: var(--kdl-text-primary);
+}
+
+/* OUTER-PARENT group rows: a faint neutral wash across the WHOLE band (header +
+   cells) so a collapsible group reads as one heading over its indented children.
+   Scoped under `.pivot-grid tbody` to out-specify the zebra rule; hover steps a
+   touch darker (kept perceptible). color-mix off a neutral token — no raw colour. */
+.pivot-grid tbody tr.pivot-grid__row--parent .pivot-grid__cell,
+.pivot-grid tbody tr.pivot-grid__row--parent .pivot-grid__row-head {
+  background: color-mix(in srgb, var(--kdl-brand-navy) 5%, var(--kdl-card-bg));
+}
+
+.pivot-grid tbody tr.pivot-grid__row--parent:hover .pivot-grid__cell,
+.pivot-grid tbody tr.pivot-grid__row--parent:hover .pivot-grid__row-head {
+  background: color-mix(in srgb, var(--kdl-brand-navy) 9%, var(--kdl-card-bg));
 }
 
 /* ── Totals — a genuine NAVY BAND, not grey-on-grey ───────────────────────────

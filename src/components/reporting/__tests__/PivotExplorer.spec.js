@@ -518,6 +518,56 @@ async function collapseInner(wrapper, member) {
   await settle();
 }
 
+// ── PAW NESTED-ROW helpers (outer member shown ONCE as a collapsible parent) ──
+// REALIGNED for the PAW-style nested row hierarchy: with ≥2 row dims each OUTER
+// member renders ONCE as a collapsible PARENT row (its own twisty on a
+// .pivot-grid__row-seg--parent segment), with the inner rows INDENTED beneath it.
+// The outer label no longer repeats on every inner row, so the outer context of
+// an inner row is STRUCTURAL — the nearest preceding parent row, not an inline
+// segment.
+
+// The parent segment's label of a body row (a PAW group header), else null.
+function parentLabelOf(tr) {
+  const seg = tr.find('.pivot-grid__row-seg--parent .pivot-grid__row-label');
+  return seg.exists() ? seg.text().trim() : null;
+}
+
+// All OUTER-PARENT group-header rows (those carrying a --parent segment), in
+// document order. Each is shown ONCE per outer member.
+function parentRows(wrapper) {
+  return bodyRows(wrapper).filter((tr) => parentLabelOf(tr) !== null);
+}
+
+// The collapse twisty <button> on the parent row whose label === member.
+function outerTwistyFor(wrapper, member) {
+  const row = parentRows(wrapper).find((tr) => parentLabelOf(tr) === member);
+  if (!row) return undefined;
+  const btn = row.find('.pivot-grid__row-seg--parent button.pivot-grid__twisty');
+  return btn.exists() ? btn : undefined;
+}
+
+// The STRUCTURAL outer (e.g. year) context of an INNER row: the label of the
+// nearest PARENT row that precedes it in document order. This replaces the old
+// inline "outer segment on every inner row" read now that the outer member is
+// shown once as a parent above its indented children.
+function outerGroupOf(wrapper, tr) {
+  const rows = bodyRows(wrapper);
+  const idx = rows.findIndex((r) => r.element === tr.element);
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const p = parentLabelOf(rows[i]);
+    if (p !== null) return p;
+  }
+  return null;
+}
+
+// Toggle (collapse/expand) a PAW outer group by clicking its parent twisty.
+async function toggleOuterGroup(wrapper, member) {
+  const t = outerTwistyFor(wrapper, member);
+  expect(t, `outer twisty for "${member}" should exist`).toBeTruthy();
+  await t.trigger('click');
+  await settle();
+}
+
 // ── DRAG-AND-DROP helpers (the drag/move suites) ─────────────────────────────
 // jsdom/happy-dom cannot perform a REAL HTML5 drag — there is no native drag
 // image and no auto-populated DataTransfer. So we test the WIRING: we dispatch
@@ -961,11 +1011,12 @@ describe('PivotExplorer — single vs multi-dim rows', () => {
     expect(twistyFor(wrapper, 'COGS')).toBeTruthy();
   });
 
-  it('two Rows dims: NO caption, and a twisty IS present on the inner (account) segment', async () => {
-    // REALIGNED for the multi-dimension row-drill feature. The old behaviour was
-    // a "single Rows dimension" caption + zero twisties when >1 dim sat on Rows;
-    // the caption is now REMOVED and drill works across the crossjoin, with the
-    // twisty living on the INNERMOST row dim's segment.
+  it('two Rows dims: NO caption; each OUTER member shown ONCE as a collapsible parent, inner consolidations keep their drill twisty', async () => {
+    // REALIGNED for the PAW-style NESTED ROW HIERARCHY. The earlier behaviour
+    // repeated the outer (year) label on every inner row and put a twisty ONLY on
+    // the inner segment. PAW instead shows each outer member ONCE as a collapsible
+    // PARENT row (its own twisty), with the inner rows indented beneath it — so
+    // there is now a twisty at EVERY row-dim level.
     //
     // We use the [year, account, …] layout (mountExplorerMultiDim) so account is
     // the innermost row dim: dragging year onto Rows yields rowDims [year, account]
@@ -988,27 +1039,31 @@ describe('PivotExplorer — single vs multi-dim rows', () => {
     expect(wrapper.find('caption.pivot-grid__caption').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('single Rows dimension');
 
-    // A twisty IS present on the INNER (account) segment — EXPENSE / COGS are the
-    // inner consolidations and each carries a drill twisty on its inner segment.
+    // Each OUTER (year) member is shown ONCE as a PARENT group header — NOT
+    // repeated on every inner row. FY24 + FY25 each appear exactly once as a
+    // parent label.
+    const parentLabels = parentRows(wrapper).map((tr) => parentLabelOf(tr));
+    expect(parentLabels.filter((l) => l === 'FY24').length, 'FY24 shown once').toBe(1);
+    expect(parentLabels.filter((l) => l === 'FY25').length, 'FY25 shown once').toBe(1);
+
+    // EVERY outer parent carries its OWN collapse twisty (the per-level twisty —
+    // this is the bug the feature fixes: "first column does not give expand").
+    expect(outerTwistyFor(wrapper, 'FY24'), 'FY24 parent twisty').toBeTruthy();
+    expect(outerTwistyFor(wrapper, 'FY25'), 'FY25 parent twisty').toBeTruthy();
+
+    // A twisty is ALSO present on the INNER (account) consolidations — EXPENSE /
+    // COGS each carry a drill twisty on their inner segment (the inner drill, which
+    // re-queries, is unchanged).
     expect(innerTwistyFor(wrapper, 'EXPENSE'), 'inner EXPENSE twisty').toBeTruthy();
     expect(innerTwistyFor(wrapper, 'COGS'), 'inner COGS twisty').toBeTruthy();
 
-    // The OUTER (year) segments are plain labels — the twisty lives on the inner
-    // segment only, never on an outer one. Assert no twisty sits inside an outer
-    // (non-inner) segment anywhere in the grid.
-    const outerTwisties = wrapper.findAll(
-      '.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) button.pivot-grid__twisty',
-    );
-    expect(outerTwisties.length, 'no twisty on an outer-dim segment').toBe(0);
-
-    // The grid rendered the crossjoin (year × account), proving the caption sits
-    // over a live grid — and the OUTER year members head the row band.
-    expect(bodyRows(wrapper).length).toBeGreaterThan(0);
-    const outerLabels = bodyRows(wrapper).map((tr) =>
-      tr.find('.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) .pivot-grid__row-label').text(),
-    );
-    expect(outerLabels).toContain('FY24');
-    expect(outerLabels).toContain('FY25');
+    // The inner rows sit BENEATH their year parent: under FY24's parent the next
+    // rows are EXPENSE / COGS (their structural outer context resolves to FY24).
+    const innerExpenseRows = rowsByInner(wrapper, 'EXPENSE');
+    expect(innerExpenseRows.length, 'one EXPENSE inner row per year block').toBe(2);
+    innerExpenseRows.forEach((tr) => {
+      expect(['FY24', 'FY25']).toContain(outerGroupOf(wrapper, tr));
+    });
   });
 });
 
@@ -2063,10 +2118,12 @@ describe('PivotExplorer — multi-dimension row drill', () => {
     await setSuppress(wrapper, true);
 
     // The grid still renders; collect the Salaries inner rows grouped by their
-    // OUTER (year) segment so we can check FY24 vs FY25 independently.
+    // STRUCTURAL outer (year) parent so we can check FY24 vs FY25 independently.
+    // The outer label is shown ONCE on the parent row above its indented children
+    // now (PAW nested rows), so an inner row's year is its nearest preceding
+    // parent — not an inline segment.
     const salaryRows = rowsByInner(wrapper, 'Salaries');
-    const outerOf = (tr) =>
-      tr.find('.pivot-grid__row-seg:not(.pivot-grid__row-seg--inner) .pivot-grid__row-label').text();
+    const outerOf = (tr) => outerGroupOf(wrapper, tr);
     const fy24Salary = salaryRows.find((tr) => outerOf(tr) === 'FY24');
     const fy25Salary = salaryRows.find((tr) => outerOf(tr) === 'FY25');
 
@@ -2101,22 +2158,73 @@ describe('PivotExplorer — multi-dimension row drill', () => {
     expect(expenseRow.attributes('aria-expanded')).toBeUndefined();
     expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('false');
 
-    // aria-level reflects the INNER node's depth: a top inner consolidation is
-    // level 0 → aria-level 1 (the outer year segment does not change the row's
-    // declared depth — depth tracks the drill hierarchy).
-    expect(expenseRow.attributes('aria-level')).toBe('1');
+    // aria-level reflects the FULL render depth of the PAW nested hierarchy. The
+    // outer year PARENT sits at depth 0 → aria-level 1; the inner account rows are
+    // indented BENEATH it, so a top inner consolidation is depth 1 (outerCount 1 +
+    // tree level 0) → aria-level 2.
+    const fy24Parent = parentRows(wrapper).find((tr) => parentLabelOf(tr) === 'FY24');
+    expect(fy24Parent, 'an FY24 parent row exists').toBeTruthy();
+    expect(fy24Parent.attributes('aria-level')).toBe('1');
+    expect(expenseRow.attributes('aria-level')).toBe('2');
 
     // Expand EXPENSE → its twisty flips to expanded, and its children sit one level
-    // deeper (aria-level 2).
+    // deeper still (depth 2 → aria-level 3).
     await expandInner(wrapper, 'EXPENSE');
     expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('true');
     const rentRow = bodyRows(wrapper).find((tr) => innerLabelOf(tr) === 'Rent');
     expect(rentRow, 'a Rent inner row exists after expand').toBeTruthy();
-    expect(rentRow.attributes('aria-level')).toBe('2');
+    expect(rentRow.attributes('aria-level')).toBe('3');
 
     // Collapse → aria-expanded returns to false.
     await collapseInner(wrapper, 'EXPENSE');
     expect(innerTwistyFor(wrapper, 'EXPENSE').attributes('aria-expanded')).toBe('false');
+  });
+
+  // ── MINIMAL SMOKE for the PAW outer-group collapse (author-supplied, per the
+  //    author≠tester split — the independent tester owns fuller coverage). Locks
+  //    the load-bearing client-side contract: collapsing an outer parent HIDES its
+  //    descendant rows with NO re-query, expanding restores them, and the TOTALS
+  //    are unchanged by the fold (they roll up the full set regardless). ─────────
+  it('SMOKE: collapsing an outer (year) parent hides its children with no re-query; totals are unchanged; expand restores', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper);
+
+    // Baseline: FY24 + FY25 each a parent, each with two inner rows (EXPENSE/COGS).
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(2);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
+    // Totals: per year EXPENSE(100)+COGS(40)=140; two years → Jul column 280.
+    const julTotalBefore = colTotalTexts(wrapper)[0];
+    const grandBefore = grandTotalText(wrapper);
+    expect(julTotalBefore).toBe('280');
+    expect(grandBefore).toBe('280');
+
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // Collapse FY24 — its inner rows are folded away (CLIENT-SIDE), FY25's stay.
+    await toggleOuterGroup(wrapper, 'FY24');
+
+    // NO re-query fired (pure client-side fold over already-fetched tuples).
+    expect(runTm1Query.mock.calls.length, 'collapse issues no re-query').toBe(callsBefore);
+
+    // FY24 is still shown (it is the collapse handle); its EXPENSE/COGS children
+    // are gone, while FY25's remain → exactly one EXPENSE + one COGS inner row now.
+    expect(parentRows(wrapper).map(parentLabelOf)).toContain('FY24');
+    expect(rowsByInner(wrapper, 'EXPENSE').length, 'FY24 children hidden').toBe(1);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(1);
+    rowsByInner(wrapper, 'EXPENSE').forEach((tr) => {
+      expect(outerGroupOf(wrapper, tr)).toBe('FY25');
+    });
+
+    // TOTALS UNCHANGED — the fold is a render concern, the footer still rolls up
+    // the FULL set (both years).
+    expect(colTotalTexts(wrapper)[0], 'Jul total unchanged by collapse').toBe('280');
+    expect(grandTotalText(wrapper), 'grand total unchanged by collapse').toBe('280');
+
+    // Expand FY24 again — its children come back, still no re-query.
+    await toggleOuterGroup(wrapper, 'FY24');
+    expect(runTm1Query.mock.calls.length, 'expand issues no re-query').toBe(callsBefore);
+    expect(rowsByInner(wrapper, 'EXPENSE').length, 'FY24 children restored').toBe(2);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
   });
 });
 
@@ -3785,5 +3893,268 @@ describe('PivotExplorer — nested columns (tester deep coverage)', () => {
     // And the leaf cells still align (Jul=100 for EXPENSE, Aug=0) — the legacy
     // single-col cell contract every existing test reads.
     expect(dataCellsOf(wrapper, 'EXPENSE')).toEqual(['100', '0']);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// INTERIM FREEZE-GUARD — MAX_RENDER_ROWS cap + cancellable query [independent tester]
+//
+// Locks the freeze-guard that landed in 9e42418 (PivotExplorer.vue +
+// planningAnalytics.js):
+//   • The <tbody> v-for binds `renderRows = displayRows.slice(0, 1000)` — a wide
+//     view writes AT MOST 1,000 <tr> to the DOM so it can't block the main thread.
+//   • The TOTALS (colTotals / grandTotal) deliberately still derive from the FULL
+//     `displayRows`, NOT the capped slice — so a 1,200-row view shows a grand
+//     total of 1,200 even though only 1,000 rows render. This is the load-bearing
+//     correctness point and gets its own assertion (Test 2).
+//   • runQuery threads an AbortController.signal into runTm1Query; Cancel aborts
+//     it, the catch swallows the abort (no error banner, prior grid intact), and
+//     the toolbar flips Refresh ↔ Cancel on `running`.
+//
+// MOUNT-BASED + realistic shapes (1,200 single-leaf rows × 2 cols — exactly the
+// shape that motivated the cap), observable DOM (<tr> count / banner text / footer
+// text / grand-total cell / error-banner absence), only the network boundary
+// mocked. Mutation-verified ≥3 (see the tester's report).
+//
+// ── The BIG cube ─────────────────────────────────────────────────────────────
+// The grid body is driven by the ROW TREE (rowNodes/rowOrder), seeded from
+// getTm1DimensionChildren(dim, top) on mount — NOT by the raw query response. So
+// to render N rows we give the `account` dimension a top (`All_Account`) with N
+// LEAF children; initRowTree then makes N level-0 paths → N candidate <tr>. The
+// runTm1Query mock answers one row per requested member, each valued 1 in the Jul
+// column (0 in Aug), so every per-row total is 1 and the grand total == N exactly.
+// We KEEP the default dim layout name-for-name (['account','month','measure'] →
+// account=Rows, month=Cols, measure=Filter), so two leaf columns (Jul/Aug) exist
+// and "× 2 cols" is the surviving-column count with Suppress OFF.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — interim freeze-guard: MAX row cap + cancellable query [independent tester]', () => {
+  const BIG_TOP = 'All_Account';
+
+  // N distinct leaf member names under All_Account: Acct0001 … Acct{N}. Numbered,
+  // zero-padded so they never match topElement's /^(all[_ ]|total)/i (keeping
+  // All_Account the chosen top) and stay unique (one backend row de-queues per).
+  function bigLeaves(n) {
+    return Array.from({ length: n }, (_, i) => `Acct${String(i + 1).padStart(4, '0')}`);
+  }
+
+  // Install the big single-leaf account cube: `rowCount` numeric leaves under
+  // All_Account, two month columns, each leaf valued 1 in Jul / 0 in Aug. Built on
+  // top of the standard installCubeMocks() (already run by beforeEach), overriding
+  // only the three surfaces that matter: account ELEMENTS, account CHILDREN(top),
+  // and the QUERY response. Returns the leaf list for assertions.
+  function installBigCube(rowCount) {
+    const leaves = bigLeaves(rowCount);
+
+    getTm1DimensionElements.mockImplementation(async (dimension) => {
+      if (dimension === 'account') {
+        return {
+          elements: [
+            { name: BIG_TOP, type: 'C' },
+            ...leaves.map((name) => ({ name, type: 'N' })),
+          ],
+        };
+      }
+      return { elements: ELEMENTS[dimension] || [] };
+    });
+
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent) => {
+      if (dimension === 'account' && parent === BIG_TOP) {
+        return { children: leaves.map((name) => ({ name, type: 'N' })) };
+      }
+      // Leaves are non-drillable; any other dim falls back to the base topology.
+      return { children: (CHILDREN[dimension] && CHILDREN[dimension][parent]) || [] };
+    });
+
+    // One row per requested ROW member, value 1 in Jul (colFactor) and 0 elsewhere.
+    // Honours WHATEVER members the component asks for, so the de-queue is 1:1.
+    runTm1Query.mockImplementation(async (payload) => {
+      const rowDims = payload.rows || [];
+      const colDims = payload.cols || [];
+      const colMembers = (colDims[0]?.members || []).slice();
+      const columns = colMembers.map((m) => [m]);
+      const cellsFor = () =>
+        colMembers.map((cm) => ({ value: cm === 'Jul' ? 1 : 0, formatted: null }));
+      const members = rowDims[0]?.members || [];
+      const rows = members.map((m) => ({ members: [m], cells: cellsFor() }));
+      return {
+        columns,
+        rows,
+        colAxis: { dimensions: colDims[0]?.dimension ? [colDims[0].dimension] : [], tuples: columns.map((c) => c.slice()) },
+        rowAxis: { dimensions: rowDims.map((d) => d.dimension), tuples: rows.map((r) => r.members.slice()) },
+        mdx: `SELECT FROM [${payload.cube}]`,
+      };
+    });
+
+    return leaves;
+  }
+
+  // ── Test 1: the body is capped at 1,000; banner + footer say so ──────────────
+  it('caps the rendered body at 1,000 <tr> over a 1,200-row view; cap banner + footer report "1,000 of 1,200"', async () => {
+    installBigCube(1200);
+    const wrapper = await mountExplorer();
+    // Suppress OFF so the all-zero Aug column survives → "× 2 cols", and so the
+    // 1,200 rows (each valued 1, non-zero) are not reshaped by the suppress layer.
+    await setSuppress(wrapper, false);
+
+    // The grid mounted over the big view.
+    expect(wrapper.find('table.pivot-grid').exists()).toBe(true);
+
+    // CAP: exactly 1,000 body <tr> render even though 1,200 rows survive. This is
+    // the assertion a "renderRows returns the full displayRows" regression fails.
+    expect(bodyRows(wrapper).length).toBe(1000);
+
+    // The cap banner exists and names both the cap and the full count.
+    const banner = wrapper.find('[data-test="pivot-cap-banner"]');
+    expect(banner.exists()).toBe(true);
+    expect(banner.text()).toContain('1,000 of 1,200');
+
+    // The footer size badge reports the capped wording, full surviving col count.
+    expect(wrapper.find('.pivot-footer__size').text()).toBe('1,000 of 1,200 rows × 2 cols');
+
+    // ── Within-cap control: a 6-row view shows EVERY row, NO banner, plain footer.
+    installBigCube(6);
+    // Re-mount fresh (the row tree seeds from children on mount) for the small cube.
+    const small = await mountExplorer();
+    await setSuppress(small, false);
+
+    expect(bodyRows(small).length).toBe(6);
+    expect(small.find('[data-test="pivot-cap-banner"]').exists()).toBe(false);
+    expect(small.find('.pivot-footer__size').text()).toBe('6 rows × 2 cols');
+  });
+
+  // ── Test 2: totals sum the FULL set, not the capped slice (LOAD-BEARING) ─────
+  it('grand total sums all 1,200 rows (== 1,200) even though only 1,000 <tr> render', async () => {
+    installBigCube(1200);
+    const wrapper = await mountExplorer();
+    await setSuppress(wrapper, false);
+
+    // Only 1,000 rows are on screen…
+    expect(bodyRows(wrapper).length).toBe(1000);
+
+    // …but the grand total reflects ALL 1,200 (each leaf = 1, in Jul). If the
+    // totals were (wrongly) computed over `renderRows` this would read 1,000.
+    expect(grandTotalText(wrapper)).toBe('1,200');
+
+    // And the Jul column total (the only non-zero column) is likewise the full
+    // 1,200 — proving colTotals also derive from displayRows, not the capped slice.
+    // (Footer cells: [Jul, Aug]; Aug is all-zero → 0.)
+    expect(colTotalTexts(wrapper)[0]).toBe('1,200');
+  });
+
+  // ── Test 3: Cancel aborts the in-flight fetch — no error banner, grid intact ─
+  it('Refresh during a hanging fetch shows Cancel + threads an AbortSignal; Cancel aborts with no error banner and the prior grid intact', async () => {
+    // Mount with the normal (resolving) cube so there is a real rendered grid to
+    // protect, then swap to a HANGING mock that only settles on abort.
+    const wrapper = await mountExplorer();
+    await setSuppress(wrapper, false);
+
+    // Baseline grid the abort must leave untouched.
+    const rowsBefore = bodyRows(wrapper).length;
+    expect(rowsBefore).toBeGreaterThan(0);
+    const labelsBefore = rowLabels(wrapper);
+
+    // Capture the signal the in-flight call receives; reject ONLY when aborted with
+    // an axios-style CanceledError (code 'ERR_CANCELED') — the shape isAbortError
+    // swallows. Never resolves otherwise, so `running` stays true until Cancel.
+    let seenSignal = null;
+    runTm1Query.mockImplementation(
+      (payload, opts) =>
+        new Promise((_resolve, reject) => {
+          seenSignal = opts?.signal;
+          seenSignal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('canceled'), { code: 'ERR_CANCELED', name: 'CanceledError' }));
+          });
+        }),
+    );
+
+    // Refresh button (rendered while NOT running) kicks off the hanging fetch.
+    const refresh = wrapper
+      .findAll('button.pivot-toolbar__btn')
+      .find((b) => b.text().includes('Refresh'));
+    expect(refresh, 'Refresh button should be present while idle').toBeTruthy();
+    await refresh.trigger('click');
+    await flushPromises();
+
+    // RUNNING: the toolbar flipped to Cancel; Refresh is gone.
+    const cancel = wrapper.find('button.pivot-toolbar__btn--cancel');
+    expect(cancel.exists()).toBe(true);
+    expect(
+      wrapper.findAll('button.pivot-toolbar__btn').some((b) => b.text().includes('Refresh')),
+      'Refresh should be replaced by Cancel while running',
+    ).toBe(false);
+
+    // The call was threaded a real AbortSignal (the whole point of the seam).
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+    expect(seenSignal.aborted).toBe(false);
+
+    // Click Cancel → controller.abort() → the hanging promise rejects with the
+    // CanceledError → runQuery's catch swallows it.
+    await cancel.trigger('click');
+    await flushPromises();
+
+    // The signal was aborted (Cancel reached the controller).
+    expect(seenSignal.aborted).toBe(true);
+
+    // NO error banner — a deliberate cancel is not a failure.
+    expect(wrapper.find('.pivot-banner--error').exists()).toBe(false);
+
+    // The previously-rendered grid is intact (same rows, same labels — result was
+    // never cleared by the abort path).
+    expect(bodyRows(wrapper).length).toBe(rowsBefore);
+    expect(rowLabels(wrapper)).toEqual(labelsBefore);
+
+    // Toolbar flipped back to Refresh (running cleared); Cancel is gone.
+    expect(wrapper.find('button.pivot-toolbar__btn--cancel').exists()).toBe(false);
+    expect(
+      wrapper.findAll('button.pivot-toolbar__btn').some((b) => b.text().includes('Refresh')),
+      'Refresh should be back after Cancel',
+    ).toBe(true);
+  });
+
+  // ── Test 4: a new run aborts the previous run's controller ───────────────────
+  it('starting a second run aborts the first run\'s in-flight controller (only one fetch live)', async () => {
+    const wrapper = await mountExplorer();
+    await setSuppress(wrapper, false);
+
+    // Hanging mock that records every call's signal; only settles on abort. The
+    // SECOND runQuery must abort the FIRST's signal before issuing its own (the
+    // "abort any fetch still in flight" line in runQuery).
+    const signals = [];
+    runTm1Query.mockImplementation(
+      (payload, opts) =>
+        new Promise((_resolve, reject) => {
+          signals.push(opts?.signal);
+          opts?.signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('canceled'), { code: 'ERR_CANCELED', name: 'CanceledError' }));
+          });
+        }),
+    );
+
+    // First run: click Refresh (idle) → hangs, claims signals[0].
+    const refresh = wrapper
+      .findAll('button.pivot-toolbar__btn')
+      .find((b) => b.text().includes('Refresh'));
+    expect(refresh, 'Refresh button should be present while idle').toBeTruthy();
+    await refresh.trigger('click');
+    await flushPromises();
+    expect(signals.length).toBe(1);
+    expect(signals[0].aborted).toBe(false);
+
+    // Second run while the first is still in flight: flip the Suppress toggle —
+    // watch(suppressEmpty) calls runQuery(), which aborts the prior controller and
+    // opens a new one. (The Refresh button is hidden while running, so this is the
+    // mount-based way to issue a concurrent run — the same watcher production uses.)
+    await setSuppress(wrapper, true);
+
+    expect(signals.length).toBe(2);
+    // The FIRST run's controller was aborted by the second run starting.
+    expect(signals[0].aborted).toBe(true);
+    // The SECOND run is the live one — still pending (not aborted).
+    expect(signals[1].aborted).toBe(false);
+
+    // No error banner from the swallowed abort of the first run.
+    expect(wrapper.find('.pivot-banner--error').exists()).toBe(false);
+    // Still running (the second fetch is in flight) → Cancel is shown.
+    expect(wrapper.find('button.pivot-toolbar__btn--cancel').exists()).toBe(true);
   });
 });
