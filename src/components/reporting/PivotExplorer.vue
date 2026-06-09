@@ -2219,10 +2219,12 @@ function aliasButtonLabel(dim) {
   return dimAlias[dim] || 'principal';
 }
 
-// Open/close an inline alias picker. Single-open across ALL surfaces (filter
-// pills + Rows/Columns chips), keyed `${role}:${dim}`, so only one floats at a
-// time. Closing the member-picker popover / move menus here too keeps a single
-// floating layer.
+// Open/close an inline alias picker. The single `openAliasMenu` ref is keyed
+// `${role}:${dim}`, so opening one alias menu closes any other alias menu by
+// construction (each KMenu binds :model-value to `openAliasMenu === itsKey`).
+// The OTHER floating layers (member-picker popover, move menus) are separate
+// refs we deliberately do NOT cross-close here — Reka's modal roots self-dismiss
+// on the outside-pointerdown that opens this one.
 function toggleAliasMenu(key, open) {
   openAliasMenu.value = open ? key : '';
 }
