@@ -70,6 +70,20 @@ const tools = [
     },
   },
   {
+    name: 'investec_bank_sync',
+    description: 'Mutating tool: pull Investec bank accounts and transactions LIVE from the Investec Open API into the Klikk database. Incremental from the last sync date to today (or the last 180 days if never synced); idempotent. Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Must be true — this calls the live Investec Open API and writes local bank rows.',
+        },
+      },
+      required: ['confirm'],
+    },
+  },
+  {
     name: 'investec_bank_list_accounts',
     description: 'List Investec bank accounts copied into the Klikk database.',
     inputSchema: {
@@ -948,6 +962,16 @@ async function investecBankSyncStatus() {
   };
 }
 
+async function investecBankSync(args = {}) {
+  if (args.confirm !== true) {
+    throw new Error('Refusing to sync Investec bank without confirm=true (this calls the live Investec Open API and writes local bank rows).');
+  }
+  // Backend POST /api/investec/bank/sync/ is incremental (last_synced_at -> today,
+  // or last 180 days if never synced) and idempotent; it ignores the request body.
+  const data = await apiRequest('/api/investec/bank/sync/', { method: 'POST', body: {} });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
 async function investecBankListAccounts(args) {
   const limit = clampNumber(args.limit, 100, 1, 500);
   const data = await apiRequest(`/api/investec/bank/accounts/?limit=${limit}`);
@@ -1689,6 +1713,7 @@ const toolHandlers = {
   xero_connection_status: xeroConnectionStatus,
   xero_list_tenants: xeroListTenants,
   investec_bank_sync_status: investecBankSyncStatus,
+  investec_bank_sync: investecBankSync,
   investec_bank_list_accounts: investecBankListAccounts,
   investec_bank_search_transactions: investecBankSearchTransactions,
   xero_search_journals: xeroSearchJournals,
