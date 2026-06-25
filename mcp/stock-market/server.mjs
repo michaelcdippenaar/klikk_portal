@@ -62,6 +62,59 @@ const tools = [
     },
   },
   {
+    name: 'investec_jse_list_holdings',
+    description: 'List Investec JSE investment portfolio holdings (share positions) copied into the Klikk database. Read-only. Defaults to the latest available snapshot; pass date=YYYY-MM-DD for a specific month-end.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'Optional YYYY-MM-DD portfolio snapshot date.' },
+        limit: { type: 'number', description: 'Max rows.', default: 100 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'investec_jse_list_transactions',
+    description: 'List Investec JSE share transactions (Buy/Sell/Dividend etc.) copied into the Klikk database. Read-only. Filter by account number, share name, or type.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        account_number: { type: 'string', description: 'Filter by Investec account number.' },
+        share_name: { type: 'string', description: 'Filter by share name (contains match).' },
+        type: { type: 'string', description: 'Filter by transaction type (Buy, Sell, Dividend, etc.).' },
+        include_ttm_summary: { type: 'boolean', description: 'Include synthetic TTM-summary rows (default false).', default: false },
+        limit: { type: 'number', description: 'Max rows.', default: 100 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'investec_jse_upload_holdings',
+    description: 'Mutating tool: import an Investec JSE portfolio HOLDINGS export (.xlsx/.xls) into the Klikk database. The month/year is read from the file and ALL holdings for that month are REPLACED (one version per month). Pass the file as base64. Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_base64: { type: 'string', description: 'Base64-encoded .xlsx/.xls holdings export.' },
+        filename: { type: 'string', description: 'Original filename; must end in .xlsx or .xls.' },
+        confirm: { type: 'boolean', description: 'Must be true — writes/overwrites local holdings for the file’s month.' },
+      },
+      required: ['file_base64', 'filename', 'confirm'],
+    },
+  },
+  {
+    name: 'investec_jse_upload_transactions',
+    description: 'Mutating tool: import an Investec JSE share TRANSACTION-history export (.xlsx/.xls) into the Klikk database. Pass the file as base64. Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_base64: { type: 'string', description: 'Base64-encoded .xlsx/.xls transaction-history export.' },
+        filename: { type: 'string', description: 'Original filename; must end in .xlsx or .xls.' },
+        confirm: { type: 'boolean', description: 'Must be true — writes local transaction rows.' },
+      },
+      required: ['file_base64', 'filename', 'confirm'],
+    },
+  },
+  {
     name: 'investec_bank_sync_status',
     description: 'Read the latest Investec banking sync timestamp/status.',
     inputSchema: {
@@ -1024,6 +1077,103 @@ async function investecBankSearchTransactions(args) {
   };
 }
 
+// ---- Investec JSE (investment) share holdings & transactions ----
+
+async function apiUpload(path, { fieldName = 'file', filename, base64, contentType = 'application/octet-stream' }) {
+  const url = `${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  const bytes = Buffer.from(base64, 'base64');
+  const form = new FormData();
+  form.append(fieldName, new Blob([bytes], { type: contentType }), filename);
+  // Do NOT set Content-Type — fetch sets the multipart boundary automatically for FormData bodies.
+  const response = await fetch(url, { method: 'POST', headers: requestHeaders(), body: form });
+  const ct = response.headers.get('content-type') || '';
+  const payload = ct.includes('application/json') ? await response.json() : await response.text();
+  if (!response.ok) {
+    const rawDetail = typeof payload === 'string' ? payload : payload?.detail || payload?.error || JSON.stringify(payload);
+    const detail = rawDetail.length > 1200 ? `${rawDetail.slice(0, 1200)}...` : rawDetail;
+    const error = new Error(`Klikk API ${response.status}: ${detail}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+async function investecJseListHoldings(args = {}) {
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'date', args.date);
+  const data = await apiRequest(`/api/investec/portfolio/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    holdings: rows,
+  };
+}
+
+async function investecJseListTransactions(args = {}) {
+  const limit = clampNumber(args.limit, 100, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  appendSearchParam(params, 'account_number', args.account_number);
+  appendSearchParam(params, 'share_name', args.share_name);
+  appendSearchParam(params, 'type', args.type);
+  if (args.include_ttm_summary !== undefined) params.set('include_ttm_summary', String(args.include_ttm_summary));
+  const data = await apiRequest(`/api/investec/transactions/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    limit: data?.limit ?? limit,
+    offset: data?.offset ?? offset,
+    transactions: rows,
+  };
+}
+
+function requireInvestecUpload(args, what) {
+  if (args.confirm !== true) {
+    throw new Error(`Refusing to ${what} without confirm=true (this writes/overwrites local Investec investment data).`);
+  }
+  const base64 = (args.file_base64 || '').trim();
+  if (!base64) throw new Error('file_base64 is required: base64-encoded .xlsx/.xls file content.');
+  const filename = (args.filename || '').trim();
+  if (!/\.(xlsx|xls)$/i.test(filename)) throw new Error('filename is required and must end in .xlsx or .xls.');
+  return { base64, filename };
+}
+
+async function investecJseUploadHoldings(args = {}) {
+  const { base64, filename } = requireInvestecUpload(args, 'upload Investec JSE holdings');
+  // Backend reads the month/year from the file and REPLACES all holdings for that month (one version per month).
+  const data = await apiUpload('/api/investec/portfolio/upload/', {
+    fieldName: 'file',
+    filename,
+    base64,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
+async function investecJseUploadTransactions(args = {}) {
+  const { base64, filename } = requireInvestecUpload(args, 'upload Investec JSE transactions');
+  const data = await apiUpload('/api/investec/upload/', {
+    fieldName: 'file',
+    filename,
+    base64,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
 async function xeroSearchJournals(args) {
   const limit = clampNumber(args.limit, 100, 1, 1000);
   const offset = clampNumber(args.offset, 0, 0, 100000);
@@ -1716,6 +1866,10 @@ const toolHandlers = {
   investec_bank_sync: investecBankSync,
   investec_bank_list_accounts: investecBankListAccounts,
   investec_bank_search_transactions: investecBankSearchTransactions,
+  investec_jse_list_holdings: investecJseListHoldings,
+  investec_jse_list_transactions: investecJseListTransactions,
+  investec_jse_upload_holdings: investecJseUploadHoldings,
+  investec_jse_upload_transactions: investecJseUploadTransactions,
   xero_search_journals: xeroSearchJournals,
   stock_market_list_symbols: async (args) => {
     const symbols = await listSymbols();
