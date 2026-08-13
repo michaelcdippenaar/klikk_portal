@@ -151,6 +151,47 @@ const tools = [
     },
   },
   {
+    name: 'investec_bank_list_beneficiaries',
+    description: 'List Investec payment beneficiaries copied into the Klikk database (name, bank, account number, branch code, last payment amount/date). Read-only. Beneficiaries are created in Investec Online; run investec_bank_sync_beneficiaries first if the copy is stale or empty.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Filter by name, beneficiary name, bank, account number, or reference fragment.',
+        },
+        active: {
+          type: 'boolean',
+          description: 'true = only beneficiaries currently on the Investec profile; false = only ones no longer returned by the API. Omit for all.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum rows to return.',
+          default: 200,
+        },
+        offset: {
+          type: 'number',
+          description: 'Pagination offset.',
+          default: 0,
+        },
+      },
+    },
+  },
+  {
+    name: 'investec_bank_sync_beneficiaries',
+    description: 'Mutating tool: pull the Investec beneficiary list LIVE from the Investec Open API into the Klikk database (read-only against Investec — never creates or pays beneficiaries). Idempotent upsert; rows no longer on the profile are marked inactive. Requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Must be true — this calls the live Investec Open API and writes local beneficiary rows.',
+        },
+      },
+      required: ['confirm'],
+    },
+  },
+  {
     name: 'investec_bank_search_transactions',
     description: 'Search Investec bank transactions across all copied accounts by description, exact amount, date range, and account number.',
     inputSchema: {
@@ -1037,6 +1078,39 @@ async function investecBankListAccounts(args) {
   };
 }
 
+async function investecBankListBeneficiaries(args = {}) {
+  const limit = clampNumber(args.limit, 200, 1, 1000);
+  const offset = clampNumber(args.offset, 0, 0, 100000);
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  if (args.query) params.set('q', String(args.query));
+  if (args.active === true) params.set('active', 'true');
+  if (args.active === false) params.set('active', 'false');
+  const data = await apiRequest(`/api/investec/bank/beneficiaries/?${params}`);
+  const rows = topArrayRows(data, limit);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? rows.length,
+    beneficiaries: rows,
+    agent_brief: [
+      `${data?.count ?? rows.length} Investec beneficiar(y/ies) in the local copy.`,
+      rows.length
+        ? 'These are the beneficiaries as captured in Investec Online. Check name vs bank_name vs account_number to verify a beneficiary was captured correctly.'
+        : 'No beneficiaries in the local copy — run investec_bank_sync_beneficiaries (confirm=true) to pull them from the Investec API.',
+    ],
+  };
+}
+
+async function investecBankSyncBeneficiaries(args = {}) {
+  if (args.confirm !== true) {
+    throw new Error('Refusing to sync Investec beneficiaries without confirm=true (this calls the live Investec Open API and writes local beneficiary rows).');
+  }
+  const data = await apiRequest('/api/investec/bank/beneficiaries/sync/', { method: 'POST', body: {} });
+  return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
+}
+
 function appendSearchParam(params, key, value) {
   if (value === undefined || value === null || value === '') return;
   params.set(key, String(value));
@@ -1865,6 +1939,8 @@ const toolHandlers = {
   investec_bank_sync_status: investecBankSyncStatus,
   investec_bank_sync: investecBankSync,
   investec_bank_list_accounts: investecBankListAccounts,
+  investec_bank_list_beneficiaries: investecBankListBeneficiaries,
+  investec_bank_sync_beneficiaries: investecBankSyncBeneficiaries,
   investec_bank_search_transactions: investecBankSearchTransactions,
   investec_jse_list_holdings: investecJseListHoldings,
   investec_jse_list_transactions: investecJseListTransactions,
