@@ -1,6 +1,6 @@
 <template>
-  <AppPage>
-    <PageHeader title="Xero Connection" subtitle="Configure API credentials and connect to your Xero organisation" />
+  <component :is="embedded ? 'div' : AppPage" :class="embedded ? 'xc-embedded' : null">
+    <PageHeader v-if="!embedded" title="Xero Connection" subtitle="Configure API credentials and connect to your Xero organisation" />
 
     <!-- Callback result banners -->
     <div v-if="callbackStatus === 'success'" class="klikk-alert-strip tone-success xc-banner" role="alert">
@@ -107,7 +107,7 @@
       <div class="xc-skeleton-line xc-skeleton-line--short"></div>
       <div class="xc-skeleton-line xc-skeleton-line--long"></div>
     </div>
-  </AppPage>
+  </component>
 </template>
 
 <script setup>
@@ -120,6 +120,11 @@ import { getXeroAuthUrl, getXeroConnectionStatus, saveXeroCredentials } from '..
 import PageHeader from '../components/klikk/PageHeader.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import KInput from '../components/klikk/KInput.vue';
+
+const props = defineProps({
+  embedded: { type: Boolean, default: false },
+});
+void props;
 
 const route = useRoute();
 const router = useRouter();
@@ -144,7 +149,13 @@ function clearCallback() {
   callbackStatus.value = null;
   callbackTenants.value = null;
   callbackMessage.value = null;
-  router.replace({ query: {} });
+  const nextQuery = { ...route.query };
+  delete nextQuery.status;
+  delete nextQuery.tenants;
+  delete nextQuery.message;
+  delete nextQuery.count;
+  delete nextQuery.error;
+  router.replace({ query: nextQuery });
 }
 
 async function loadConnectionStatus() {

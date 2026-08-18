@@ -53,9 +53,13 @@ const routes = [
             component: () => import('pages/Comparison.vue'),
           },
           {
+            // Moved to Setup -> Xero (/app/setup/credentials?tab=xero).
+            // Redirect keeps old bookmarks and links working.
             path: 'xero-connect',
-            name: 'xero-connect',
-            component: () => import('pages/XeroConnect.vue'),
+            redirect: (to) => ({
+              name: 'credentials',
+              query: { ...to.query, tab: 'xero' },
+            }),
           },
           {
             path: 'investec/holdings',
@@ -114,6 +118,15 @@ const routes = [
             component: () => import('pages/Credentials.vue'),
           },
           {
+            // Xero connect/authorize lives as a tab on the Credentials page.
+            // This alias makes /app/setup/xero open that tab directly.
+            path: 'xero',
+            redirect: (to) => ({
+              name: 'credentials',
+              query: { ...to.query, tab: 'xero' },
+            }),
+          },
+          {
             path: 'ai-agent',
             name: 'ai-agent-setup',
             component: () => import('pages/AiAgentSetup.vue'),
@@ -135,10 +148,13 @@ const routes = [
     component: () => import('pages/KlikkPreview.vue'),
   },
   {
+    // Xero OAuth callback landing URL. The backend redirects the browser here
+    // (FRONTEND_URL/xero-connect?status=...) after handling /xero/callback/.
+    // Forward to the Setup > Xero tab, preserving the OAuth query params.
     path: '/xero-connect',
     redirect: (to) => ({
-      name: 'xero-connect',
-      query: to.query,
+      name: 'credentials',
+      query: { ...to.query, tab: 'xero' },
     }),
   },
   {

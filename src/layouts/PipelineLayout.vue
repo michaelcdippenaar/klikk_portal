@@ -216,7 +216,6 @@ const navGroups = [
       { name: 'processes',    label: 'Processes',       lucide: 'play-circle' },
       { name: 'data',         label: 'Data Viewer',     lucide: 'table' },
       { name: 'compare',      label: 'Comparison',      lucide: 'git-compare' },
-      { name: 'xero-connect', label: 'Connect to Xero', lucide: 'link' },
     ],
   },
   {

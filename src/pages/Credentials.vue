@@ -6,6 +6,7 @@
       :tabs="[
         { name: 'ai-agent', label: 'AI Agent' },
         { name: 'tm1', label: 'TM1' },
+        { name: 'xero', label: 'Xero' },
       ]"
       v-model="tab"
       :url-sync="false"
@@ -111,11 +112,15 @@
       </div>
     </div>
 
+    <div v-else-if="tab === 'xero'" class="cred-panel">
+      <XeroConnect embedded />
+    </div>
+
   </AppPage>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import AppPage from '../components/shell/AppPage.vue';
 import { useToast } from '../composables/useToast';
 import { listCredentials, setCredential } from '../api/skills';
@@ -124,9 +129,19 @@ import KTabs from '../components/klikk/KTabs.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KBadge from '../components/klikk/KBadge.vue';
+import { useRoute } from 'vue-router';
+import XeroConnect from './XeroConnect.vue';
 
 const toast = useToast();
-const tab = ref('ai-agent');
+const route = useRoute();
+const SETUP_TABS = ['ai-agent', 'tm1', 'xero'];
+const tab = ref(SETUP_TABS.includes(route.query.tab) ? route.query.tab : 'ai-agent');
+watch(
+  () => route.query.tab,
+  (slug) => {
+    if (SETUP_TABS.includes(slug) && slug !== tab.value) tab.value = slug;
+  },
+);
 
 const claudeModels = [
   { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
