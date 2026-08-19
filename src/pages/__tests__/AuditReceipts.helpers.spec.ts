@@ -300,8 +300,14 @@ describe('decision enum + decisionLabel', () => {
 
   it('paging constants', () => {
     expect(DEFAULT_PAGE_SIZE).toBe(50);
-    expect(PAGE_SIZE_OPTIONS).toEqual([25, 50, 100]);
+    expect(PAGE_SIZE_OPTIONS).toEqual([25, 50, 100, 200]);
     expect(PAGE_SIZE_OPTIONS).toContain(DEFAULT_PAGE_SIZE);
+    // 200 is the backend's MAX_PAGE_SIZE (apps/audit services). The server
+    // CLAMPS larger page_size values rather than rejecting them, so the
+    // console must never offer a size the server would silently shrink — the
+    // table would ask for 500 and quietly render 200. If you're tempted to
+    // add 500 here: don't. Raise the backend ceiling first, then this cap.
+    expect(Math.max(...PAGE_SIZE_OPTIONS)).toBe(200);
   });
 });
 

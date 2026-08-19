@@ -34,10 +34,14 @@ import { nextTick } from 'vue';
 // ── Mocks ───────────────────────────────────────────────────────────────────
 
 vi.mock('../../api/receipts', () => ({
+  // Keep in sync with the real module's server-side batch cap.
+  BULK_MAX: 500,
   getReceipts: vi.fn(),
   getReceipt: vi.fn(),
+  getReceiptIds: vi.fn(),
   patchReceiptReview: vi.fn(),
   postReceiptComment: vi.fn(),
+  bulkUpdateReceipts: vi.fn(),
   downloadReceiptsExport: vi.fn(),
 }));
 
@@ -54,8 +58,10 @@ import AuditReceipts from '../AuditReceipts.vue';
 const mocked = api as unknown as {
   getReceipts: ReturnType<typeof vi.fn>;
   getReceipt: ReturnType<typeof vi.fn>;
+  getReceiptIds: ReturnType<typeof vi.fn>;
   patchReceiptReview: ReturnType<typeof vi.fn>;
   postReceiptComment: ReturnType<typeof vi.fn>;
+  bulkUpdateReceipts: ReturnType<typeof vi.fn>;
   downloadReceiptsExport: ReturnType<typeof vi.fn>;
 };
 
@@ -226,6 +232,36 @@ function bodyRows(wrapper: ReturnType<typeof mount>) {
   return wrapper.findAll('tbody tr');
 }
 
+/**
+ * Header-relative cell lookup.
+ *
+ * KTable's `selectable` prop injects a leading `__select__` <td> into every
+ * row, and any future column addition shifts positions again — hard-coded
+ * `findAll('td')[n]` indexes are a trap. Resolve the column index from the
+ * <th> label once, then index the row's tds by it, so this file survives the
+ * next column change without edits.
+ */
+function headerIndex(wrapper: ReturnType<typeof mount>, label: string): number {
+  const idx = wrapper.findAll('thead th').findIndex((th) => th.text().trim() === label);
+  if (idx === -1) {
+    throw new Error(`No <th> labelled "${label}" — did a column get renamed?`);
+  }
+  return idx;
+}
+
+function cellFor(
+  wrapper: ReturnType<typeof mount>,
+  rowWrapper: ReturnType<typeof bodyRows>[number],
+  label: string,
+) {
+  const cells = rowWrapper.findAll('td');
+  const idx = headerIndex(wrapper, label);
+  if (idx >= cells.length) {
+    throw new Error(`Row has ${cells.length} tds but "${label}" resolves to index ${idx}`);
+  }
+  return cells[idx];
+}
+
 beforeEach(() => {
   warnings = [];
   routerReplace.mockReset();
@@ -234,6 +270,8 @@ beforeEach(() => {
   mocked.getReceipt.mockReset().mockImplementation(async (sha: string) => detailResponse(sha));
   mocked.patchReceiptReview.mockReset().mockImplementation(async (_sha: string, body: Record<string, unknown>) => ({ ...DEFAULT_REVIEW, ...body }));
   mocked.postReceiptComment.mockReset();
+  mocked.getReceiptIds.mockReset();
+  mocked.bulkUpdateReceipts.mockReset();
   mocked.downloadReceiptsExport.mockReset();
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -275,17 +313,16 @@ describe('AuditReceipts — renders production-shaped rows', () => {
 
     const nullTotalRow = trs[2];
     expect(nullTotalRow.text()).toContain('Engen');
-    expect(nullTotalRow.findAll('td')[2].text()).toBe('—');
+    expect(cellFor(w, nullTotalRow, 'Total').text()).toBe('—');
 
     const nanTotalRow = trs[3];
-    expect(nanTotalRow.findAll('td')[2].text()).toBe('—');
+    expect(cellFor(w, nanTotalRow, 'Total').text()).toBe('—');
 
     const noOcrRow = trs[4];
-    const cells = noOcrRow.findAll('td');
-    expect(cells[0].text()).toContain('—'); // date
-    expect(cells[1].text()).toBe('—'); // supplier
-    expect(cells[2].text()).toBe('—'); // total
-    expect(cells[3].text()).toBe('—'); // category
+    expect(cellFor(w, noOcrRow, 'Date').text()).toContain('—');
+    expect(cellFor(w, noOcrRow, 'Supplier').text()).toBe('—');
+    expect(cellFor(w, noOcrRow, 'Total').text()).toBe('—');
+    expect(cellFor(w, noOcrRow, 'Category').text()).toBe('—');
     expect(warnings).toEqual([]);
     w.unmount();
   });
@@ -295,16 +332,16 @@ describe('AuditReceipts — renders production-shaped rows', () => {
     await flushPromises();
     const trs = bodyRows(w);
 
-    const matchedStatus = trs[0].findAll('td')[4];
+    const matchedStatus = cellFor(w, trs[0], 'Xero status');
     expect(matchedStatus.text()).toContain('Matched');
     expect(matchedStatus.text()).toContain('#1042');
     expect(matchedStatus.find('.ar-status').attributes('title')).toBe('MATCHED (auto-recon 2026-08-17)');
 
-    const unmatchedStatus = trs[1].findAll('td')[4];
+    const unmatchedStatus = cellFor(w, trs[1], 'Xero status');
     expect(unmatchedStatus.text()).toContain('Not in Xero');
     expect(unmatchedStatus.text()).not.toContain('#');
 
-    const skippedStatus = trs[5].findAll('td')[4];
+    const skippedStatus = cellFor(w, trs[5], 'Xero status');
     expect(skippedStatus.text()).toContain('Skipped');
     expect(skippedStatus.find('.ar-status').attributes('title')).toBe('skipped (no/negative total)');
     w.unmount();
@@ -315,10 +352,10 @@ describe('AuditReceipts — renders production-shaped rows', () => {
     await flushPromises();
     const trs = bodyRows(w);
     expect(trs[7].text()).toContain('THE VERY LONG TRADING NAME');
-    expect(trs[0].findAll('td')[0].text()).toContain('FY27');
-    expect(trs[0].findAll('td')[0].text()).toContain('2026-08-04');
-    expect(trs[5].findAll('td')[7].text()).toBe('3');
-    expect(trs[0].findAll('td')[7].text()).toBe('0');
+    expect(cellFor(w, trs[0], 'Date').text()).toContain('FY27');
+    expect(cellFor(w, trs[0], 'Date').text()).toContain('2026-08-04');
+    expect(cellFor(w, trs[5], 'Comments').text()).toBe('3');
+    expect(cellFor(w, trs[0], 'Comments').text()).toBe('0');
     w.unmount();
   });
 
@@ -631,8 +668,8 @@ describe('AuditReceipts — to-process toggle and decision select', () => {
   it('row select reflects the stored decision label (MEAL_SKIP → "Meal (skip)", "" → "—")', async () => {
     const w = mountPage();
     await flushPromises();
-    expect(bodyRows(w)[5].findAll('td')[6].text()).toContain('Meal (skip)');
-    expect(bodyRows(w)[0].findAll('td')[6].text()).toContain('—');
+    expect(cellFor(w, bodyRows(w)[5], 'Decision').text()).toContain('Meal (skip)');
+    expect(cellFor(w, bodyRows(w)[0], 'Decision').text()).toContain('—');
     w.unmount();
   });
 });
