@@ -268,6 +268,13 @@ const navGroups = [
       { name: 'audit-receipts',   label: 'Receipts',         lucide: 'receipt' },
     ],
   },
+  {
+    key: 'pricing',
+    label: 'Pricing',
+    items: [
+      { name: 'pricelist', label: 'Price List', lucide: 'tag' },
+    ],
+  },
 ];
 
 // Load persisted expansion state; default to Xero expanded only.

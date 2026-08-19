@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.5.0';
+const SERVER_VERSION = '0.6.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -15,6 +15,7 @@ const SERVER_INSTRUCTIONS = [
   'Refresh/import/vectorization tools mutate local data copied from Xero, Investec, yfinance, and related sources; ask for confirmation before running them unless the user explicitly requested an update.',
   'When giving financial analysis, distinguish market price, market value, cost, income, and ROI.',
   'Year-end audit: when MC says "audit for financial year end", "run the year-end audit" or "check the books", call run_yearend_audit(fy) and reason over the findings; list_audit_checks / run_audit_check / audit_history / add_audit_check manage the registry. These never write to Xero.',
+  'Equipment price list: pricelist_list_items / pricelist_get_price / pricelist_price_history read Klikk\'s event-gear rate card (ex VAT, ZAR); pricelist_build_quote prices a job without persisting anything; pricelist_set_price and pricelist_upsert_item mutate the local price list and require confirm=true. Never writes to Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -889,6 +890,114 @@ const tools = [
         owner_action: { type: 'string', description: 'Who acts: MC | bookkeeper | accountant | supplier | engineering.' },
         rationale: { type: 'string', description: 'Optional: the incident / reason the check was born from.' },
         replace: { type: 'boolean', description: 'Set true to overwrite an existing code (default false → 409 if it exists).', default: false },
+      },
+    },
+  },
+  {
+    name: 'pricelist_list_items',
+    description: 'Read-only: list Klikk\'s EVENT-GEAR RATE CARD — the hire price list for d&b audio, Pioneer DJ, Epson projection and related event kit (code, name, category, unit e.g. per day, qty_owned, active flag, current LIST price and valid_from, price_count, Xero account / tracking / purchase-line / fixed-asset links, notes). Prices are ex VAT in ZAR. Pass customer= (Xero contacts_id or contact name) to see that customer\'s negotiated rate (customer_price / customer_price_type) alongside the list price; pass date= to see the prices in force on a given day. Filter by category, free-text q (matches code/name/description) and active_only. Use when MC asks "what do we charge for X", "show the price list", "list the d&b / Pioneer / Epson rates", "what gear do we hire out", "what does <customer> pay for Y", or before building a quote with pricelist_build_quote. The price list is Klikk\'s own table — this never reads from or writes to Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: 'Optional category filter. Allowed values: PA, AMP, DJ, PROJECTOR, LENS, LIGHTING, STAGING, RIGGING, CABLING, OTHER. (See the categories array in the result for the ones actually in use.)' },
+        active_only: { type: 'boolean', description: 'Only active items (default true). Set false to include retired / sold gear.', default: true },
+        q: { type: 'string', description: 'Free-text search across code, name and description (e.g. "V-Series", "CDJ-3000", "EB-L").' },
+        customer: { type: 'string', description: 'Optional Xero contacts_id or contact name — adds customer_price / customer_price_type per item where a TRADE/SPECIAL rate exists.' },
+        date: { type: 'string', description: 'Optional price-effective date YYYY-MM-DD (default today).' },
+      },
+    },
+  },
+  {
+    name: 'pricelist_get_price',
+    description: 'Read-only: resolve the price of ONE rate-card item (by code) for a date and optionally a customer / price type. Returns price (ex VAT, ZAR, as a 2-decimal string), price_type actually used (LIST / TRADE / SPECIAL), valid_from / valid_to, note, set_by, and fallback_to_list=true when no TRADE/SPECIAL row existed for that customer/type and the LIST price was returned instead. Use when MC asks "what is the day rate for <code>", "what does <customer> pay for <item>", "what was the price of X on <date>", "do we have a trade price for Y". Klikk\'s own event-gear price list — never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['code'],
+      properties: {
+        code: { type: 'string', description: 'Item code, e.g. DB-V10P, DB-VGSUB, DB-D40, PIO-CDJ3000, EPSON-PU2220B.' },
+        date: { type: 'string', description: 'Price-effective date YYYY-MM-DD (default today).' },
+        customer: { type: 'string', description: 'Optional Xero contacts_id or contact name for a customer-specific rate.' },
+        type: { type: 'string', description: 'Requested price type: LIST (default), TRADE or SPECIAL. Falls back to LIST when absent (see fallback_to_list).' },
+      },
+    },
+  },
+  {
+    name: 'pricelist_price_history',
+    description: 'Read-only: full price history of ONE rate-card item (by code), newest first — every LIST / TRADE / SPECIAL row with price (ex VAT, ZAR), valid_from, valid_to (null = still current), customer, note, set_by and created_at. Use when MC asks "when did we last change the price of X", "what did we charge for Y last year", "who set this price", "show the price changes on <code>", or to audit a rate before changing it with pricelist_set_price. Klikk\'s own table — never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['code'],
+      properties: {
+        code: { type: 'string', description: 'Item code, e.g. DB-V10P.' },
+        limit: { type: 'number', description: 'Maximum rows to return, newest first (1-200, default 50).', default: 50 },
+      },
+    },
+  },
+  {
+    name: 'pricelist_build_quote',
+    description: 'Read-only calculator — NOTHING IS PERSISTED, no quote is created in Klikk or Xero. Prices a job from the event-gear rate card: give lines [{code, qty, days}], optional customer (Xero contacts_id or name — applies their TRADE/SPECIAL rates), date (price-effective date), discount_pct (0-100) and vat_rate (default 0.15). Returns per-line unit_price / price_type / priced / line_total, then subtotal, discount, ex_vat, vat, incl_vat (all ZAR, 2-decimal strings) plus warnings for unknown codes or lines with no price (those lines are NOT in the totals — fix them before quoting the client). Use when MC says "quote <customer> for ...", "what would 2x V8 + 4x CDJ for 3 days cost", "price this job", "build a quote", "how much for the Epson setup over the weekend". To actually issue the quote, MC uses Xero quotes (xero_list_quotes / xero_get_quote are read-only views); this tool only computes numbers.',
+    inputSchema: {
+      type: 'object',
+      required: ['lines'],
+      properties: {
+        lines: {
+          type: 'array',
+          minItems: 1,
+          description: 'Quote lines. Each: {code (required), qty (default 1), days (default 1)}.',
+          items: {
+            type: 'object',
+            required: ['code'],
+            properties: {
+              code: { type: 'string', description: 'Rate-card item code.' },
+              qty: { type: 'number', description: 'Quantity of units (default 1).', default: 1 },
+              days: { type: 'number', description: 'Hire days (default 1).', default: 1 },
+            },
+          },
+        },
+        customer: { type: 'string', description: 'Optional Xero contacts_id or contact name — applies that customer\'s negotiated rates.' },
+        date: { type: 'string', description: 'Price-effective date YYYY-MM-DD (default today).' },
+        discount_pct: { type: 'number', description: 'Optional overall discount percentage 0-100 applied to the subtotal before VAT.' },
+        vat_rate: { type: 'number', description: 'VAT rate as a fraction (default 0.15 = 15%).', default: 0.15 },
+      },
+    },
+  },
+  {
+    name: 'pricelist_set_price',
+    description: 'Mutating tool (Klikk price list only — NEVER Xero): add a new price row for a rate-card item effective from valid_from, automatically closing the previous open row of the same type/customer (valid_to = day before). price is ex VAT in ZAR. price_type LIST (default) changes the public rate; TRADE or SPECIAL with customer= sets a negotiated rate for one Xero contact. Use when MC says "change the price of X to R…", "set the day rate for <code>", "give <customer> a trade price of R… on Y from <date>", "bump the V8 rate from 1 Sep". Check pricelist_price_history first if unsure of the current rate. Requires confirm=true; recorded with set_by=claude-mcp.',
+    inputSchema: {
+      type: 'object',
+      required: ['code', 'price', 'valid_from', 'confirm'],
+      properties: {
+        code: { type: 'string', description: 'Item code, e.g. DB-V10P.' },
+        price: { type: ['number', 'string'], description: 'New price ex VAT in ZAR (number or numeric string), must be >= 0.' },
+        valid_from: { type: 'string', description: 'Effective date YYYY-MM-DD.' },
+        price_type: { type: 'string', description: 'LIST (default), TRADE or SPECIAL.' },
+        customer: { type: 'string', description: 'Xero contacts_id or contact name — required in practice for TRADE / SPECIAL rates.' },
+        note: { type: 'string', description: 'Optional reason / context for the change (e.g. "2026 rate review", "agreed with client on WhatsApp 12 Aug").' },
+        confirm: { type: 'boolean', description: 'Must be true — writes a price row to Klikk\'s local price list (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'pricelist_upsert_item',
+    description: 'Mutating tool (Klikk price list only — NEVER Xero): create a new rate-card item (code + name, optional category, unit, qty_owned, description, active, Xero account code / tracking option / purchase-line link, notes) or, with replace=true, update an existing item\'s details by code. Returns 409 guidance if the code already exists and replace is not true. Use when MC says "add <new gear> to the price list", "create item X", "retire / deactivate Y" (active=false, replace=true), "link Z to its Xero purchase line", "we now own 6 of these" (qty_owned, replace=true). To set the PRICE of an item use pricelist_set_price. Requires confirm=true; recorded with set_by=claude-mcp.',
+    inputSchema: {
+      type: 'object',
+      required: ['code', 'name', 'confirm'],
+      properties: {
+        code: { type: 'string', description: 'Unique item code, e.g. DB-V10P, PIO-CDJ3000, EPSON-PU2220B (prefix = brand convention).' },
+        name: { type: 'string', description: 'Display name, e.g. "d&b V8 line-array cabinet".' },
+        category: { type: 'string', description: 'Category — must be one of: PA, AMP, DJ, PROJECTOR, LENS, LIGHTING, STAGING, RIGGING, CABLING, OTHER.' },
+        unit: { type: 'string', description: 'Pricing unit — must be one of: DAY, EVENT, WEEK, SEASON (default DAY).' },
+        qty_owned: { type: 'number', description: 'How many units Klikk owns (for availability sanity checks).' },
+        description: { type: 'string', description: 'Longer description / spec.' },
+        active: { type: 'boolean', description: 'Active flag (default true). Set false to retire without deleting.' },
+        xero_account_code: { type: 'string', description: 'Optional Xero revenue account code this item bills to.' },
+        xero_tracking_option_id: { type: 'string', description: 'Optional Xero tracking option id.' },
+        xero_purchase_line_id: { type: 'string', description: 'Optional Xero purchase invoice line id this asset was bought on.' },
+        notes: { type: 'string', description: 'Free-text notes.' },
+        replace: { type: 'boolean', description: 'Set true to update an existing code (default false → error if it exists).', default: false },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s local price list (not Xero).' },
       },
     },
   },
@@ -2148,6 +2257,265 @@ async function addAuditCheck(args = {}) {
   };
 }
 
+// ---- Equipment price list (Klikk event-gear rate card; /api/pricelist/ — never Xero) ----
+
+const PRICELIST_TYPES = ['LIST', 'TRADE', 'SPECIAL'];
+
+function pricelistCode(value) {
+  const code = String(value || '').trim();
+  if (!code) throw new Error('code is required (e.g. DB-V10P)');
+  return code;
+}
+
+function pricelistDateOrNull(value, field = 'date') {
+  if (value === undefined || value === null || value === '') return null;
+  const date = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`${field} must be YYYY-MM-DD`);
+  return date;
+}
+
+function pricelistTypeOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const type = String(value).trim().toUpperCase();
+  if (!PRICELIST_TYPES.includes(type)) throw new Error(`price type must be one of ${PRICELIST_TYPES.join(', ')}`);
+  return type;
+}
+
+function pricelistMoney(value) {
+  const numeric = Number(value);
+  if (value === undefined || value === null || String(value).trim() === '' || !Number.isFinite(numeric)) {
+    throw new Error('price must be a finite number (ex VAT, ZAR)');
+  }
+  if (numeric < 0) throw new Error('price must be >= 0');
+  return numeric;
+}
+
+function pricelistCustomerLabel(data) {
+  if (!data) return null;
+  if (data.customer && typeof data.customer === 'object') return data.customer.name || data.customer.contacts_id || null;
+  return data.customer_name || data.customer_id || null;
+}
+
+async function pricelistListItems(args = {}) {
+  const params = new URLSearchParams();
+  appendSearchParam(params, 'category', args.category);
+  const activeOnly = args.active_only !== false;
+  if (activeOnly) params.set('active', '1');
+  appendSearchParam(params, 'q', args.q);
+  appendSearchParam(params, 'customer', args.customer);
+  appendSearchParam(params, 'date', pricelistDateOrNull(args.date));
+  const query = params.toString();
+  const data = await apiRequest(`/api/pricelist/items/${query ? `?${query}` : ''}`);
+  const items = data?.items || [];
+  const customerLabel = pricelistCustomerLabel(data);
+  const unpriced = items.filter((row) => row.current_price === null || row.current_price === undefined).length;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? items.length,
+    categories: data?.categories || [],
+    customer: data?.customer || null,
+    filters: {
+      category: args.category || null,
+      active_only: activeOnly,
+      q: args.q || null,
+      customer: args.customer || null,
+      date: args.date || null,
+    },
+    items,
+    agent_brief: [
+      `${data?.count ?? items.length} rate-card item(s)${args.category ? ` in category ${args.category}` : ''}${activeOnly ? ' (active only)' : ' (including inactive)'}${args.q ? ` matching "${args.q}"` : ''}.`,
+      'All prices are ex VAT in ZAR; current_price is the LIST rate in force on the requested date (default today).',
+      customerLabel
+        ? `Customer ${customerLabel}: customer_price / customer_price_type show their negotiated rate next to the list price (absent = they pay list).`
+        : 'Pass customer= (Xero contacts_id or contact name) to see a customer\'s negotiated rate alongside the list price.',
+      unpriced ? `${unpriced} item(s) have no current price — set one with pricelist_set_price before quoting them.` : 'Every listed item has a current price.',
+      'Build a quote with pricelist_build_quote (nothing persisted). This is Klikk\'s own price list — never Xero.',
+    ],
+  };
+}
+
+async function pricelistGetPrice(args = {}) {
+  const code = pricelistCode(args.code);
+  const params = new URLSearchParams();
+  appendSearchParam(params, 'date', pricelistDateOrNull(args.date));
+  appendSearchParam(params, 'customer', args.customer);
+  appendSearchParam(params, 'type', pricelistTypeOrNull(args.type));
+  const query = params.toString();
+  const data = await apiRequest(`/api/pricelist/items/${encodeURIComponent(code)}/price/${query ? `?${query}` : ''}`);
+  const resolved = data?.resolved !== false && data?.price !== null && data?.price !== undefined;
+  const fellBack = Boolean(data?.fallback_to_list);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    ...data,
+    agent_brief: [
+      resolved
+        ? `${data.code || code} (${data.name || 'n/a'}): R${data.price} ex VAT per ${data.unit || 'unit'} on ${data.date || args.date || 'today'} — price_type ${data.price_type || 'n/a'}${data.customer_name ? ` for ${data.customer_name}` : ''}, valid ${data.valid_from || '?'} → ${data.valid_to || 'open'}${data.set_by ? `, set_by ${data.set_by}` : ''}.`
+        : `${code}: no price could be resolved for ${data?.date || args.date || 'today'}${args.customer ? ` / customer ${args.customer}` : ''} — set one with pricelist_set_price.`,
+      fellBack
+        ? `FELL BACK TO LIST: requested ${data?.requested_price_type || args.type || 'LIST'}${args.customer ? ` for ${data?.customer_name || args.customer}` : ''} but no such row exists, so the LIST price is shown (fallback_to_list=true).`
+        : `No fallback: the ${data?.price_type || 'requested'} price was found directly (fallback_to_list=false).`,
+      data?.note ? `Note on this price: ${data.note}` : 'Price is ex VAT in ZAR. Klikk\'s own price list — never Xero.',
+    ],
+  };
+}
+
+async function pricelistPriceHistory(args = {}) {
+  const code = pricelistCode(args.code);
+  const limit = clampNumber(args.limit, 50, 1, 200);
+  const data = await apiRequest(`/api/pricelist/items/${encodeURIComponent(code)}/prices/`);
+  const all = data?.prices || [];
+  const prices = all.slice(0, limit);
+  const open = all.filter((row) => row.valid_to === null || row.valid_to === undefined);
+  const latest = prices[0];
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    code: data?.code || code,
+    total_count: data?.count ?? all.length,
+    count: prices.length,
+    truncated: all.length > prices.length,
+    prices,
+    agent_brief: [
+      prices.length
+        ? `${prices.length} of ${data?.count ?? all.length} price row(s) for ${data?.code || code}, newest first; latest R${latest.price} ex VAT (${latest.price_type || 'LIST'}${latest.customer_name ? ` for ${latest.customer_name}` : ''}) from ${latest.valid_from} to ${latest.valid_to || 'open'}, set_by ${latest.set_by || 'n/a'}.`
+        : `No price rows for ${code} yet — add one with pricelist_set_price.`,
+      `valid_to null = still current (${open.length} open row(s) across LIST / TRADE / SPECIAL / customers); set_by shows who changed it (claude-mcp = set via this server).`,
+      'Prices are ex VAT in ZAR. Klikk\'s own price list — never Xero.',
+    ],
+  };
+}
+
+async function pricelistBuildQuote(args = {}) {
+  if (!Array.isArray(args.lines) || args.lines.length === 0) throw new Error('lines is required: a non-empty array of {code, qty?, days?}');
+  const lines = args.lines.map((line, index) => {
+    if (!line || typeof line !== 'object') throw new Error(`lines[${index}] must be an object {code, qty?, days?}`);
+    const code = String(line.code || '').trim();
+    if (!code) throw new Error(`lines[${index}].code is required`);
+    const qty = line.qty === undefined || line.qty === null || line.qty === '' ? 1 : Number(line.qty);
+    const days = line.days === undefined || line.days === null || line.days === '' ? 1 : Number(line.days);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`lines[${index}].qty must be a positive number`);
+    if (!Number.isFinite(days) || days <= 0) throw new Error(`lines[${index}].days must be a positive number`);
+    return { code, qty, days };
+  });
+  const body = { lines };
+  if (args.customer) body.customer = String(args.customer);
+  const date = pricelistDateOrNull(args.date);
+  if (date) body.date = date;
+  if (args.discount_pct !== undefined && args.discount_pct !== null && args.discount_pct !== '') {
+    const discount = Number(args.discount_pct);
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) throw new Error('discount_pct must be between 0 and 100');
+    body.discount_pct = discount;
+  }
+  if (args.vat_rate !== undefined && args.vat_rate !== null && args.vat_rate !== '') {
+    const vat = Number(args.vat_rate);
+    if (!Number.isFinite(vat) || vat < 0 || vat > 1) throw new Error('vat_rate must be a fraction between 0 and 1 (0.15 = 15%)');
+    body.vat_rate = vat;
+  }
+  const data = await apiRequest('/api/pricelist/quote/', { method: 'POST', body });
+  const warnings = data?.warnings || [];
+  const quoteLines = data?.lines || [];
+  const unpriced = quoteLines.filter((row) => row.priced === false);
+  const brief = [];
+  if (warnings.length) {
+    brief.push(`WARNINGS (${warnings.length}) — resolve before quoting the client: ${warnings.map((w) => (typeof w === 'string' ? w : JSON.stringify(w))).join(' | ')}`);
+  }
+  if (unpriced.length) {
+    brief.push(`${unpriced.length} line(s) unpriced and EXCLUDED from the totals: ${unpriced.map((row) => row.code).join(', ')}.`);
+  }
+  brief.push(
+    `Quote for ${data?.customer_name || (data?.customer_id ? `customer ${data.customer_id}` : 'list-price customer')} on ${data?.date || 'today'}: ${quoteLines.length} line(s), subtotal R${data?.subtotal ?? 'n/a'}, discount R${data?.discount ?? '0.00'} (${data?.discount_pct ?? 0}%), ex VAT R${data?.ex_vat ?? 'n/a'}, VAT R${data?.vat ?? 'n/a'} @ ${data?.vat_rate ?? 'n/a'}, INCL VAT R${data?.incl_vat ?? 'n/a'} (ZAR).`,
+    'NOTHING WAS PERSISTED — this is a calculation only; no quote exists in Klikk or Xero. Per-line price_type shows LIST vs a customer TRADE/SPECIAL rate.',
+  );
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    persisted: false,
+    ...data,
+    warnings,
+    agent_brief: brief,
+  };
+}
+
+async function pricelistSetPrice(args = {}) {
+  if (args.confirm !== true) {
+    throw new Error('Refusing to set a price without confirm=true (this writes a row to Klikk\'s local price list — not Xero).');
+  }
+  const code = pricelistCode(args.code);
+  const validFrom = pricelistDateOrNull(args.valid_from, 'valid_from');
+  if (!validFrom) throw new Error('valid_from is required (YYYY-MM-DD)');
+  const price = pricelistMoney(args.price);
+  const priceType = pricelistTypeOrNull(args.price_type) || 'LIST';
+  const body = {
+    price,
+    valid_from: validFrom,
+    price_type: priceType,
+    set_by: 'claude-mcp',
+  };
+  if (args.customer) body.customer = String(args.customer);
+  if (args.note) body.note = String(args.note);
+  const data = await apiRequest(`/api/pricelist/items/${encodeURIComponent(code)}/prices/`, { method: 'POST', body });
+  const row = data?.price || {};
+  const closed = data?.closed_previous || null;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    code,
+    price: row,
+    closed_previous: closed,
+    agent_brief: [
+      `New price row id=${row.id ?? 'n/a'} for ${code}: R${row.price ?? price} ex VAT (${row.price_type || priceType}${row.customer_name ? ` for ${row.customer_name}` : ''}) valid from ${row.valid_from || validFrom}${row.valid_to ? ` to ${row.valid_to}` : ' (open)'}, set_by ${row.set_by || 'claude-mcp'}${row.note ? ` — "${row.note}"` : ''}.`,
+      closed
+        ? `Closed previous row id=${closed.id ?? 'n/a'} (R${closed.price} ${closed.price_type || ''}${closed.customer_name ? ` for ${closed.customer_name}` : ''}, from ${closed.valid_from}) → valid_to now ${closed.valid_to || 'n/a'}.`
+        : 'Nothing was closed — there was no previous open row of this type/customer for this item.',
+      'Written to Klikk\'s own price list only — Xero is untouched. Use pricelist_price_history to verify.',
+    ],
+  };
+}
+
+async function pricelistUpsertItem(args = {}) {
+  if (args.confirm !== true) {
+    throw new Error('Refusing to create/update a price-list item without confirm=true (this writes to Klikk\'s local price list — not Xero).');
+  }
+  const code = pricelistCode(args.code);
+  const name = String(args.name || '').trim();
+  if (!name) throw new Error('name is required');
+  const body = { code, name, set_by: 'claude-mcp', replace: args.replace === true };
+  for (const key of ['category', 'unit', 'description', 'xero_account_code', 'xero_tracking_option_id', 'xero_purchase_line_id', 'notes']) {
+    if (args[key] !== undefined && args[key] !== null) body[key] = String(args[key]);
+  }
+  if (args.qty_owned !== undefined && args.qty_owned !== null && args.qty_owned !== '') {
+    const qty = Number(args.qty_owned);
+    if (!Number.isFinite(qty) || qty < 0) throw new Error('qty_owned must be a number >= 0');
+    body.qty_owned = qty;
+  }
+  if (typeof args.active === 'boolean') body.active = args.active;
+  let data;
+  try {
+    data = await apiRequest('/api/pricelist/items/', { method: 'POST', body });
+  } catch (error) {
+    if (error.status === 409) {
+      throw new Error(`Item ${code} already exists — pass replace=true to update the existing item (and confirm=true). API said: ${error.message}`);
+    }
+    throw error;
+  }
+  const item = data?.item || {};
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    created: data?.created,
+    item,
+    agent_brief: [
+      `${data?.created ? 'Created' : 'Updated'} rate-card item ${item.code || code} (${item.name || name})${item.category ? ` in ${item.category}` : ''}${item.unit ? `, unit ${item.unit}` : ''}${item.active === false ? ' — INACTIVE' : ''}.`,
+      item.current_price !== null && item.current_price !== undefined
+        ? `Current LIST price R${item.current_price} ex VAT from ${item.current_price_valid_from || 'n/a'}.`
+        : 'No current price yet — set one with pricelist_set_price(code, price, valid_from, confirm=true).',
+      'Written to Klikk\'s own price list only — Xero is untouched.',
+    ],
+  };
+}
+
 const toolHandlers = {
   data_health_summary: dataHealthSummary,
   xero_connection_status: xeroConnectionStatus,
@@ -2204,6 +2572,12 @@ const toolHandlers = {
   run_yearend_audit: runYearendAudit,
   audit_history: auditHistory,
   add_audit_check: addAuditCheck,
+  pricelist_list_items: pricelistListItems,
+  pricelist_get_price: pricelistGetPrice,
+  pricelist_price_history: pricelistPriceHistory,
+  pricelist_build_quote: pricelistBuildQuote,
+  pricelist_set_price: pricelistSetPrice,
+  pricelist_upsert_item: pricelistUpsertItem,
 };
 
 async function handleRequest(request, respond = send) {
