@@ -48,8 +48,10 @@ export async function postReceiptComment(sha256, text) {
 /**
  * Export the filtered register as CSV or XLSX and trigger a browser download.
  * Same filter params as getReceipts() (paging ignored server-side).
- * The endpoint is AllowAny, but going through apiClient keeps the baseURL
- * resolution (dev :8001 vs /backend behind nginx) in one place.
+ * The endpoint requires authentication (like every other receipts endpoint), so
+ * it must go through apiClient — that attaches the Bearer token and refreshes it
+ * on 401, and keeps baseURL resolution (dev :8001 vs /backend behind nginx) in
+ * one place. A bare fetch()/window.open() would 401.
  */
 export async function downloadReceiptsExport(params = {}, format = 'csv') {
   const response = await apiClient.get(`${BASE}export/`, {
