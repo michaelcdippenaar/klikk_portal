@@ -85,6 +85,32 @@ export const DECISION_SELECT_OPTIONS = DECISION_VALUES.map((d) => ({
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Coerce input to a Date, or null when unparsable.
+ *
+ * Date-only 'YYYY-MM-DD' strings are parsed as LOCAL calendar dates. The spec
+ * makes `new Date("YYYY-MM-DD")` UTC midnight, which in any UTC-negative
+ * timezone reads back as the previous evening via getMonth()/getDate() — a
+ * 1 Jul receipt would then land in the wrong FY. Full ISO timestamps (the
+ * API's timestamptz values) keep their instant-based behaviour.
+ */
+function toLocalDate(input) {
+  if (input instanceof Date) {
+    return Number.isNaN(input.getTime()) ? null : input;
+  }
+  if (typeof input === 'string' && DATE_ONLY_RE.test(input)) {
+    const [y, m, day] = input.split('-').map(Number);
+    const d = new Date(y, m - 1, day);
+    // Reject rolled-over values like '2026-13-45'.
+    if (d.getFullYear() !== y || d.getMonth() !== m - 1 || d.getDate() !== day) return null;
+    return d;
+  }
+  const d = new Date(input);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * Fiscal-year label for a date. Klikk FY N runs 1 Jul (N-1) .. 30 Jun N,
  * so 2026-08-04 → 'FY27' and 2026-05-01 → 'FY26'.
@@ -92,8 +118,8 @@ export const DECISION_SELECT_OPTIONS = DECISION_VALUES.map((d) => ({
  */
 export function fyForDate(input, startMonth = FY_START_MONTH) {
   if (!input) return '';
-  const d = input instanceof Date ? input : new Date(input);
-  if (Number.isNaN(d.getTime())) return '';
+  const d = toLocalDate(input);
+  if (!d) return '';
   const month = d.getMonth() + 1;
   const year = d.getFullYear();
   const fyEnd = startMonth === 1 || month < startMonth ? year : year + 1;
@@ -102,6 +128,7 @@ export function fyForDate(input, startMonth = FY_START_MONTH) {
 
 /** 2026 → 'FY26'. Accepts number or numeric string; '' for anything else. */
 export function fyLabel(fyEndYear) {
+  if (fyEndYear === null || fyEndYear === undefined || fyEndYear === '') return '';
   const n = Number(fyEndYear);
   if (!Number.isFinite(n)) return '';
   return `FY${String(n).slice(-2)}`;
@@ -126,8 +153,8 @@ export function formatMoney(value) {
 /** ISO date / datetime → 'YYYY-MM-DD'. Invalid / empty → '—'. */
 export function formatDateShort(input) {
   if (!input) return '—';
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return '—';
+  const d = toLocalDate(input);
+  if (!d) return '—';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -137,8 +164,8 @@ export function formatDateShort(input) {
 /** ISO datetime → 'YYYY-MM-DD HH:mm' (local). Invalid / empty → '—'. */
 export function formatDateTime(input) {
   if (!input) return '—';
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return '—';
+  const d = toLocalDate(input);
+  if (!d) return '—';
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${formatDateShort(d)} ${hh}:${mm}`;
@@ -146,6 +173,7 @@ export function formatDateTime(input) {
 
 /** Bytes → human size ('12.1 KB'). */
 export function formatBytes(bytes) {
+  if (bytes === null || bytes === undefined || bytes === '') return '—';
   const n = Number(bytes);
   if (!Number.isFinite(n) || n < 0) return '—';
   if (n < 1024) return `${n} B`;

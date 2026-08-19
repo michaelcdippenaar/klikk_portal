@@ -19,10 +19,10 @@
  *   - The decision enum is exactly the product-spec set and the filter option
  *     for "Undecided" carries the literal value 'NONE' (never '').
  *
- * Known-bug documentation (it.fails): fyForDate parses a DATE-ONLY string with
- * `new Date('YYYY-MM-DD')` (UTC midnight) and then reads getMonth()/getDate()
- * in LOCAL time. In any UTC-negative browser timezone '2025-07-01' becomes
- * 30 Jun local and lands in the wrong FY. See the TZ block at the bottom.
+ *   - Timezone robustness: date-only 'YYYY-MM-DD' strings are parsed as LOCAL
+ *     calendar dates, so fyForDate / formatDateShort give the same answer in a
+ *     UTC-negative runner TZ as in Africa/Johannesburg. See the TZ block at
+ *     the bottom.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -121,10 +121,9 @@ describe('fyLabel', () => {
     expect(fyLabel(Infinity)).toBe('');
   });
 
-  // BUG (minor): fyLabel's docstring promises '' for anything non-numeric,
-  // but Number(null) === 0 is finite, so fyLabel(null) returns 'FY0'.
-  // src/utils/receipts.js fyLabel(): guard `fyEndYear == null || fyEndYear === ''`.
-  it.fails("BUG: fyLabel(null) should be '' but returns 'FY0'", () => {
+  // Number(null) === 0 is finite, so the null guard must run before the
+  // Number() coercion — otherwise null would render as 'FY0'.
+  it("returns '' for null", () => {
     expect(fyLabel(null)).toBe('');
   });
 });
@@ -219,12 +218,12 @@ describe('formatBytes', () => {
     expect(formatBytes('abc')).toBe('—');
   });
 
-  // BUG (minor): Number(null) === 0, so formatBytes(null) renders '0 B' in
-  // the detail media-meta line for a receipt whose byte_size is null, instead
-  // of the '—' every other formatter uses for "unknown".
-  // src/utils/receipts.js formatBytes(): guard `bytes == null` first.
-  it.fails("BUG: formatBytes(null) should be '—' but returns '0 B'", () => {
+  // Number(null) === 0, so the null guard must run before the Number()
+  // coercion — a receipt with byte_size: null shows '—' in the detail
+  // media-meta line (consistent with formatMoney), never '0 B'.
+  it("returns '—' for null (a real 0 still renders '0 B')", () => {
     expect(formatBytes(null)).toBe('—');
+    expect(formatBytes(0)).toBe('0 B');
   });
 });
 
@@ -306,32 +305,30 @@ describe('decision enum + decisionLabel', () => {
   });
 });
 
-// ── Timezone robustness (KNOWN BUG) ─────────────────────────────────────────
+// ── Timezone robustness ─────────────────────────────────────────────────────
 //
-// BUG: src/utils/receipts.js fyForDate() does `new Date(input)` — for a
-// date-only 'YYYY-MM-DD' string the spec says that is UTC midnight — and then
-// reads `d.getMonth()` / `d.getFullYear()` in LOCAL time. In any UTC-negative
-// browser TZ (a user travelling / a laptop set to America/*), '2025-07-01'
-// is 30 Jun 19:00 local → FY25 instead of FY26, and '2026-07-01' → FY26
-// instead of FY27. The same applies to the DD/MM of formatDateShort for
-// date-only inputs. Fix: parse 'YYYY-MM-DD' with the local-time constructor
-// (split + new Date(y, m-1, d)) or read getUTC* for date-only input.
+// `new Date('YYYY-MM-DD')` is UTC midnight per spec, so a naive
+// getMonth()/getDate() read in a UTC-negative browser TZ (a user travelling /
+// a laptop set to America/*) slides the date back a day: '2025-07-01' would
+// become 30 Jun local → FY25. src/utils/receipts.js therefore parses
+// date-only strings as LOCAL calendar dates (split + new Date(y, m-1, d));
+// full ISO timestamptz strings keep their instant-based behaviour.
 //
 // Node re-reads process.env.TZ on assignment, so the test below flips the
 // runner TZ for the duration of the case and restores it afterwards.
 
-describe('fyForDate — date-only strings in a UTC-negative timezone (documents a real bug)', () => {
+describe('fyForDate — date-only strings in a UTC-negative timezone', () => {
   const originalTZ = process.env.TZ;
   afterEach(() => {
     if (originalTZ === undefined) delete process.env.TZ;
     else process.env.TZ = originalTZ;
   });
 
-  it.fails('BUG: 2025-07-01 should be FY26 and 2026-07-01 should be FY27 in America/Los_Angeles', () => {
+  it('2025-07-01 is FY26 and 2026-07-01 is FY27 in America/Los_Angeles', () => {
     process.env.TZ = 'America/Los_Angeles';
-    // Sanity: the runtime honoured the TZ switch (a date-only string is UTC
-    // midnight → the previous evening in LA). If this precondition fails the
-    // runner cannot switch TZ and the case is inconclusive rather than green.
+    // Sanity: the runtime honoured the TZ switch (a naive date-only parse is
+    // UTC midnight → the previous evening in LA). If this precondition fails
+    // the runner cannot switch TZ and the case would be inconclusive.
     expect(new Date('2025-07-01').getDate()).toBe(30);
     expect(fyForDate('2025-07-01')).toBe('FY26');
     expect(fyForDate('2026-07-01')).toBe('FY27');
