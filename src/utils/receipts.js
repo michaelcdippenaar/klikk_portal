@@ -51,22 +51,29 @@ export const TO_PROCESS_OPTIONS = [
 ];
 
 /**
- * Review decisions. The backend stores `decision` as free text — these are
- * the values the console offers. '' = no decision yet.
+ * Review decisions — the fixed product-spec enum. These literal strings are
+ * what PATCH /audit/receipts/<sha256>/review/ accepts and what the API returns
+ * in `review.decision`. '' = undecided (not yet set).
  */
 export const DECISION_VALUES = [
-  { value: '', label: '— None —' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'query', label: 'Query' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'duplicate', label: 'Duplicate' },
-  { value: 'personal', label: 'Personal' },
+  { value: '', label: '—' },
+  { value: 'CAPTURE', label: 'Capture' },
+  { value: 'MEAL_SKIP', label: 'Meal (skip)' },
+  { value: 'PERSONAL', label: 'Personal' },
+  { value: 'DUPLICATE', label: 'Duplicate' },
+  { value: 'ALREADY_IN_XERO', label: 'Already in Xero' },
 ];
 
-/** Decision filter options (FilterBar) — ALL sentinel + every decision value. */
+/**
+ * Literal query-param value the list endpoint accepts for "decision not yet
+ * set". Sent as `decision=NONE` (never `decision=`).
+ */
+export const DECISION_FILTER_UNDECIDED = 'NONE';
+
+/** Decision filter options (FilterBar) — ALL sentinel, Undecided, then every enum value. */
 export const DECISION_FILTER_OPTIONS = [
   { value: ALL, label: 'All decisions' },
-  { value: 'none', label: 'No decision' },
+  { value: DECISION_FILTER_UNDECIDED, label: 'Undecided' },
   ...DECISION_VALUES.filter((d) => d.value !== '').map((d) => ({ value: d.value, label: d.label })),
 ];
 
@@ -170,10 +177,12 @@ export function statusLabel(statusGroup) {
   }
 }
 
-/** Decision value → label (falls back to the raw value). */
+/** Decision value → label ('' / null → 'Undecided'; unknown → raw value). */
 export function decisionLabel(value) {
-  const found = DECISION_VALUES.find((d) => d.value === (value || ''));
-  return found ? found.label : String(value);
+  const v = value == null ? '' : String(value);
+  if (v === '') return 'Undecided';
+  const found = DECISION_VALUES.find((d) => d.value === v);
+  return found ? found.label : v;
 }
 
 // ── URL sync ────────────────────────────────────────────────────────────────
