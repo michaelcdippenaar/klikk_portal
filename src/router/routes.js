@@ -101,6 +101,16 @@ const routes = [
             name: 'planning-analytics',
             component: () => import('pages/PlanningAnalytics.vue'),
           },
+          {
+            path: 'audit/procedures',
+            name: 'audit-procedures',
+            component: () => import('pages/AuditProcedures.vue'),
+          },
+          {
+            path: 'audit/findings',
+            name: 'audit-findings',
+            component: () => import('pages/AuditFindings.vue'),
+          },
         ],
       },
       {

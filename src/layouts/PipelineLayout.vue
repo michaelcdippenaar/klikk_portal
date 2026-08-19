@@ -177,6 +177,16 @@
                     <line x1="12" y1="20" x2="12" y2="4" />
                     <line x1="6" y1="20" x2="6" y2="14" />
                   </template>
+                  <template v-else-if="item.lucide === 'clipboard-check'">
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                    <path d="m9 14 2 2 4-4" />
+                  </template>
+                  <template v-else-if="item.lucide === 'search-check'">
+                    <path d="m8 11 2 2 4-4" />
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </template>
                   <!-- Fallback: dot -->
                   <template v-else>
                     <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
@@ -244,6 +254,14 @@ const navGroups = [
       { name: 'planning-analytics', label: 'Pipeline', lucide: 'bar-chart-2' },
     ],
   },
+  {
+    key: 'audit',
+    label: 'Audit',
+    items: [
+      { name: 'audit-procedures', label: 'Audit Procedures', lucide: 'clipboard-check' },
+      { name: 'audit-findings',   label: 'Findings',         lucide: 'search-check' },
+    ],
+  },
 ];
 
 // Load persisted expansion state; default to Xero expanded only.
@@ -254,7 +272,7 @@ function loadExpanded() {
   } catch {
     // ignore
   }
-  return { xero: true, investec: false, investments: false, pa: false };
+  return { xero: true, investec: false, investments: false, pa: false, audit: false };
 }
 
 const expandedGroups = reactive(loadExpanded());
