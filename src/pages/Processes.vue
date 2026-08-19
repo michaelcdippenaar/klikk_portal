@@ -23,13 +23,13 @@
 
     <!-- ── 2. Pipeline status strip ─────────────────────────────────────────── -->
     <!--
-      Backend gap (Case B): the API does not yet expose per-stage state or
-      lastSuccessAt. Passing null → all stages render idle + Never per doctrine.
-      Backend ticket: expose GET /api/process-status/?tenant_id=... returning
-      { metadata, data, journals, trail-balance, documents } each with
-      { state, lastSuccessAt } per the KOperationCard backend data shape.
+      Fed by GET /xero/sync/process-status/?tenant_id=... which returns the real
+      last-success timestamp per stage from XeroLastUpdate + the document import
+      table, so the strip reflects syncs that have actually run (daily pipeline,
+      scheduled tasks, other machines) — not just this browser session.
+      A live in-session run overlays 'running' on top via stageStates.
     -->
-    <PipelineStatusStrip :stage-states="null" />
+    <PipelineStatusStrip :stage-states="stageStates" />
 
 
     <!-- ── No-tenant gate ────────────────────────────────────────────────────── -->
@@ -84,6 +84,31 @@
           <KCheckbox
             v-model="dataOptions.loadAll"
             label="Load all data (ignore last update timestamp)"
+          />
+        </KOperationCard>
+      </div>
+
+      <!-- Sync Invoices -->
+      <div class="processes-stack__item">
+        <PersistentResultStrip
+          v-if="persistedResults.invoices"
+          :result="persistedResults.invoices"
+          title="Last run"
+          compact
+          class="processes-stack__result-strip"
+        />
+        <KOperationCard
+          title="Sync Invoices"
+          description="Fetch invoices and their line items from Xero into the local invoice store"
+          :state="cardState('invoices')"
+          :last-run-at="cardLastRunAt('invoices')"
+          metric="—"
+          :last-error="cardLastError('invoices')"
+          :primary-action="{ label: loading.invoices ? 'Running…' : 'Sync Invoices', handler: runSyncInvoices }"
+        >
+          <KCheckbox
+            v-model="invoiceOptions.full"
+            label="Full resync (ignore last update timestamp)"
           />
         </KOperationCard>
       </div>
@@ -262,7 +287,7 @@ import EmptyState from '../components/klikk/EmptyState.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 import PipelineStatusStrip from '../components/processes/PipelineStatusStrip.vue';
 import KCheckbox from '../components/klikk/KCheckbox.vue';
-import { getApiCallStats } from '../api/endpoints';
+import { getApiCallStats, getProcessStatus } from '../api/endpoints';
 
 const dataStore = useDataStore();
 const processStore = useProcessStore();
@@ -289,6 +314,64 @@ async function fetchApiCallStats() {
 onMounted(fetchApiCallStats);
 watch(() => dataStore.selectedTenant, fetchApiCallStats);
 
+// ── Real per-process status (backend timestamps) ──────────────────────────────
+// GET /xero/sync/process-status/ returns { stages: { <stage-id>: { state,
+// last_success_at } } } from XeroLastUpdate + the document import table, so the
+// page reflects syncs that actually ran rather than only this browser session.
+
+const processStatus = ref(null);
+
+async function fetchProcessStatus() {
+  try {
+    processStatus.value = await getProcessStatus(dataStore.selectedTenant || undefined);
+  } catch {
+    processStatus.value = null;
+  }
+}
+
+onMounted(fetchProcessStatus);
+watch(() => dataStore.selectedTenant, fetchProcessStatus);
+
+// Map the page's card/processId keys → backend stage ids.
+const BACKEND_STAGE_KEY = {
+  metadata:     'metadata',
+  data:         'data',
+  invoices:     'invoices',
+  journals:     'journals',
+  documents:    'documents',
+  trailBalance: 'trail-balance',
+};
+
+function backendLastSuccess(processId) {
+  const key = BACKEND_STAGE_KEY[processId];
+  const iso = key ? processStatus.value?.stages?.[key]?.last_success_at : null;
+  return iso ? new Date(iso) : null;
+}
+
+// Combined stage-states for the PipelineStatusStrip: backend last-success as the
+// base, overlaid with a live 'running' state while an in-session run is active.
+const stageStates = computed(() => {
+  const stages = processStatus.value?.stages;
+  const RUNNING_ID = { metadata: 'metadata', data: 'data', invoices: 'invoices',
+    journals: 'journals', trailBalance: 'trail-balance', documents: 'documents' };
+  const out = {};
+  for (const [pid, stageId] of Object.entries(RUNNING_ID)) {
+    const base = stages?.[stageId] ?? null;
+    let state = base?.state ?? 'idle';
+    // In-session activity wins so the strip shows live progress.
+    const live = sessionState[pid]?.state;
+    if (live === 'running' || live === 'failed') state = live;
+    else if (live === 'succeeded') state = 'succeeded';
+    out[stageId] = {
+      state,
+      lastSuccessAt: sessionState[pid]?.state === 'succeeded'
+        ? (sessionState[pid]?.lastRunAt ?? base?.last_success_at ?? null)
+        : (base?.last_success_at ?? null),
+    };
+  }
+  return out;
+});
+
 // Quota tone: info <4000, warning 4000–4999, error >=5000
 const quotaTone = computed(() => {
   const total = apiCallStats.value?.total_today ?? 0;
@@ -302,6 +385,7 @@ const quotaTone = computed(() => {
 const loading = reactive({
   metadata:          false,
   data:              false,
+  invoices:          false,
   journals:          false,
   documents:         false,
   trailBalance:      false,
@@ -346,7 +430,7 @@ function savePersistedResult(processId, result) {
 }
 
 // processId keys match the loading/results reactive keys
-const PROCESS_IDS = ['metadata', 'data', 'journals', 'documents', 'trailBalance', 'agedPayables', 'agedReceivables'];
+const PROCESS_IDS = ['metadata', 'data', 'invoices', 'journals', 'documents', 'trailBalance', 'agedPayables', 'agedReceivables'];
 
 const persistedResults = reactive(
   Object.fromEntries(PROCESS_IDS.map((id) => [id, loadPersistedResult(id)])),
@@ -365,6 +449,7 @@ watch(() => dataStore.selectedTenant, () => {
 const sessionState = reactive({
   metadata:        { state: 'idle', lastRunAt: null, lastError: null },
   data:            { state: 'idle', lastRunAt: null, lastError: null },
+  invoices:        { state: 'idle', lastRunAt: null, lastError: null },
   journals:        { state: 'idle', lastRunAt: null, lastError: null },
   documents:       { state: 'idle', lastRunAt: null, lastError: null },
   trailBalance:    { state: 'idle', lastRunAt: null, lastError: null },
@@ -372,12 +457,16 @@ const sessionState = reactive({
   agedReceivables: { state: 'idle', lastRunAt: null, lastError: null },
 });
 
-// Helpers — derive KOperationCard props from session state
+// Helpers — derive KOperationCard props from session state, falling back to the
+// real backend last-success timestamp so cards aren't stale on page load.
 function cardState(processId) {
-  return sessionState[processId]?.state ?? 'idle';
+  const live = sessionState[processId]?.state ?? 'idle';
+  if (live !== 'idle') return live;
+  // No in-session activity: reflect reality — 'succeeded' if it has ever run.
+  return backendLastSuccess(processId) ? 'succeeded' : 'idle';
 }
 function cardLastRunAt(processId) {
-  return sessionState[processId]?.lastRunAt ?? null;
+  return sessionState[processId]?.lastRunAt ?? backendLastSuccess(processId);
 }
 function cardLastError(processId) {
   return sessionState[processId]?.lastError ?? null;
@@ -386,6 +475,7 @@ function cardLastError(processId) {
 // ── Form options ──────────────────────────────────────────────────────────────
 
 const dataOptions = reactive({ loadAll: false });
+const invoiceOptions = reactive({ full: false });
 const trailBalanceOptions = reactive({ rebuild: false, excludeManual: false });
 
 // ── Process runners ───────────────────────────────────────────────────────────
@@ -432,6 +522,8 @@ async function runProcess(processId, params, extraAfter) {
     }
 
     await fetchApiCallStats();
+    // Re-pull the authoritative timestamps so the strip + cards reflect this run.
+    await fetchProcessStatus();
     if (extraAfter) await extraAfter();
   } catch (err) {
     sessionState[processId].state = 'failed';
@@ -468,6 +560,10 @@ function runProcessJournals() {
 
 function runSyncDocuments() {
   return runProcess('documents', { tenantId: dataStore.selectedTenant });
+}
+
+function runSyncInvoices() {
+  return runProcess('invoices', { tenantId: dataStore.selectedTenant, full: invoiceOptions.full });
 }
 
 function runTrailBalance() {

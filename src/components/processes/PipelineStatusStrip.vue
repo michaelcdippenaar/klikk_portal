@@ -68,6 +68,7 @@ const props = defineProps({
 const STAGES = [
   { id: 'metadata',      label: 'Update Metadata' },
   { id: 'data',          label: 'Sync Transactions & Journals' },
+  { id: 'invoices',      label: 'Sync Invoices' },
   { id: 'journals',      label: 'Process Journals' },
   { id: 'trail-balance', label: 'Build Trail Balance' },
   { id: 'documents',     label: 'Document Sync' },

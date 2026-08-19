@@ -11,6 +11,18 @@ export async function getApiCallStats(tenantId = null) {
 }
 
 /**
+ * Get real per-process last-success status for the pipeline / processes page.
+ * Reads the authoritative XeroLastUpdate / document-import timestamps so the
+ * page reflects syncs that have actually run (not just this browser session).
+ * Returns { stages: { <stage-id>: { state, last_success_at } } }.
+ */
+export async function getProcessStatus(tenantId = null) {
+  const params = tenantId ? { tenant_id: tenantId } : {};
+  const response = await apiClient.get(API_ENDPOINTS.PROCESS_STATUS, { params });
+  return response.data;
+}
+
+/**
  * Get Xero OAuth2 authorization URL
  */
 export async function getXeroAuthUrl() {
@@ -85,6 +97,21 @@ export async function syncXeroDocuments(tenantId, options = {}) {
     tenant_id: tenantId,
     transaction_ids: options.transaction_ids || undefined,
     types: options.types || undefined,
+  });
+  return response.data;
+}
+
+/**
+ * Sync invoices (with line items) from Xero into the local invoice table.
+ * Optional: modified_since (YYYY-MM-DD), type, statuses, full.
+ */
+export async function syncInvoices(tenantId, options = {}) {
+  const response = await apiClient.post(API_ENDPOINTS.SYNC_INVOICES, {
+    tenant_id: tenantId,
+    modified_since: options.modified_since || undefined,
+    type: options.type || undefined,
+    statuses: options.statuses || undefined,
+    full: options.full || undefined,
   });
   return response.data;
 }

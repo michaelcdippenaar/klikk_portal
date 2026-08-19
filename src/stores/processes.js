@@ -8,6 +8,7 @@ import {
   reconcileReports,
   importPnlByTracking,
   syncXeroDocuments,
+  syncInvoices,
   syncAgedPayables,
   syncAgedReceivables,
 } from '../api/endpoints';
@@ -67,6 +68,14 @@ export const useProcessStore = defineStore('processes', () => {
           result = await syncXeroDocuments(params.tenantId, {
             transaction_ids: params.transaction_ids,
             types: params.types,
+          });
+          break;
+        case 'invoices':
+          result = await syncInvoices(params.tenantId, {
+            modified_since: params.modified_since,
+            type: params.type,
+            statuses: params.statuses,
+            full: params.full,
           });
           break;
         case 'aged-payables':

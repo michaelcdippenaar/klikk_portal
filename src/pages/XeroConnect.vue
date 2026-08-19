@@ -85,16 +85,20 @@
         <div v-for="tenant in connectionStatus.tenants" :key="tenant.tenant_id" class="xc-tenant-row">
           <div class="xc-tenant-row__icon">
             <!-- Lucide check-circle (active) or alert-triangle (expired) -->
-            <svg v-if="!tenant.token_expired" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="xc-icon--success" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <svg v-if="!tenant.token_expired && !tenant.reauth_required" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="xc-icon--success" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="xc-icon--warning" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div class="xc-tenant-row__body">
             <div class="xc-tenant-row__name">{{ tenant.tenant_name }}</div>
             <div class="xc-tenant-row__id">ID: {{ tenant.tenant_id.substring(0, 8) }}…</div>
+            <div v-if="tenant.reauth_required" class="xc-tenant-row__reauth">
+              Refresh token rejected by Xero — scheduled syncs skip this tenant.
+              Click “Connect to Xero” above to re-authorize.
+            </div>
           </div>
           <StatusPill
-            :tone="tenant.token_expired ? 'warning' : 'success'"
-            :label="tenant.token_expired ? 'Token expired' : 'Active'"
+            :tone="tenantTone(tenant)"
+            :label="tenantLabel(tenant)"
             size="sm"
           />
           <span v-if="tenant.connected_at" class="xc-tenant-row__date">{{ formatDate(tenant.connected_at) }}</span>
@@ -143,6 +147,17 @@ const clientSecret = ref('');
 // Callback params from URL query
 const callbackStatus = ref(route.query.status || null);
 const callbackTenants = ref(route.query.tenants || null);
+
+// A dead refresh token (reauth_required) outranks a merely expired access
+// token: the access token refreshes itself, this one needs a human.
+function tenantTone(tenant) {
+  if (tenant.reauth_required) return 'error';
+  return tenant.token_expired ? 'warning' : 'success';
+}
+function tenantLabel(tenant) {
+  if (tenant.reauth_required) return 'Re-authorize';
+  return tenant.token_expired ? 'Token expired' : 'Active';
+}
 const callbackMessage = ref(route.query.message || null);
 
 function clearCallback() {
@@ -369,6 +384,13 @@ onMounted(async () => {
 .xc-tenant-row__id {
   font-size: 12px;
   color: var(--kdl-text-hint);
+}
+
+.xc-tenant-row__reauth {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--kdl-status-error);
 }
 
 .xc-tenant-row__date {

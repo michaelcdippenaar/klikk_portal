@@ -33,6 +33,7 @@ export const API_ENDPOINTS = {
   UPDATE_DATA: '/xero/data/update/journals/',
   PROCESS_JOURNALS: '/xero/data/process/journals/',
   SYNC_DOCUMENTS: '/xero/data/sync/documents/',
+  SYNC_INVOICES: '/xero/data/invoices/sync/',
   DOCUMENTS_BY_TRANSACTION: '/xero/data/documents/by-transaction/', // + transactionId + ?tenant_id=
   
   // Cube
@@ -50,6 +51,7 @@ export const API_ENDPOINTS = {
 
   // Sync
   API_CALL_STATS: '/xero/sync/api-call-stats/',
+  PROCESS_STATUS: '/xero/sync/process-status/',
 
   // Validation
   RECONCILE: '/xero/validation/reconcile/',
