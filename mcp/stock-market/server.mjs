@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.4.0';
+const SERVER_VERSION = '0.5.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -14,6 +14,7 @@ const SERVER_INSTRUCTIONS = [
   'Read-only review tools are safe to call for analysis.',
   'Refresh/import/vectorization tools mutate local data copied from Xero, Investec, yfinance, and related sources; ask for confirmation before running them unless the user explicitly requested an update.',
   'When giving financial analysis, distinguish market price, market value, cost, income, and ROI.',
+  'Year-end audit: when MC says "audit for financial year end", "run the year-end audit" or "check the books", call run_yearend_audit(fy) and reason over the findings; list_audit_checks / run_audit_check / audit_history / add_audit_check manage the registry. These never write to Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -817,6 +818,77 @@ const tools = [
       properties: {
         tenant_id: { type: 'string', description: 'Xero tenant UUID.' },
         confirm: { type: 'boolean', description: 'Must be true — calls the Xero API per customer contact.' },
+      },
+    },
+  },
+  {
+    name: 'list_audit_checks',
+    description: 'Read-only: list the year-end audit check registry (Postgres audit.checks) — code, title, category (RDY data-readiness, DOC documents, BNK bank↔books, SUP supplier integrity, BAL balance-sheet lifecycle, ALC allocation & tax, PRC process/intake), severity, expected (zero_rows | list | value), owner_action and description. Use to discover which checks exist before run_audit_check / audit_history, or when MC asks "what does the year-end audit cover?".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: 'Optional category filter: RDY, DOC, BNK, SUP, BAL, ALC or PRC.' },
+        include_sql: { type: 'boolean', description: 'Include each check\'s SQL text (default false).', default: false },
+        active_only: { type: 'boolean', description: 'Only active checks (default false = all).', default: false },
+      },
+    },
+  },
+  {
+    name: 'run_audit_check',
+    description: 'Read-only: execute ONE year-end audit check (by code, e.g. BAL-01) against the Klikk Financials mirror for a financial year and return status (PASS / WARN / FAIL / ERROR), row_count and up to 50 sample rows. The SQL is a guarded SELECT run in a READ ONLY transaction; the result is stored in audit.check_results. Use when MC asks about one specific procedure ("was any deposit left unrecovered?", "re-run SUP-05").',
+    inputSchema: {
+      type: 'object',
+      required: ['code'],
+      properties: {
+        code: { type: 'string', description: 'Check code, e.g. BAL-01, SUP-05, RDY-03.' },
+        fy: { type: 'number', description: 'Financial year = the calendar year it ENDS in (Klikk FY runs 1 Jul–30 Jun, so 2026 = 2025-07-01..2026-06-30). Defaults to the current FY.' },
+        tenant_id: { type: 'string', description: 'Xero tenant UUID (default Klikk (Pty) Ltd 41ebfa0e-012e-4ff1-82ba-a9a7585c536c).' },
+      },
+    },
+  },
+  {
+    name: 'run_yearend_audit',
+    description: 'Use when MC says \'audit for financial year end\' / \'run the year-end audit\' / \'check the books\'. Read-only: runs EVERY active check in the year-end audit registry (45 seed checks: data-readiness, document completeness, bank↔books, supplier integrity, balance-sheet lifecycle, allocation & tax, process) for a financial year, stores a run in audit.check_runs / audit.check_results, and returns the summary (PASS/WARN/FAIL/ERROR counts, by category, findings) plus per-check results with sample rows. Reason over the findings afterwards: group by owner_action (MC / bookkeeper / accountant / supplier / engineering) and surface the top items. Never writes to Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fy: { type: 'number', description: 'Financial year = the calendar year it ENDS in (2026 = 2025-07-01..2026-06-30). Defaults to the current FY.' },
+        tenant_id: { type: 'string', description: 'Xero tenant UUID (default Klikk (Pty) Ltd).' },
+        codes: { type: 'string', description: 'Optional comma-separated subset of check codes to run instead of all active checks.' },
+        sample_limit: { type: 'number', description: 'Sample rows to return per non-PASS check (0-50, default 10). Full 50-row samples are always stored in audit.check_results.', default: 10 },
+      },
+    },
+  },
+  {
+    name: 'audit_history',
+    description: 'Read-only: past results of one year-end audit check (status, row_count, duration, sample rows per run, newest first) from audit.check_results — use to see whether a finding is new, recurring, or cleared since the last run, or to diff an opening vs closing run.',
+    inputSchema: {
+      type: 'object',
+      required: ['code'],
+      properties: {
+        code: { type: 'string', description: 'Check code, e.g. BAL-01.' },
+        fy: { type: 'number', description: 'Optional: only runs for this financial year.' },
+        limit: { type: 'number', description: 'Maximum runs to return (default 20).', default: 20 },
+      },
+    },
+  },
+  {
+    name: 'add_audit_check',
+    description: 'Registry-only write (never Xero): add a NEW year-end audit check to audit.checks. The SQL must be a single read-only SELECT/WITH parameterised with :fy_start, :fy_end and :tenant_id (no INSERT/UPDATE/DELETE/DROP/ALTER, no semicolons); the backend rejects anything else and validates it with EXPLAIN, then smoke-runs it for the current FY and returns that result. Use when MC raises a new issue and wants it generalised into a permanent check ("add a check for X"). Conventions: journals in xero_data_xerojournals (journal_type=transaction for contact analysis, journal for GL balances; credits are negative), accounts xero_metadata_xeroaccount, contacts xero_metadata_xerocontacts.contacts_id, bank investec_investecbanktransaction (type DEBIT = outflow, use transaction_date), slips whatsapp.v_slips_xero. For expected=value the SQL must return a boolean column named ok.',
+    inputSchema: {
+      type: 'object',
+      required: ['code', 'title', 'category', 'severity', 'description', 'sql_text', 'expected', 'owner_action'],
+      properties: {
+        code: { type: 'string', description: 'Unique code, e.g. BAL-08 (prefix = category).' },
+        title: { type: 'string', description: 'Short title.' },
+        category: { type: 'string', description: 'RDY | DOC | BNK | SUP | BAL | ALC | PRC (or a new one).' },
+        severity: { type: 'string', description: 'critical | high | medium | low.' },
+        description: { type: 'string', description: 'What it catches, how to interpret, and any data GAP / proxy used.' },
+        sql_text: { type: 'string', description: 'Read-only SELECT using :fy_start, :fy_end, :tenant_id.' },
+        expected: { type: 'string', description: 'zero_rows (any row = finding) | list (rows for review) | value (rows with boolean ok).' },
+        owner_action: { type: 'string', description: 'Who acts: MC | bookkeeper | accountant | supplier | engineering.' },
+        rationale: { type: 'string', description: 'Optional: the incident / reason the check was born from.' },
+        replace: { type: 'boolean', description: 'Set true to overwrite an existing code (default false → 409 if it exists).', default: false },
       },
     },
   },
@@ -1932,6 +2004,150 @@ async function xeroSyncAged(args, path, what) {
   return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, result: data };
 }
 
+// ---- Year-end audit registry (Postgres audit.checks / check_runs / check_results) ----
+
+function auditFyOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 2015 || n > 2100) throw new Error('fy must be an integer financial year such as 2026');
+  return n;
+}
+
+function auditBrief(summary) {
+  if (!summary) return [];
+  const c = summary.counts || {};
+  return [
+    `FY${summary.fy} (${summary.fy_start}..${summary.fy_end}) run_id=${summary.run_id}: ${summary.checks_run} checks — PASS ${c.PASS ?? 0}, WARN ${c.WARN ?? 0}, FAIL ${c.FAIL ?? 0}, ERROR ${c.ERROR ?? 0}.`,
+    'Status meaning: zero_rows → any row is a finding; list → rows for human review; value → boolean ok column. ERROR = the SQL itself failed (engineering).',
+    'Group findings by owner_action (MC / bookkeeper / accountant / supplier / engineering) and lead with FAIL + high-severity WARN. Findings go to MC and the bookkeeper — never write to Xero.',
+  ];
+}
+
+async function listAuditChecks(args = {}) {
+  const params = new URLSearchParams();
+  appendSearchParam(params, 'category', args.category ? String(args.category).toUpperCase() : undefined);
+  params.set('include_sql', args.include_sql ? '1' : '0');
+  if (args.active_only) params.set('active', '1');
+  const data = await apiRequest(`/audit/checks/?${params}`);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? (data?.checks || []).length,
+    categories: data?.categories || [],
+    checks: data?.checks || [],
+    agent_brief: [
+      `${data?.count ?? 0} audit check(s) in the registry${args.category ? ` for category ${String(args.category).toUpperCase()}` : ''}.`,
+      'Run them all with run_yearend_audit(fy) or one with run_audit_check(code, fy); add new ones with add_audit_check.',
+    ],
+  };
+}
+
+async function runAuditCheck(args = {}) {
+  const code = String(args.code || '').trim().toUpperCase();
+  if (!code) throw new Error('code is required (e.g. BAL-01)');
+  const body = {};
+  const fy = auditFyOrNull(args.fy);
+  if (fy) body.fy = fy;
+  if (args.tenant_id) body.tenant_id = String(args.tenant_id);
+  body.triggered_by = 'mcp:run_audit_check';
+  const data = await apiRequest(`/audit/checks/${encodeURIComponent(code)}/run/`, { method: 'POST', body });
+  const r = data?.result || {};
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    run_id: data?.run_id,
+    fy: data?.fy,
+    fy_start: data?.fy_start,
+    fy_end: data?.fy_end,
+    check: data?.check,
+    result: r,
+    agent_brief: [
+      `${code} → ${r.status || 'n/a'}${r.row_count !== null && r.row_count !== undefined ? ` (${r.row_count} row(s))` : ''}${r.notes ? ` — ${r.notes}` : ''}.`,
+      `Expected=${r.expected || data?.check?.expected}; owner_action=${r.owner_action || data?.check?.owner_action || 'n/a'}. Sample rows are capped at 50; the full result is stored in audit.check_results (run_id ${data?.run_id}).`,
+    ],
+  };
+}
+
+async function runYearendAudit(args = {}) {
+  const body = { triggered_by: 'mcp:run_yearend_audit', include_samples: true };
+  const fy = auditFyOrNull(args.fy);
+  if (fy) body.fy = fy;
+  if (args.tenant_id) body.tenant_id = String(args.tenant_id);
+  if (args.codes) body.codes = String(args.codes);
+  body.sample_limit = clampNumber(args.sample_limit, 10, 0, 50);
+  const data = await apiRequest('/audit/run/', { method: 'POST', body });
+  const summary = data?.summary || {};
+  const results = data?.results || [];
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    summary,
+    results,
+    agent_brief: auditBrief(summary),
+  };
+}
+
+async function auditHistory(args = {}) {
+  const code = String(args.code || '').trim().toUpperCase();
+  if (!code) throw new Error('code is required (e.g. BAL-01)');
+  const params = new URLSearchParams();
+  params.set('limit', String(clampNumber(args.limit, 20, 1, 200)));
+  const fy = auditFyOrNull(args.fy);
+  if (fy) params.set('fy', String(fy));
+  const data = await apiRequest(`/audit/history/${encodeURIComponent(code)}/?${params}`);
+  const history = data?.history || [];
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    code,
+    count: history.length,
+    history,
+    agent_brief: [
+      history.length
+        ? `${history.length} stored run(s) for ${code}; latest ${history[0].status} with ${history[0].row_count ?? 'n/a'} row(s) (run_id ${history[0].run_id}, FY${history[0].fy}).`
+        : `No stored runs for ${code} yet — run_audit_check(code, fy) to create one.`,
+    ],
+  };
+}
+
+async function addAuditCheck(args = {}) {
+  const required = ['code', 'title', 'category', 'severity', 'description', 'sql_text', 'expected', 'owner_action'];
+  for (const k of required) {
+    if (args[k] === undefined || args[k] === null || String(args[k]).trim() === '') throw new Error(`${k} is required`);
+  }
+  const sql = String(args.sql_text);
+  if (/\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i.test(sql.replace(/'(?:[^']|'')*'/g, "''"))) {
+    throw new Error('sql_text must be a read-only SELECT (write keywords are not allowed)');
+  }
+  const body = {
+    code: String(args.code).trim().toUpperCase(),
+    title: String(args.title),
+    category: String(args.category).toUpperCase(),
+    severity: String(args.severity).toLowerCase(),
+    description: String(args.description),
+    sql_text: sql,
+    expected: String(args.expected).toLowerCase(),
+    owner_action: String(args.owner_action),
+    rationale: args.rationale ? String(args.rationale) : '',
+    replace: Boolean(args.replace),
+    source: 'mcp:add_audit_check',
+  };
+  const data = await apiRequest('/audit/checks/', { method: 'POST', body });
+  const smoke = data?.smoke_run || {};
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    created: data?.created,
+    check: data?.check,
+    smoke_run: smoke,
+    agent_brief: [
+      `${data?.created ? 'Created' : 'Updated'} ${body.code}; SQL validated with EXPLAIN.`,
+      `Smoke run for the current FY → ${smoke.status || 'n/a'}${smoke.row_count !== undefined && smoke.row_count !== null ? ` (${smoke.row_count} row(s))` : ''}${smoke.notes ? ` — ${smoke.notes}` : ''}.`,
+      'Also add the narrative for this check to Klikk-YearEnd-Audit-Procedures.md so the why survives.',
+    ],
+  };
+}
+
 const toolHandlers = {
   data_health_summary: dataHealthSummary,
   xero_connection_status: xeroConnectionStatus,
@@ -1983,6 +2199,11 @@ const toolHandlers = {
   xero_list_aged_receivables: (args) => xeroListAgedReport(args, '/xero/data/aged-receivables/', 'aged_receivables'),
   xero_sync_aged_payables: (args) => xeroSyncAged(args, '/xero/data/aged-payables/sync/', 'sync aged payables'),
   xero_sync_aged_receivables: (args) => xeroSyncAged(args, '/xero/data/aged-receivables/sync/', 'sync aged receivables'),
+  list_audit_checks: listAuditChecks,
+  run_audit_check: runAuditCheck,
+  run_yearend_audit: runYearendAudit,
+  audit_history: auditHistory,
+  add_audit_check: addAuditCheck,
 };
 
 async function handleRequest(request, respond = send) {
