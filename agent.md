@@ -8,3 +8,4 @@
 - For local UI changes, verify in the in-app browser after tests/builds where practical.
 - Keep final reports concise: what changed, what was verified, and any remaining risk.
 - Stock-market MCP server lives at `mcp/stock-market/server.mjs`; use it for agent stock reviews, refreshes, article vectorization, and Investec portfolio summaries.
+- Audit → Receipts page: route `audit/receipts` (`src/pages/AuditReceipts.vue`, API `src/api/receipts.js`, helpers `src/utils/receipts.js`) over the backend `/audit/receipts/` endpoints; behaviour, filters, FY rules and the export/bookkeeper flow are documented in the backend repo at `docs/receipts.md`.
