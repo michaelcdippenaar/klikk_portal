@@ -111,6 +111,11 @@ const routes = [
             name: 'audit-findings',
             component: () => import('pages/AuditFindings.vue'),
           },
+          {
+            path: 'audit/receipts',
+            name: 'audit-receipts',
+            component: () => import('pages/AuditReceipts.vue'),
+          },
         ],
       },
       {
