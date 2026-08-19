@@ -154,9 +154,15 @@
         >
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
+        <!--
+          Cap + used come from utils/xeroQuota.js: Xero's own header reading
+          (≈, used_estimate) when seen, else our logged tally — same story as the
+          Processes quota pill. aria-valuemax and the fill maths share one cap.
+        -->
         <span>
           Xero API budget:
-          <strong>{{ health.xero.apiCallsToday.toLocaleString() }}</strong> / 5&nbsp;000 calls today
+          <strong>{{ health.xero.apiCallsApprox ? '≈' : '' }}{{ health.xero.apiCallsToday.toLocaleString() }}</strong>
+          / {{ health.xero.apiCallCap.toLocaleString() }} calls today<template v-if="!health.xero.apiCallsApprox"> (logged calls only)</template>
         </span>
         <div
           class="db-api-budget__bar"
@@ -164,11 +170,11 @@
           role="progressbar"
           :aria-valuenow="health.xero.apiCallsToday"
           aria-valuemin="0"
-          aria-valuemax="5000"
+          :aria-valuemax="health.xero.apiCallCap"
         >
           <div
             class="db-api-budget__fill"
-            :style="{ width: Math.min((health.xero.apiCallsToday / 5000) * 100, 100) + '%' }"
+            :style="{ width: Math.min((health.xero.apiCallsToday / health.xero.apiCallCap) * 100, 100) + '%' }"
           />
         </div>
       </div>
@@ -240,8 +246,18 @@
           </div>
         </button>
 
-        <!-- Planning Analytics -->
-        <button class="db-service-row" @click="openPlanningAnalytics">
+        <!-- Planning Analytics.
+             Rendered as div[role=button] rather than <button> because it holds a
+             nested <a> (the direct PAW link) — interactive content inside a
+             <button> is invalid HTML. -->
+        <div
+          class="db-service-row"
+          role="button"
+          tabindex="0"
+          @click="openPlanningAnalytics"
+          @keydown.enter.prevent="openPlanningAnalytics"
+          @keydown.space.prevent="openPlanningAnalytics"
+        >
           <div class="db-service-row__icon" aria-hidden="true">
             <!-- Lucide bar-chart-3 -->
             <svg
@@ -280,6 +296,35 @@
           </div>
 
           <div class="db-service-row__action">
+            <!-- Direct link to the Planning Analytics Workspace UI (LAN-only).
+                 .stop keeps the card's own router navigation from firing. -->
+            <a
+              v-if="pawUrl"
+              :href="pawUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-ghost btn-sm db-service-row__ext"
+              title="Open Planning Analytics Workspace"
+              aria-label="Open Planning Analytics Workspace in a new tab"
+              @click.stop
+            >
+              <!-- Lucide external-link -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14" height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+              PA
+            </a>
             <span class="btn btn-ghost btn-sm db-service-row__btn" aria-hidden="true">
               Open
               <svg
@@ -297,7 +342,7 @@
               </svg>
             </span>
           </div>
-        </button>
+        </div>
 
         <!-- AI Agent — shown only when the route exists -->
         <button
@@ -390,6 +435,13 @@ import {
 } from '../api/endpoints';
 import apiClient from '../api/client';
 import { API_ENDPOINTS } from '../utils/constants';
+import {
+  XERO_QUOTA_FALLBACK_CAP,
+  hasHeaderTruth,
+  quotaTone,
+  resolveCap,
+  usedToday,
+} from '../utils/xeroQuota';
 
 const router = useRouter();
 const dataStore = useDataStore();
@@ -399,12 +451,22 @@ const dataStore = useDataStore();
 const lastRefreshed = ref(null);
 const refreshing = ref(false);
 
+// Planning Analytics Workspace URL, served by the TM1 config endpoint so the
+// host never drifts from the configured TM1 server. Empty => link is hidden.
+const pawUrl = ref('');
+
+// Raw GET /xero/sync/api-call-stats/ response — kept so the budget bar's tone
+// can be derived by utils/xeroQuota.js from the same object as the numbers.
+const apiCallStats = ref(null);
+
 const health = ref({
   xero: {
     tone: 'neutral',
     label: '—',
     lastSync: null,
-    apiCallsToday: null,
+    apiCallsToday: null,          // used_estimate (header truth) or total_today (logged)
+    apiCallsApprox: false,        // true when apiCallsToday is Xero's header-derived estimate
+    apiCallCap: XERO_QUOTA_FALLBACK_CAP,
   },
   investec: {
     tone: 'neutral',
@@ -425,12 +487,18 @@ const health = ref({
 
 // ── Derived ────────────────────────────────────────────────────────────────
 
+// Bar tone is proportional to the resolved cap (utils/xeroQuota.js: error
+// ≥100 %, warning ≥80 %, else ok) — same thresholds as the Processes pill.
+const API_BUDGET_BAR_CLASS = {
+  error:   'db-api-budget__bar--error',
+  warning: 'db-api-budget__bar--warning',
+  info:    'db-api-budget__bar--ok',
+};
+
 const apiCallBudgetTone = computed(() => {
   const n = health.value.xero.apiCallsToday;
   if (n === null) return '';
-  if (n > 4500) return 'db-api-budget__bar--error';
-  if (n > 3500) return 'db-api-budget__bar--warning';
-  return 'db-api-budget__bar--ok';
+  return API_BUDGET_BAR_CLASS[quotaTone(apiCallStats.value)] ?? 'db-api-budget__bar--ok';
 });
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────
@@ -470,7 +538,15 @@ async function fetchXeroHealth() {
 
   try {
     const stats = await getApiCallStats(dataStore.selectedTenant);
-    health.value.xero.apiCallsToday = stats?.total_today ?? null;
+    apiCallStats.value = stats ?? null;
+    // Prefer Xero's header-derived used_estimate (≈) over our logged tally so
+    // the bar tells the same story as the Processes pill. Stay null (bar
+    // hidden) when the response carries neither — preserves the old v-if.
+    const approx = hasHeaderTruth(stats);
+    const hasLogged = typeof stats?.total_today === 'number';
+    health.value.xero.apiCallsApprox = approx;
+    health.value.xero.apiCallCap = resolveCap(stats);
+    health.value.xero.apiCallsToday = (approx || hasLogged) ? usedToday(stats) : null;
     // Derive last sync from api call stats if xero status didn't give us one
     if (!health.value.xero.lastSync && stats?.by_process) {
       const lastRuns = Object.values(stats.by_process)
@@ -496,6 +572,15 @@ async function fetchInvestecHealth() {
   } catch {
     health.value.investec.tone = 'neutral';
     health.value.investec.label = '—';
+  }
+}
+
+async function fetchPawUrl() {
+  try {
+    const response = await apiClient.get(API_ENDPOINTS.PA_TM1_CONFIG);
+    pawUrl.value = response.data?.paw_url || '';
+  } catch {
+    pawUrl.value = '';
   }
 }
 
@@ -545,6 +630,7 @@ async function refresh() {
     fetchXeroHealth(),
     fetchInvestecHealth(),
     fetchPlanningAnalyticsHealth(),
+    fetchPawUrl(),
     fetchAiAgentHealth(),
   ]);
 
@@ -799,6 +885,24 @@ onMounted(() => {
 }
 
 /* The "Open" button inside the row — transparent background until row is hovered */
+/* Direct "PA" link to the Planning Analytics Workspace, sat beside "Open". */
+.db-service-row__ext {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  border-color: transparent;
+  background: transparent;
+  text-decoration: none;
+  color: var(--kdl-text-secondary);
+}
+
+.db-service-row__ext:hover,
+.db-service-row__ext:focus-visible {
+  color: var(--kdl-text-primary);
+  border-color: var(--kdl-border);
+}
+
 .db-service-row__btn {
   border-color: transparent;
   background: transparent;

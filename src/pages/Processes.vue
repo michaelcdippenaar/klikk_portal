@@ -10,13 +10,25 @@
         <TenantSelector />
       </template>
       <template #actions>
-        <StatusPill
+        <!--
+          Quota pill. Label / tone / tooltip come from utils/xeroQuota.js: Xero's
+          own X-DayLimit-Remaining reading when the backend has seen it, else our
+          logged tally (and the label says so). tabindex="0" falls through to the
+          pill's root <span> so the tooltip is reachable by keyboard.
+        -->
+        <KTooltip
           v-if="apiCallStats"
-          :tone="quotaTone"
-          :label="`Xero API: ${apiCallStats.total_today.toLocaleString()} / 5,000 today`"
-          :icon="true"
-          size="sm"
-        />
+          :text="quotaTooltip(apiCallStats)"
+          side="bottom"
+        >
+          <StatusPill
+            :tone="quotaPillTone"
+            :label="quotaLabel"
+            :icon="true"
+            size="sm"
+            tabindex="0"
+          />
+        </KTooltip>
       </template>
     </PageHeader>
 
@@ -124,7 +136,7 @@
         />
         <KOperationCard
           title="Process Journals"
-          description="Convert raw journal data to individual journal line items"
+          description="Convert raw journal data to individual journal line items. Also runs automatically inside Sync Transactions & Journals and the nightly pipeline."
           :state="cardState('journals')"
           :last-run-at="cardLastRunAt('journals')"
           metric="—"
@@ -233,7 +245,7 @@
         <summary class="api-history__trigger">
           <span class="api-history__trigger-text">
             View API call history
-            <span class="api-history__trigger-meta">·&nbsp;{{ apiCallStats.total_today.toLocaleString() }} / 5,000 today</span>
+            <span class="api-history__trigger-meta">·&nbsp;{{ quotaSummary }}</span>
           </span>
           <!-- chevron — CSS rotates on open via details[open] -->
           <svg
@@ -287,7 +299,14 @@ import EmptyState from '../components/klikk/EmptyState.vue';
 import TenantSelector from '../components/TenantSelector.vue';
 import PipelineStatusStrip from '../components/processes/PipelineStatusStrip.vue';
 import KCheckbox from '../components/klikk/KCheckbox.vue';
+import KTooltip from '../components/klikk/KTooltip.vue';
 import { getApiCallStats, getProcessStatus } from '../api/endpoints';
+import {
+  formatQuotaLabel,
+  formatQuotaSummary,
+  quotaTone,
+  quotaTooltip,
+} from '../utils/xeroQuota';
 
 const dataStore = useDataStore();
 const processStore = useProcessStore();
@@ -372,13 +391,12 @@ const stageStates = computed(() => {
   return out;
 });
 
-// Quota tone: info <4000, warning 4000–4999, error >=5000
-const quotaTone = computed(() => {
-  const total = apiCallStats.value?.total_today ?? 0;
-  if (total >= 5000) return 'error';
-  if (total > 4000) return 'warning';
-  return 'info';
-});
+// Quota pill — label / summary / tone delegate to utils/xeroQuota.js (header
+// truth from Xero when seen, logged tally otherwise; tone proportional to the
+// tenant's real cap from the response, never a hard-coded number).
+const quotaLabel    = computed(() => formatQuotaLabel(apiCallStats.value));
+const quotaSummary  = computed(() => formatQuotaSummary(apiCallStats.value));
+const quotaPillTone = computed(() => quotaTone(apiCallStats.value));
 
 // ── Process loading state ─────────────────────────────────────────────────────
 
