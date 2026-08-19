@@ -9,6 +9,9 @@ import apiClient from './client';
 
 const BASE = '/audit/receipts/';
 
+/** Server-side cap on sha256s per POST /bulk/ call — larger requests are rejected. */
+export const BULK_MAX = 500;
+
 /**
  * Paginated receipt list.
  * params: q, synced, status, fy, date_from, date_to, to_process, decision,
@@ -18,6 +21,60 @@ const BASE = '/audit/receipts/';
 export async function getReceipts(params = {}) {
   const response = await apiClient.get(BASE, { params });
   return response.data;
+}
+
+/**
+ * sha256s for the WHOLE current filter (not just the page) — used by
+ * "select all N". Same filter params as getReceipts(); paging is ignored
+ * server-side. Returns { count, sha256s: [...], truncated } — `truncated`
+ * is true when the filter matched more than 2000 rows (ids capped at 2000).
+ */
+export async function getReceiptIds(params = {}) {
+  const response = await apiClient.get(BASE, { params: { ...params, ids_only: 1 } });
+  return response.data;
+}
+
+/**
+ * POST the bulk action. `sha256s` is chunked into batches of BULK_MAX (the
+ * server rejects more than 500 in one call) and the per-batch results are
+ * summed. Batches are POSTed sequentially (not in parallel) to keep the DB
+ * write load predictable and the failure mode simple.
+ *
+ * actions: { set_to_process?, decision?, note?, comment? } — at least one
+ * required (server 400s otherwise). Unknown sha256s are reported by the
+ * server, not fatal — valid ones in the same batch are still processed.
+ *
+ * Returns the aggregate { updated, commented, unknown } across batches.
+ * Empty `sha256s` resolves { updated: 0, commented: 0, unknown: [] } without
+ * hitting the network. Throws on the first failing batch; the error carries
+ * `err.partial = { updated, commented, unknown, batchesDone, batchesTotal }`
+ * so the caller can tell the user how much HAD already been applied.
+ */
+export async function bulkUpdateReceipts(sha256s, actions) {
+  const aggregate = { updated: 0, commented: 0, unknown: [] };
+  const ids = Array.isArray(sha256s) ? sha256s : [];
+  if (!ids.length) return aggregate;
+
+  const batchesTotal = Math.ceil(ids.length / BULK_MAX);
+  for (let i = 0; i < ids.length; i += BULK_MAX) {
+    const batch = ids.slice(i, i + BULK_MAX);
+    try {
+      const response = await apiClient.post(`${BASE}bulk/`, { sha256s: batch, ...actions });
+      const data = response?.data || {};
+      aggregate.updated += Number(data.updated) || 0;
+      aggregate.commented += Number(data.commented) || 0;
+      if (Array.isArray(data.unknown)) aggregate.unknown = aggregate.unknown.concat(data.unknown);
+    } catch (err) {
+      err.partial = {
+        ...aggregate,
+        unknown: [...aggregate.unknown],
+        batchesDone: Math.floor(i / BULK_MAX),
+        batchesTotal,
+      };
+      throw err;
+    }
+  }
+  return aggregate;
 }
 
 /**

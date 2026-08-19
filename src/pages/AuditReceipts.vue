@@ -123,6 +123,54 @@
       />
     </div>
 
+    <!-- Bulk action bar — only while a selection exists -->
+    <div v-if="selection.hasSelection.value" class="ar-bulk-bar mb-3">
+      <strong class="ar-bulk-bar__count">{{ selection.count.value }} selected</strong>
+
+      <button
+        v-if="allPageRowsSelected && selection.count.value < totals.count"
+        class="btn btn-ghost btn-sm"
+        :disabled="selectAllLoading || bulkRunning"
+        @click="selectAllFiltered"
+      >
+        {{ selectAllLoading ? 'Selecting…' : `Select all ${totals.count} matching this filter` }}
+      </button>
+
+      <span class="ar-bulk-bar__spacer" />
+
+      <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="runBulk({ set_to_process: true })">
+        To process ✓
+      </button>
+      <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="runBulk({ set_to_process: false })">
+        To process ✗
+      </button>
+
+      <KMenu v-model="decisionMenuOpen">
+        <template #trigger>
+          <button class="btn btn-ghost btn-sm" :disabled="bulkRunning">Decision ▾</button>
+        </template>
+        <KMenuItem
+          v-for="opt in BULK_DECISION_OPTIONS"
+          :key="opt.value"
+          :disabled="bulkRunning"
+          @select="runBulk({ decision: opt.value })"
+        >
+          {{ opt.label }}
+        </KMenuItem>
+        <KMenuSeparator />
+        <KMenuItem :disabled="bulkRunning" @select="runBulk({ decision: '' })">
+          Clear decision
+        </KMenuItem>
+      </KMenu>
+
+      <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="bulkCommentOpen = true">
+        Add comment…
+      </button>
+      <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="selection.clear()">
+        Clear selection
+      </button>
+    </div>
+
     <SectionCard>
       <EmptyState
         v-if="!loading && !error && rows.length === 0 && filtersActive"
@@ -144,12 +192,16 @@
         :data="rows"
         :loading="loading"
         dense
+        selectable
+        :selectedRowIds="selection.selected.value"
         pagination="server"
         :pageSize="filters.page_size"
-        :pageSizeOptions="[filters.page_size]"
+        :pageSizeOptions="PAGE_SIZE_OPTIONS"
         :serverTotal="totals.count"
         :serverPage="filters.page - 1"
+        @update:selectedRowIds="selection.set"
         @update:serverPage="onServerPage"
+        @update:pageSize="onPageSize"
         @row-click="openDetail"
       >
         <template #cell-slip_ts="{ value, row }">
@@ -378,6 +430,36 @@
         </div>
       </div>
     </KDialog>
+
+    <!-- Bulk comment -->
+    <KDialog
+      v-model="bulkCommentOpen"
+      title="Add comment to selection"
+      :description="`The comment will be added to ${selection.count.value} selected receipt${selection.count.value === 1 ? '' : 's'}.`"
+    >
+      <label class="ar-field">
+        <span class="ar-field__label">Comment</span>
+        <textarea
+          v-model="bulkCommentDraft"
+          class="ar-textarea"
+          rows="3"
+          placeholder="Add a comment…"
+          :disabled="bulkRunning"
+        />
+      </label>
+      <template #footer>
+        <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="bulkCommentOpen = false">
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm"
+          :disabled="!bulkCommentDraft.trim() || bulkRunning"
+          @click="submitBulkComment"
+        >
+          {{ bulkRunning ? 'Adding…' : 'Add' }}
+        </button>
+      </template>
+    </KDialog>
   </AppPage>
 </template>
 
@@ -387,12 +469,16 @@ import { useRoute, useRouter } from 'vue-router';
 import {
   getReceipts,
   getReceipt,
+  getReceiptIds,
   patchReceiptReview,
   postReceiptComment,
+  bulkUpdateReceipts,
   downloadReceiptsExport,
 } from '../api/receipts';
 import {
   NONE,
+  DECISION_VALUES,
+  PAGE_SIZE_OPTIONS,
   FY_OPTIONS,
   SYNCED_OPTIONS,
   STATUS_OPTIONS,
@@ -420,14 +506,20 @@ import KAlert from '../components/klikk/KAlert.vue';
 import KBadge from '../components/klikk/KBadge.vue';
 import KDialog from '../components/klikk/KDialog.vue';
 import KInput from '../components/klikk/KInput.vue';
+import KMenu from '../components/klikk/KMenu.vue';
+import KMenuItem from '../components/klikk/KMenuItem.vue';
+import KMenuSeparator from '../components/klikk/KMenuSeparator.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
 import KToggle from '../components/klikk/KToggle.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
+import { useReceiptSelection } from '../composables/useReceiptSelection';
+import { useToast } from '../composables/useToast';
 
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 
 // ── List state ──────────────────────────────────────────────────────────────
 const filters = reactive(hydrateFromQuery(route.query));
@@ -453,6 +545,22 @@ const columns = [
 ];
 
 const filtersActive = computed(() => hasActiveFilters(filters));
+
+// ── Bulk selection ──────────────────────────────────────────────────────────
+// The current filter, ignoring paging — buildApiParams with includePaging:false
+// already drops page/page_size. Selection survives page changes, resets on any
+// real filter change (see useReceiptSelection).
+const filterSignature = computed(() => JSON.stringify(buildApiParams(filters, { includePaging: false })));
+const selection = useReceiptSelection(filterSignature);
+
+// "Every row currently on screen is in the selection" — derived from our own
+// rows + selection, NOT from KTable internals (we hold no ref to the table).
+const allPageRowsSelected = computed(
+  () => rows.value.length > 0 && rows.value.every((r) => selection.has(r.sha256)),
+);
+
+/** Decision menu items — every real decision value (the '' sentinel is the separated "Clear decision" item). */
+const BULK_DECISION_OPTIONS = DECISION_VALUES.filter((d) => d.value !== '');
 
 const countLabel = computed(() => {
   if (loading.value && !rows.value.length) return 'Loading receipts…';
@@ -483,7 +591,11 @@ async function load() {
   try {
     const data = await getReceipts(buildApiParams(filters));
     if (seq !== requestSeq) return; // stale response
-    rows.value = Array.isArray(data?.results) ? data.results : [];
+    // The `id: sha256` alias is NOT redundant: KTable's frozen getRowId falls
+    // back to the row INDEX when a row has no `id` field, which would key the
+    // selection checkboxes by page position — silently selecting the wrong
+    // receipts across pages. The alias makes selection sha256-keyed instead.
+    rows.value = (Array.isArray(data?.results) ? data.results : []).map((r) => ({ ...r, id: r.sha256 }));
     totals.count = Number(data?.totals?.count ?? data?.count ?? rows.value.length) || 0;
     totals.sum_total = data?.totals?.sum_total ?? null;
     // Clamp page if the server says we're past the end (e.g. a filter shrank the set).
@@ -525,6 +637,26 @@ watch(() => [filters.page, filters.page_size], () => {
 
 function onServerPage(zeroBased) {
   filters.page = Number(zeroBased) + 1;
+}
+
+/**
+ * Rows-per-page, driven by KTable's footer selector.
+ *
+ * In pagination="server" mode KTable cannot change its own page size — the
+ * pagination state is controlled by props — so it emits update:pageSize and we
+ * own the value. Anything outside PAGE_SIZE_OPTIONS is ignored: the backend
+ * CLAMPS page_size to 200 rather than rejecting it, so honouring a larger
+ * value here would leave the table asking for 500 and silently rendering 200.
+ *
+ * Resets to page 1 — page 7 of a 25-row paging is off the end of a 200-row one.
+ * Selection is deliberately NOT cleared: page_size is excluded from the filter
+ * signature, so a "select all N filtered" set survives a paging change.
+ */
+function onPageSize(size) {
+  const next = Number(size);
+  if (!PAGE_SIZE_OPTIONS.includes(next) || next === filters.page_size) return;
+  filters.page_size = next;
+  filters.page = 1;
 }
 
 function clearFilters() {
@@ -579,6 +711,94 @@ function setToProcess(row, value) {
 function setDecision(row, selectValue) {
   const decision = selectValue === NONE || selectValue == null ? '' : String(selectValue);
   return patchReview(row.sha256, { decision }, { optimistic: { decision } });
+}
+
+// ── Bulk actions ────────────────────────────────────────────────────────────
+const bulkRunning = ref(false);
+const selectAllLoading = ref(false);
+const decisionMenuOpen = ref(false);
+const bulkCommentOpen = ref(false);
+const bulkCommentDraft = ref('');
+
+/** applyReviewLocally, but for every selected sha256 on the visible page. */
+function applyReviewToSelection(review) {
+  rows.value = rows.value.map((r) =>
+    selection.has(r.sha256) ? { ...r, review: { ...r.review, ...review } } : r,
+  );
+}
+
+async function selectAllFiltered() {
+  if (selectAllLoading.value) return;
+  selectAllLoading.value = true;
+  actionError.value = null;
+  try {
+    const res = await getReceiptIds(buildApiParams(filters, { includePaging: false }));
+    selection.add(Array.isArray(res?.sha256s) ? res.sha256s : []);
+    if (res?.truncated) {
+      toast.warn('The filter matches more than 2000 receipts — only the first 2000 were selected.');
+    }
+  } catch (err) {
+    raiseActionError('Selecting all matching receipts failed.');
+    console.error(err);
+  } finally {
+    selectAllLoading.value = false;
+  }
+}
+
+async function runBulk(actions) {
+  if (bulkRunning.value || !selection.hasSelection.value) return false;
+  bulkRunning.value = true;
+  actionError.value = null;
+
+  // Optimistic for review-shaped actions; snapshot for the failure path.
+  const snapshot = rows.value;
+  const review = {};
+  if ('set_to_process' in actions) review.to_process = actions.set_to_process;
+  if ('decision' in actions) review.decision = actions.decision;
+  if ('note' in actions) review.note = actions.note;
+  if (Object.keys(review).length) applyReviewToSelection(review);
+
+  try {
+    const res = await bulkUpdateReceipts([...selection.selected.value], actions);
+    if (res.commented) {
+      // Comments are NOT applied optimistically — bump only on success.
+      rows.value = rows.value.map((r) =>
+        selection.has(r.sha256) ? { ...r, comment_count: (Number(r.comment_count) || 0) + 1 } : r,
+      );
+    }
+    const parts = [];
+    if (res.updated) parts.push(`Updated ${res.updated} receipt${res.updated === 1 ? '' : 's'}`);
+    if (res.commented) parts.push(`Added ${res.commented} comment${res.commented === 1 ? '' : 's'}`);
+    toast.success(parts.length ? parts.join(' · ') : 'No receipts were changed.');
+    if (res.unknown.length) {
+      toast.warn(`${res.unknown.length} selected sha256${res.unknown.length === 1 ? ' was' : 's were'} not recognised by the server.`);
+    }
+    // Resync totals + server truth. Selection is KEPT so actions can be chained;
+    // there is an explicit "Clear selection" button.
+    await load();
+    return true;
+  } catch (err) {
+    rows.value = snapshot;
+    const detailMsg = err?.partial
+      ? ` — ${err.partial.batchesDone} of ${err.partial.batchesTotal} batches applied (${err.partial.updated} updated, ${err.partial.commented} commented).`
+      : '.';
+    raiseActionError(`Bulk update failed${detailMsg}`);
+    toast.error(`Bulk update failed${detailMsg}`);
+    console.error(err);
+    return false;
+  } finally {
+    bulkRunning.value = false;
+  }
+}
+
+async function submitBulkComment() {
+  const text = bulkCommentDraft.value.trim();
+  if (!text) return;
+  const ok = await runBulk({ comment: text });
+  if (ok) {
+    bulkCommentDraft.value = '';
+    bulkCommentOpen.value = false;
+  }
 }
 
 // ── Detail dialog ───────────────────────────────────────────────────────────
@@ -690,6 +910,27 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── Bulk action bar ────────────────────────────────────────────────────── */
+.ar-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--kdl-border);
+  border-radius: 10px;
+  background: var(--kdl-raised-bg);
+}
+
+.ar-bulk-bar__count {
+  font-size: 13px;
+  color: var(--kdl-text-primary);
+}
+
+.ar-bulk-bar__spacer {
+  flex: 1 1 auto;
 }
 
 .ar-filter--narrow { flex: 0 1 130px; min-width: 120px; }

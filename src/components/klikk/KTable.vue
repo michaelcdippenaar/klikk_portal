@@ -22,9 +22,15 @@
       pagination="server"
       :serverTotal="total"
       v-model:serverPage="page"
+      v-model:pageSize="size"
+      :pageSizeOptions="[25, 50, 100, 200]"
       v-model:sortBy="sort"
       @row-click="onRow"
     />
+
+    In server mode the consumer owns pageSize: KTable cannot change it itself
+    (pagination state is controlled), so it emits update:pageSize and the
+    consumer re-fetches. In client mode TanStack still handles it internally.
 
   API: frozen as of Phase 1.E — any change is a breaking change (open a ticket).
 
@@ -384,7 +390,7 @@
       :canPrevPage="pagination === 'server' ? (serverPage ?? 0) > 0 : table.getCanPreviousPage()"
       :canNextPage="pagination === 'server' ? (serverPage ?? 0) < serverPageCount - 1 : table.getCanNextPage()"
       @go-to-page="handleGoToPage"
-      @set-page-size="table.setPageSize($event)"
+      @set-page-size="handleSetPageSize"
     />
   </div>
 </template>
@@ -471,6 +477,7 @@ const props = defineProps({
 const emit = defineEmits([
   'update:selectedRowIds',
   'update:serverPage',
+  'update:pageSize',
   'update:sortBy',
   'update:visibleColumns',
   'update:filters',
@@ -629,6 +636,16 @@ function handleGoToPage(pageIndex) {
   } else {
     table.setPageIndex(pageIndex);
   }
+}
+
+// The footer's page-size <select> is inert in `server` mode without this: state.pagination
+// is a controlled getter derived from props, and with no onPaginationChange handler
+// TanStack's setPageSize() silently does nothing. Server-mode consumers own pageSize, so
+// they get it as an event (v-model:pageSize) and re-fetch; client mode keeps behaving
+// exactly as before. Purely additive — consumers with no listener are unaffected.
+function handleSetPageSize(size) {
+  emit('update:pageSize', size);
+  if (props.pagination !== 'server') table.setPageSize(size);
 }
 
 // ── Row click ─────────────────────────────────────────────────────────────────

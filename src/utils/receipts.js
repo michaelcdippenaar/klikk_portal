@@ -18,7 +18,12 @@ export const ALL = '__all__';
 export const NONE = '__none__';
 
 export const DEFAULT_PAGE_SIZE = 50;
-export const PAGE_SIZE_OPTIONS = [25, 50, 100];
+/**
+ * 200 is the backend's hard ceiling (services.MAX_PAGE_SIZE); a larger
+ * page_size is clamped there, not rejected, so never offer one — the table
+ * would silently disagree with the row count it just asked for.
+ */
+export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 /** Klikk fiscal year starts 1 July (see apps/audit/services.py fy_bounds). */
 export const FY_START_MONTH = 7;
