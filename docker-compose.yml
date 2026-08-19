@@ -8,3 +8,26 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
+
+  # NOTE: the live klikk-financials-mcp container on VM 133 is currently started
+  # by a bare `docker run`, NOT by this file. This service is the documented
+  # target state. Whoever migrates the container to compose must carry the same
+  # environment across (see mcp/stock-market/README.md, "Backend authentication").
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: klikk-financials-mcp
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      KLIKK_MCP_TRANSPORT: http
+      KLIKK_MCP_HTTP_HOST: 0.0.0.0
+      KLIKK_MCP_HTTP_PORT: "8787"
+      KLIKK_API_BASE_URL: ${KLIKK_API_BASE_URL:?set KLIKK_API_BASE_URL in .env}
+      # Inbound: guards POST /mcp on this server.
+      KLIKK_MCP_AUTH_TOKEN: ${KLIKK_MCP_AUTH_TOKEN:?set KLIKK_MCP_AUTH_TOKEN in .env}
+      # Outbound: sent as "Authorization: Bearer <token>" to the Klikk backend.
+      # Must match KLIKK_API_TOKEN on the Django side or pricelist writes get 401.
+      KLIKK_API_TOKEN: ${KLIKK_API_TOKEN:?set KLIKK_API_TOKEN in .env}

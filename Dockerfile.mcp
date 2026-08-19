@@ -4,6 +4,15 @@ WORKDIR /app
 
 COPY mcp/stock-market/server.mjs ./mcp/stock-market/server.mjs
 
+# Two different tokens — do not confuse them, and do not swap the values:
+#   KLIKK_MCP_AUTH_TOKEN  INBOUND  — guards POST /mcp on this server's own HTTP
+#                                    transport (clients send it to us).
+#   KLIKK_API_TOKEN       OUTBOUND — sent by this server as
+#                                    "Authorization: Bearer <token>" to the Klikk
+#                                    Django backend; required by the pricelist
+#                                    write endpoints.
+# Neither token is baked into this image. Both must be passed at run time
+# (`docker run -e ...` or the `mcp` service in docker-compose.yml).
 ENV KLIKK_MCP_TRANSPORT=http
 ENV KLIKK_MCP_HTTP_HOST=0.0.0.0
 ENV KLIKK_MCP_HTTP_PORT=8787

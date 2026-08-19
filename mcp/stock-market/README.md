@@ -60,6 +60,70 @@ docker run --rm -p 8787:8787 \
   klikk-financials-mcp
 ```
 
+## Backend authentication (KLIKK_API_TOKEN)
+
+There are **two different tokens** and they are not interchangeable. Swapping the values silently breaks backend writes (the MCP endpoint keeps answering, the pricelist mutations start returning 401).
+
+| Variable | Direction | What it guards | Required? |
+| --- | --- | --- | --- |
+| `KLIKK_MCP_AUTH_TOKEN` | Inbound — clients send it to this server | `POST /mcp` on this server's own HTTP transport | Yes for HTTP transport (already set on the live container) |
+| `KLIKK_API_TOKEN` | Outbound — this server sends it to Django | Pricelist write endpoints on the Klikk backend | Yes for pricelist writes (currently **not** set on the live container) |
+
+The server only sends the outbound header when the variable is set: `requestHeaders()` in `server.mjs` adds `Authorization: Bearer ${apiToken}` when `KLIKK_API_TOKEN` is truthy, and every backend call goes through `apiRequest()`, which spreads those headers. No code change is needed — set the variable and the header appears.
+
+### Which endpoints require it
+
+On branch `feature/pricelist` the backend requires `Authorization: Bearer <KLIKK_API_TOKEN>` (matching the Django `KLIKK_API_TOKEN` setting) for:
+
+```text
+POST   /api/pricelist/items/
+PATCH  /api/pricelist/items/<code>/
+POST   /api/pricelist/items/<code>/prices/
+```
+
+Reads and `POST /api/pricelist/quote/` stay open. The rest of the backend is still unauthenticated — see `SECURITY-NOTE.md` in the backend repo root.
+
+### Generate a token
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Use the output as the value of `<token>` below. Do not commit it, and do not paste it into this repo.
+
+### Where it lives on VM 133
+
+Set the **same value** in both places:
+
+- `.env` next to `/srv/klikk-financials/compose/docker-compose.yml` (alongside the existing `postgres.env`), `chmod 600`
+- the Django service env file: `/srv/klikk-financials/compose/klikk_financials_v4/.env.app-docker`
+
+If the two sides disagree, pricelist writes get 401.
+
+### Recreate the live container
+
+The live `klikk-financials-mcp` container is currently started by a bare `docker run`, not by compose. To add the outbound token, recreate it with the same flags plus `-e KLIKK_API_TOKEN`:
+
+```bash
+docker rm -f klikk-financials-mcp
+docker run -d --name klikk-financials-mcp \
+  --restart unless-stopped \
+  -p 8787:8787 \
+  -e KLIKK_MCP_TRANSPORT=http \
+  -e KLIKK_MCP_HTTP_HOST=0.0.0.0 \
+  -e KLIKK_MCP_HTTP_PORT=8787 \
+  -e KLIKK_API_BASE_URL=http://192.168.1.133:8001 \
+  -e KLIKK_MCP_AUTH_TOKEN=<inbound-token> \
+  -e KLIKK_API_TOKEN=<outbound-token> \
+  klikk-financials-mcp:latest
+```
+
+The repo `docker-compose.yml` now carries an equivalent `mcp` service as the documented target state for migrating off `docker run`.
+
+### Verify
+
+Call the `pricelist_upsert_item` MCP tool (with `confirm=true`) and confirm it no longer returns 401 from the backend.
+
 ## Codex or Claude MCP Config
 
 ```json
