@@ -101,5 +101,13 @@ docker run --rm -p 8787:8787 \
 - `market_update_symbols`: alias for multi-symbol market refresh/review.
 - `market_list_dividend_calendar`: list declared/paid dividend calendar entries with DPS, prior-year DPS, status, and TM1 fields.
 - `market_check_declared_dividends`: guarded mutating tool that checks yfinance for newly declared dividends across held shares and saves new calendar entries.
+- `pricelist_list_items`: list Klikk's event-gear rate card (d&b / Pioneer / Epson hire kit) from `/api/pricelist/items/` — code, category, unit, current list price, optional customer-specific rate when `customer` is passed.
+- `pricelist_get_price`: resolve one item's price for a date / customer / price type (LIST, TRADE, SPECIAL); reports `fallback_to_list` when no negotiated rate exists.
+- `pricelist_price_history`: newest-first price history for one item (`valid_to` null = still current, `set_by` = who changed it).
+- `pricelist_build_quote`: price a job from `lines [{code, qty, days}]` with optional customer / date / discount / VAT rate. Calculation only — nothing is persisted; `warnings` lists unknown or unpriced codes.
+- `pricelist_set_price`: guarded mutating tool (`confirm=true`) that adds a price row effective from `valid_from` and closes the previous open row; recorded with `set_by=claude-mcp`.
+- `pricelist_upsert_item`: guarded mutating tool (`confirm=true`) that creates a rate-card item or, with `replace=true`, updates an existing one.
+
+Price-list notes: all prices are ex VAT in ZAR and returned as 2-decimal strings; the mutating tools require `confirm=true`; the price list is Klikk's own table and none of these tools ever read from or write to Xero.
 
 The server intentionally uses the existing backend as the single source of truth. It does not scrape broker pages or bypass the portal data model.
