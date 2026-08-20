@@ -911,6 +911,99 @@ const tools = [
     },
   },
   {
+    name: 'list_audit_findings',
+    description: 'Read-only: list the AUDIT FINDINGS REGISTER — the tracked findings raised by the year-end / internal audits (ref e.g. FY26-012, title, severity CRITICAL|HIGH|MEDIUM|LOW|INFO, status OPEN|IN_PROGRESS|RESOLVED|ACCEPTED|WITHDRAWN, category, amount as a 2-decimal string, owner, due_date, source, check_code, comment/attachment counts). Filter by fy (Klikk FY N = 1 Jul N-1 .. 30 Jun N, so FY2026 = 2025-07-01..2026-06-30; omit for the backend default = current FY), status, severity, category, owner, check_code or free-text q; totals cover the WHOLE filter, not just the returned page. Use when MC asks "what audit findings are open", "show the findings register", "what is outstanding for the bookkeeper / accountant", "how big is the VAT finding". The register is Klikk\'s own table — this never reads from or writes to Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fy: { type: 'number', description: 'Financial year = the calendar year it ENDS in (FY N = 1 Jul N-1 .. 30 Jun N). Omit for the backend default (current FY).' },
+        status: { type: 'string', description: 'Comma-separated filter: OPEN, IN_PROGRESS, RESOLVED, ACCEPTED, WITHDRAWN.' },
+        severity: { type: 'string', description: 'Comma-separated filter: CRITICAL, HIGH, MEDIUM, LOW, INFO.' },
+        category: { type: 'string', description: 'Comma-separated category filter, e.g. SUP, BNK, DOC, ALC, BAL, PRC, VAT, PAYROLL, OTHER.' },
+        owner: { type: 'string', description: 'Owner contains-match, e.g. bookkeeper, accountant, MC.' },
+        check_code: { type: 'string', description: 'Exact audit-registry check code the finding came from, e.g. BNK-05.' },
+        q: { type: 'string', description: 'Free text across ref, title, description, owner, source and evidence.' },
+        limit: { type: 'number', description: 'Maximum findings to return (1-200, default 50).', default: 50 },
+      },
+    },
+  },
+  {
+    name: 'get_audit_finding',
+    description: 'Read-only: one audit finding by numeric id — the full finding dict plus its comment thread and attachments. Use when MC says "show me finding FY26-004", "what is the story on the Wandeli finding", or before updating / commenting on one (find the id with list_audit_findings first). Klikk FY N = 1 Jul N-1 .. 30 Jun N. The register is Klikk\'s own table — never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+      },
+    },
+  },
+  {
+    name: 'add_audit_finding',
+    description: 'Guarded mutating tool (confirm=true): raise a NEW finding in the audit findings register — Klikk\'s OWN Postgres table, NEVER Xero. The backend allocates the permanent ref (FY26-013 style) and stamps created_by; fy defaults to the current FY (Klikk FY N = 1 Jul N-1 .. 30 Jun N, so FY2026 = 2025-07-01..2026-06-30). Use when an audit or analysis surfaces a new issue MC wants tracked to closure ("log a finding for X", "add that to the findings register"). Always name the source (which audit run / analysis raised it) and pass amounts as decimal STRINGS exactly as given — never invent or round figures.',
+    inputSchema: {
+      type: 'object',
+      required: ['title', 'severity', 'category', 'description', 'source', 'confirm'],
+      properties: {
+        fy: { type: 'number', description: 'Financial year the finding belongs to (default: current FY).' },
+        title: { type: 'string', description: 'Short one-line title of the finding.' },
+        severity: { type: 'string', description: 'CRITICAL | HIGH | MEDIUM | LOW | INFO.' },
+        category: { type: 'string', description: 'Category, e.g. SUP, BNK, DOC, ALC, BAL, PRC, VAT, PAYROLL, OTHER.' },
+        description: { type: 'string', description: 'Plain-English criteria / condition / effect paragraph.' },
+        source: { type: 'string', description: 'Where the finding came from, e.g. "internal-audit run 13". Sent verbatim.' },
+        amount: { type: 'string', description: 'Decimal ZAR amount as a STRING, e.g. "45644.00" — strings preserve precision. Omit when there is no amount.' },
+        owner: { type: 'string', description: 'Who must act: MC, bookkeeper, accountant, ...' },
+        due_date: { type: 'string', description: 'YYYY-MM-DD.' },
+        evidence: { type: 'array', description: 'Evidence list: [{type: journal|slip|invoice|bank|file|url|note, ref, note}].' },
+        check_code: { type: 'string', description: 'Audit-registry check code that raised it, e.g. DOC-03.' },
+        asana_gid: { type: 'string', description: 'Linked Asana task gid, if one exists.' },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s own findings register (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'update_audit_finding',
+    description: 'Guarded mutating tool (confirm=true): update an existing audit finding in the register — Klikk\'s OWN table, NEVER Xero. Patch any of status (OPEN|IN_PROGRESS|RESOLVED|ACCEPTED|WITHDRAWN), owner, due_date, amount, severity, category; a note is recorded as a COMMENT on the finding\'s thread, not a field change — a note-only call just adds the comment. fy and ref are immutable. Use when MC says "mark FY26-003 resolved", "reassign that finding to the accountant", "push the due date", "note on the finding that ...". Klikk FY N = 1 Jul N-1 .. 30 Jun N. Pass amounts as decimal strings to preserve precision.',
+    inputSchema: {
+      type: 'object',
+      required: ['id', 'confirm'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+        status: { type: 'string', description: 'OPEN | IN_PROGRESS | RESOLVED | ACCEPTED | WITHDRAWN.' },
+        owner: { type: 'string', description: 'Who must act next.' },
+        due_date: { type: 'string', description: 'YYYY-MM-DD, or null to clear.' },
+        amount: { type: 'string', description: 'Decimal ZAR amount as a STRING, e.g. "429110.39", or null to clear.' },
+        severity: { type: 'string', description: 'CRITICAL | HIGH | MEDIUM | LOW | INFO.' },
+        category: { type: 'string', description: 'Category, e.g. SUP, BNK, DOC, VAT, PAYROLL.' },
+        note: { type: 'string', description: 'Recorded as a comment on the finding, NOT as a field change.' },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s own findings register (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'comment_audit_finding',
+    description: 'Guarded mutating tool (confirm=true): append a comment to an audit finding\'s thread in the register — Klikk\'s OWN table, NEVER Xero. Use for progress notes, evidence trails and "what we found" updates ("note on FY26-007 that the bookkeeper confirmed X"). Comments are append-only; status / owner changes go through update_audit_finding. Klikk FY N = 1 Jul N-1 .. 30 Jun N.',
+    inputSchema: {
+      type: 'object',
+      required: ['id', 'text', 'confirm'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+        text: { type: 'string', description: 'The comment text.' },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s own findings register (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'audit_findings_summary',
+    description: 'Read-only: aggregate the audit findings register for one financial year — count, open count, total amount (2-decimal string), and breakdowns by severity (worst first), status, category and owner, plus which FYs have findings. Klikk FY N = 1 Jul N-1 .. 30 Jun N (FY2026 = 2025-07-01..2026-06-30); omit fy for the current FY. Use when MC asks "how are we doing on the findings", "how much money is still open", "summarise the findings register", or to open a status report before drilling in with list_audit_findings. Never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fy: { type: 'number', description: 'Financial year = the calendar year it ENDS in. Omit for the current FY.' },
+      },
+    },
+  },
+  {
     name: 'pricelist_list_items',
     description: 'Read-only: list Klikk\'s EVENT-GEAR RATE CARD — the hire price list for d&b audio, Pioneer DJ, Epson projection and related event kit (code, name, category, unit e.g. per day, qty_owned, active flag, current LIST price and valid_from, price_count, Xero account / tracking / purchase-line / fixed-asset links, notes). Prices are ex VAT in ZAR. Pass customer= (Xero contacts_id or contact name) to see that customer\'s negotiated rate (customer_price / customer_price_type) alongside the list price; pass date= to see the prices in force on a given day. Filter by category, free-text q (matches code/name/description) and active_only. Use when MC asks "what do we charge for X", "show the price list", "list the d&b / Pioneer / Epson rates", "what gear do we hire out", "what does <customer> pay for Y", or before building a quote with pricelist_build_quote. The price list is Klikk\'s own table — this never reads from or writes to Xero.',
     inputSchema: {
@@ -2433,6 +2526,175 @@ async function addAuditCheck(args = {}) {
   };
 }
 
+// ---- Audit findings register (Klikk's own table via /audit/findings/ — never Xero) ----
+
+function auditFindingId(value) {
+  if (value === undefined || value === null || String(value).trim() === '') throw new Error('id is required');
+  const id = Number(value);
+  if (!Number.isFinite(id)) throw new Error('id is required');
+  return id;
+}
+
+function auditFindingBrief(finding) {
+  if (!finding) return 'No finding payload returned.';
+  const amount = finding.amount === undefined || finding.amount === null
+    ? 'no amount'
+    : `${finding.amount} ${finding.currency || 'ZAR'}`;
+  const owner = finding.owner ? `, owner ${finding.owner}` : '';
+  return `${finding.ref || `finding ${finding.id}`} [${finding.severity}/${finding.status}] ${finding.title || ''} — ${amount}${owner}.`;
+}
+
+async function listAuditFindings(args = {}) {
+  const limit = clampNumber(args.limit, 50, 1, 200);
+  const fy = auditFyOrNull(args.fy);
+  const params = new URLSearchParams();
+  if (fy !== null) params.set('fy', String(fy));
+  appendSearchParam(params, 'status', args.status);
+  appendSearchParam(params, 'severity', args.severity);
+  appendSearchParam(params, 'category', args.category);
+  appendSearchParam(params, 'owner', args.owner);
+  appendSearchParam(params, 'check_code', args.check_code);
+  appendSearchParam(params, 'q', args.q);
+  params.set('page_size', String(limit));
+  const data = await apiRequest(`/audit/findings/?${params}`);
+  const findings = data?.results || [];
+  const totals = data?.totals || {};
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: data?.count ?? findings.length,
+    fy: data?.fy ?? fy,
+    current_fy: data?.current_fy,
+    totals,
+    findings,
+    agent_brief: [
+      `${data?.count ?? findings.length} finding(s)${data?.fy ? ` for FY${data.fy}` : ''} matched; totals cover the whole filter (count ${totals.count ?? 0}, amount ${totals.amount ?? '0.00'} ZAR), not just this page.`,
+      'Amounts are 2-decimal STRINGS — repeat them verbatim, never round-trip through float. Drill in with get_audit_finding(id); mutate with update_audit_finding / comment_audit_finding (confirm=true). The register is Klikk\'s own table — never Xero.',
+    ],
+  };
+}
+
+async function getAuditFinding(args = {}) {
+  const id = auditFindingId(args.id);
+  const data = await apiRequest(`/audit/findings/${id}/`);
+  const finding = data?.finding ?? data;
+  const comments = data?.comments || [];
+  const attachments = data?.attachments || [];
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    finding,
+    comments,
+    attachments,
+    agent_brief: [
+      auditFindingBrief(finding),
+      `${comments.length} comment(s), ${attachments.length} attachment(s). Add a note with comment_audit_finding or change status/owner with update_audit_finding — both require confirm=true and only touch Klikk's own register, never Xero.`,
+    ],
+  };
+}
+
+async function addAuditFinding(args = {}) {
+  const required = ['title', 'severity', 'category', 'description', 'source'];
+  for (const k of required) {
+    if (args[k] === undefined || args[k] === null || String(args[k]).trim() === '') throw new Error(`${k} is required`);
+  }
+  const fy = auditFyOrNull(args.fy);
+  requireConfirm(args, 'add an audit finding');
+  const body = {
+    title: args.title,
+    severity: args.severity,
+    category: args.category,
+    description: args.description,
+    source: args.source,
+  };
+  if (fy !== null) body.fy = fy;
+  for (const key of ['amount', 'owner', 'due_date', 'evidence', 'check_code', 'asana_gid']) {
+    if (args[key] !== undefined && args[key] !== null) body[key] = args[key];
+  }
+  const data = await apiRequest('/audit/findings/', { method: 'POST', body });
+  const finding = data?.finding ?? data;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    created: true,
+    finding,
+    agent_brief: [
+      `Created ${auditFindingBrief(finding)}`,
+      'The ref was allocated by the backend and is permanent — quote it back to MC. This wrote to Klikk\'s own findings register only, never Xero.',
+    ],
+  };
+}
+
+async function updateAuditFinding(args = {}) {
+  const id = auditFindingId(args.id);
+  const patch = {};
+  for (const key of ['status', 'owner', 'due_date', 'amount', 'severity', 'category']) {
+    if (args[key] !== undefined) patch[key] = args[key];
+  }
+  const hasNote = args.note !== undefined && args.note !== null && String(args.note).trim() !== '';
+  if (!Object.keys(patch).length && !hasNote) {
+    throw new Error('nothing to update — supply at least one of status, owner, due_date, amount, severity, category or note');
+  }
+  requireConfirm(args, 'update an audit finding');
+  let finding = null;
+  if (Object.keys(patch).length) {
+    const data = await apiRequest(`/audit/findings/${id}/`, { method: 'PATCH', body: patch });
+    finding = data?.finding ?? data;
+  }
+  let comment = null;
+  if (hasNote) {
+    const data = await apiRequest(`/audit/findings/${id}/comments/`, { method: 'POST', body: { text: String(args.note) } });
+    comment = data?.comment ?? data;
+  }
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    finding,
+    comment,
+    agent_brief: [
+      finding ? `Updated ${auditFindingBrief(finding)}` : `No fields patched on finding ${id} (note-only call).`,
+      comment ? `Comment ${comment?.id ?? ''} recorded on the finding's thread.` : 'No comment added.',
+      'This wrote to Klikk\'s own findings register only, never Xero.',
+    ],
+  };
+}
+
+async function commentAuditFinding(args = {}) {
+  const id = auditFindingId(args.id);
+  if (args.text === undefined || args.text === null || String(args.text).trim() === '') throw new Error('text is required');
+  requireConfirm(args, 'comment on an audit finding');
+  const data = await apiRequest(`/audit/findings/${id}/comments/`, { method: 'POST', body: { text: String(args.text) } });
+  const comment = data?.comment ?? data;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    comment,
+    agent_brief: [
+      `Comment ${comment?.id ?? ''} added to finding ${id}. Comments are append-only; this wrote to Klikk's own findings register only, never Xero.`,
+    ],
+  };
+}
+
+async function auditFindingsSummary(args = {}) {
+  const fy = auditFyOrNull(args.fy);
+  const path = fy !== null ? `/audit/findings/summary/?fy=${fy}` : '/audit/findings/summary/';
+  const data = await apiRequest(path);
+  const bySeverity = data?.by_severity || [];
+  const worst = bySeverity.length ? bySeverity[0] : null;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    ...data,
+    agent_brief: [
+      `${data?.fy ? `FY${data.fy}` : 'All FYs'}: ${data?.count ?? 0} finding(s), ${data?.open_count ?? 0} open, total amount ${data?.amount ?? '0.00'} ZAR.`,
+      worst
+        ? `Worst severity bucket present: ${worst.key} — ${worst.count} finding(s), amount ${worst.amount ?? 'n/a'}.`
+        : 'No findings in this slice.',
+      'Amounts are 2-decimal strings — quote them verbatim. Drill in with list_audit_findings(severity=..., status=...). Never touches Xero.',
+    ],
+  };
+}
+
 // ---- Equipment price list (Klikk event-gear rate card; /api/pricelist/ — never Xero) ----
 
 const PRICELIST_TYPES = ['LIST', 'TRADE', 'SPECIAL'];
@@ -3153,6 +3415,12 @@ const toolHandlers = {
   run_yearend_audit: runYearendAudit,
   audit_history: auditHistory,
   add_audit_check: addAuditCheck,
+  list_audit_findings: listAuditFindings,
+  get_audit_finding: getAuditFinding,
+  add_audit_finding: addAuditFinding,
+  update_audit_finding: updateAuditFinding,
+  comment_audit_finding: commentAuditFinding,
+  audit_findings_summary: auditFindingsSummary,
   pricelist_list_items: pricelistListItems,
   pricelist_get_price: pricelistGetPrice,
   pricelist_price_history: pricelistPriceHistory,

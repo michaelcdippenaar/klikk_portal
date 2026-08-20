@@ -175,4 +175,13 @@ Call the `pricelist_upsert_item` MCP tool (with `confirm=true`) and confirm it n
 
 Price-list notes: all prices are ex VAT in ZAR and returned as 2-decimal strings; the mutating tools require `confirm=true`; the price list is Klikk's own table and none of these tools ever read from or write to Xero.
 
+- `list_audit_findings`: list the audit findings register (ref, severity, status, category, owner, 2-decimal-string amount, check_code) filtered by fy / status / severity / category / owner / check_code / free-text `q`; totals cover the whole filter, not just the page.
+- `get_audit_finding`: one finding by id with its full detail, comment thread and attachments.
+- `add_audit_finding`: guarded mutating tool (`confirm=true`) that raises a new finding; the backend allocates the permanent `FY26-013`-style ref and `fy` defaults to the current FY.
+- `update_audit_finding`: guarded mutating tool (`confirm=true`) that patches status / owner / due_date / amount / severity / category; a `note` is recorded as a comment, not a field change, and `fy` / `ref` are immutable.
+- `comment_audit_finding`: guarded mutating tool (`confirm=true`) that appends a comment to a finding's thread.
+- `audit_findings_summary`: per-FY aggregates of the findings register — count, open count, total amount, and by-severity / by-status / by-category / by-owner breakdowns.
+
+Audit-findings notes: the findings register is Klikk's own Postgres table served by the Django backend at `/audit/findings/` — Klikk FY N runs 1 Jul (N-1) – 30 Jun N (FY2026 = 2025-07-01..2026-06-30); amounts are 2-decimal strings and must be passed through verbatim; the mutating tools require `confirm=true`; none of these tools ever read from or write to Xero.
+
 The server intentionally uses the existing backend as the single source of truth. It does not scrape broker pages or bypass the portal data model.
