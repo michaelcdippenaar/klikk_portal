@@ -715,6 +715,22 @@ const tools = [
     },
   },
   {
+    name: 'xero_get_document',
+    description: 'Find mirrored Xero source documents (invoice PDFs, receipts, bank-transaction attachments) already copied into the Klikk database. Search by invoice number, amount, free text (contact name / journal description / file name), or date range. Read-only — never calls the Xero API. Each result carries a signed view_url that opens the file directly, so you can hand MC a clickable link or fetch the bytes yourself.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        invoice_number: { type: 'string', description: 'Invoice number, partial match (e.g. "INV-0263").' },
+        amount: { type: 'string', description: 'Amount to match against the invoice total or a journal debit line (tolerance 0.01).' },
+        q: { type: 'string', description: 'Free text across contact name, journal description, and file name.' },
+        date_from: { type: 'string', description: 'Optional YYYY-MM-DD lower bound on the invoice date.' },
+        date_to: { type: 'string', description: 'Optional YYYY-MM-DD upper bound on the invoice date.' },
+        tenant_id: { type: 'string', description: 'Optional Xero tenant UUID to restrict the search.' },
+        limit: { type: 'number', description: 'Max rows (max 100).', default: 20 },
+      },
+    },
+  },
+  {
     name: 'xero_sync_invoices',
     description: 'Mutating tool: pull invoices (sales + bills) from Xero into the Klikk database for a tenant. Does NOT affect the trial balance (parallel tables). Requires confirm=true.',
     inputSchema: {
@@ -1000,6 +1016,58 @@ const tools = [
         replace: { type: 'boolean', description: 'Set true to update an existing code (default false → error if it exists).', default: false },
         confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s local price list (not Xero).' },
       },
+    },
+  },
+  {
+    name: 'list_cube_dimensions',
+    description: "The dimensions and measures a cube view can be built from. CALL THIS FIRST before save_cube_view — the spec must use exact dimension KEYS (account_class, fin_year, supplier, ...) and inventing one is rejected. Read-only.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'preview_cube',
+    description: "Run a cube layout and return the resulting grid WITHOUT saving it or touching MC's workbook. Use this to check a view actually says what you think before you save it for him — wrong dimensions produce a valid-looking but useless view, and MC finds out by opening it. Returns rows (with keys, depth, is_total, cells), column headers, column totals and the grand total.",
+    inputSchema: {
+      type: 'object',
+      required: ['rows'],
+      properties: {
+        rows: { type: 'array', items: { type: 'string' }, description: 'Row dimension keys, outermost first. At least one.' },
+        cols: { type: 'array', items: { type: 'string' }, description: 'Column dimension keys, outermost first.' },
+        measure: { type: 'string', description: 'amount | debit | credit | tax | count. Default amount.' },
+        filters: { type: 'object', description: 'Dimension subsets as {dimension: [values]}. ORDER IS THE LAYOUT ORDER — the rows/columns come out in the order listed.' },
+        totals: { type: 'object', description: 'Per-dimension totals as {dimension: true|false}. Rows default true, columns default false.' },
+        suppress: { type: 'boolean', description: 'Drop all-zero rows. Default true.' },
+        query: { type: 'object', description: 'Journal filter context: tenant, journal_type, date_from, date_to, account, contact, reference, description, amount, q.' },
+        limit_rows: { type: 'number', description: 'Cap rows in the RESPONSE only (default 60). The totals always reflect the whole cube.' },
+      },
+    },
+  },
+  {
+    name: 'save_cube_view',
+    description: "Save a named cube view that MC can open in Excel. This is how an agent hands over an ANALYSIS rather than a paragraph: build the layout, preview it, save it, and tell MC the name — he picks it from 'Saved views' in the add-in and clicks Open, and the sheet builds itself. Upserts by name. Preview it first. Writes only to app.cube_views in our own Postgres; it cannot touch Xero and it does not modify any workbook.",
+    inputSchema: {
+      type: 'object',
+      required: ['name', 'rows'],
+      properties: {
+        name: { type: 'string', description: "What MC will see in the dropdown. Make it say what the view SHOWS, e.g. 'FY2026 overheads by supplier', not 'analysis 3'." },
+        rows: { type: 'array', items: { type: 'string' }, description: 'Row dimension keys, outermost first. At least one.' },
+        cols: { type: 'array', items: { type: 'string' }, description: 'Column dimension keys, outermost first.' },
+        measure: { type: 'string', description: 'amount | debit | credit | tax | count. Default amount.' },
+        filters: { type: 'object', description: 'Dimension subsets as {dimension: [values]}; the order given is the order they appear.' },
+        totals: { type: 'object', description: '{dimension: true|false} — which stacked fields carry a total.' },
+        suppress: { type: 'boolean', description: 'Drop all-zero rows. Default true.' },
+        outline: { type: 'boolean', description: 'Collapsible groups in the sheet. Default true.' },
+        query: { type: 'object', description: 'Journal filter context saved WITH the view, so it renders the same numbers whenever it is opened.' },
+        author: { type: 'string', description: "Who built it, e.g. 'claude:year-end-audit'." },
+      },
+    },
+  },
+  {
+    name: 'delete_cube_view',
+    description: 'Remove a saved cube view by name. Sheets already built from it are untouched — this only removes the saved layout.',
+    inputSchema: {
+      type: 'object',
+      required: ['name'],
+      properties: { name: { type: 'string' } },
     },
   },
   {
@@ -2092,6 +2160,41 @@ async function xeroGetInvoice(args) {
   return { generated_at: new Date().toISOString(), api_base_url: apiBaseUrl, invoice: data };
 }
 
+async function xeroGetDocument(args) {
+  const filters = ['invoice_number', 'amount', 'q', 'date_from', 'date_to'];
+  const hasFilter = filters.some((key) => {
+    const value = args[key];
+    return value !== undefined && value !== null && String(value).trim() !== '';
+  });
+  if (!hasFilter) {
+    throw new Error('At least one of invoice_number, amount, q, date_from or date_to is required.');
+  }
+  const limit = clampNumber(args.limit, 20, 1, 100);
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  appendSearchParam(params, 'invoice_number', args.invoice_number);
+  appendSearchParam(params, 'amount', args.amount);
+  appendSearchParam(params, 'q', args.q);
+  appendSearchParam(params, 'date_from', args.date_from);
+  appendSearchParam(params, 'date_to', args.date_to);
+  appendSearchParam(params, 'tenant_id', args.tenant_id);
+  const data = await apiRequest(`/xero/data/documents/search/?${params}`);
+  const rows = topArrayRows(data?.results ?? data, limit);
+  const count = data?.count ?? rows.length;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count,
+    limit: data?.limit ?? limit,
+    documents: rows,
+    agent_brief: [
+      `${count} mirrored document(s) matched.`,
+      'Each row carries a signed view_url that opens the file without a token — safe to hand to MC as a link.',
+      'These are local mirror copies; nothing here called the Xero API.',
+    ],
+  };
+}
+
 async function xeroSyncInvoices(args) {
   const tenantId = requireTenant(args);
   requireConfirm(args, 'sync invoices');
@@ -2656,6 +2759,138 @@ function presentCubeComment(comment) {
 const CUBE_COMMENT_STATUSES = ['open', 'actioned', 'dismissed'];
 const CUBE_DRILL_FILTER_KEYS = ['tenant', 'date_from', 'date_to', 'account', 'contact', 'reference', 'description', 'amount', 'q', 'journal_type'];
 
+/* A cube spec, as the Excel add-in stores and reads it.
+
+   Shared by preview and save so the thing previewed is exactly the thing
+   saved — a preview built from a different shape than the save would be worse
+   than no preview at all. */
+function cubeSpecFrom(args) {
+  const rows = Array.isArray(args.rows) ? args.rows.filter(Boolean).map(String) : [];
+  if (!rows.length) throw new Error('rows is required: at least one row dimension key (see list_cube_dimensions)');
+  const cols = Array.isArray(args.cols) ? args.cols.filter(Boolean).map(String) : [];
+  const dup = rows.filter((r) => cols.includes(r));
+  if (dup.length) throw new Error(`a dimension cannot be on both axes: ${dup.join(', ')}`);
+
+  const filters = {};
+  if (args.filters && typeof args.filters === 'object') {
+    for (const [k, v] of Object.entries(args.filters)) {
+      if (Array.isArray(v) && v.length) filters[k] = v.map(String);
+    }
+  }
+  const totals = {};
+  if (args.totals && typeof args.totals === 'object') {
+    for (const [k, v] of Object.entries(args.totals)) totals[k] = !!v;
+  }
+  return {
+    rows,
+    cols,
+    measure: String(args.measure || 'amount'),
+    filt: Object.keys(filters).filter((k) => !rows.includes(k) && !cols.includes(k)),
+    filters,
+    totals,
+    suppress: args.suppress === undefined ? true : !!args.suppress,
+    outline: args.outline === undefined ? true : !!args.outline,
+  };
+}
+
+/** The pivot query params for a spec — same shape the add-in sends. */
+function cubeQueryParams(spec, query) {
+  const params = { rows: spec.rows.join(','), cols: spec.cols.join(','), measure: spec.measure,
+                   suppress: spec.suppress ? '1' : '0' };
+  const live = {};
+  for (const [k, v] of Object.entries(spec.filters || {})) if (v && v.length) live[k] = v;
+  if (Object.keys(live).length) params.dimf = JSON.stringify(live);
+
+  const rowParents = spec.rows.slice(0, -1);
+  const on = (k, zone) => (Object.prototype.hasOwnProperty.call(spec.totals || {}, k)
+    ? !!spec.totals[k] : zone === 'rows');
+  if (rowParents.some((k) => !on(k, 'rows'))) {
+    const keep = rowParents.filter((k) => on(k, 'rows'));
+    params.rtotals = keep.length ? keep.join(',') : '__none__';
+  }
+  const ct = spec.cols.slice(0, -1).filter((k) => on(k, 'cols'));
+  if (ct.length) params.ctotals = ct.join(',');
+
+  for (const [k, v] of Object.entries(query || {})) {
+    if (v !== null && v !== undefined && String(v) !== '') params[k] = String(v);
+  }
+  return params;
+}
+
+async function listCubeDimensions() {
+  const data = await apiRequest('/xero/data/journals/pivot/dimensions/');
+  return {
+    generated_at: new Date().toISOString(),
+    dimensions: data?.dimensions || [],
+    measures: data?.measures || [],
+    agent_brief: 'Use the KEY, not the label, in rows/cols/filters. A dimension cannot appear on both axes. '
+      + 'Note the journal mirror double-counts across journal_type — filter it in `query` (e.g. journal_type: "journal") '
+      + 'unless you mean to see every mirror of an entry.',
+  };
+}
+
+async function previewCube(args = {}) {
+  const spec = cubeSpecFrom(args);
+  const params = cubeQueryParams(spec, args.query);
+  const data = await apiRequest(`/xero/data/journals/pivot/?${new URLSearchParams(params)}`);
+  const cap = clampNumber(args.limit_rows, 60, 1, 500);
+  const rows = data?.rows || [];
+  return {
+    generated_at: new Date().toISOString(),
+    spec,
+    measure: data?.measure_label,
+    cols: data?.cols || [],
+    rows: rows.slice(0, cap),
+    rows_returned: Math.min(rows.length, cap),
+    rows_total: rows.length,
+    col_totals: data?.col_totals,
+    grand_total: data?.grand_total,
+    balancing_hint: data?.balancing_hint,
+    agent_brief: [
+      data?.balancing_hint
+        ? `WARNING: ${data.balancing_hint}`
+        : `${rows.length} row(s), ${(data?.cols || []).length} column(s), grand total ${data?.grand_total}.`,
+      rows.length > cap ? `Only the first ${cap} rows are shown; totals cover all of them.` : '',
+      'Check the numbers say what you intend BEFORE save_cube_view — a wrong dimension gives a plausible view that MC only discovers by opening it.',
+    ].filter(Boolean).join(' '),
+  };
+}
+
+async function saveCubeView(args = {}) {
+  const name = String(args.name || '').trim();
+  if (!name) throw new Error('name is required — it is what MC picks from the dropdown');
+  const spec = cubeSpecFrom(args);
+  const query = (args.query && typeof args.query === 'object') ? args.query : {};
+
+  const data = await apiRequest('/xero/data/journals/pivot/views/', {
+    method: 'POST',
+    body: { name, spec, query, author: String(args.author || '').trim() },
+  });
+  return {
+    generated_at: new Date().toISOString(),
+    id: data?.id,
+    name: data?.name,
+    spec,
+    agent_brief: `Saved as "${name}". MC opens it from Saved views in the Excel add-in's Cube panel and clicks Open; `
+      + 'the sheet builds itself with these rows, columns, subsets and filters. Tell him the name — he cannot guess it. '
+      + 'Re-saving the same name replaces it.',
+  };
+}
+
+async function deleteCubeView(args = {}) {
+  const name = String(args.name || '').trim();
+  if (!name) throw new Error('name is required');
+  const data = await apiRequest(`/xero/data/journals/pivot/views/?name=${encodeURIComponent(name)}`,
+    { method: 'DELETE' });
+  return {
+    generated_at: new Date().toISOString(),
+    deleted: data?.deleted || 0,
+    agent_brief: data?.deleted
+      ? `Removed the saved view "${name}". Any sheet already built from it is untouched.`
+      : `No saved view called "${name}".`,
+  };
+}
+
 async function addCubeComment(args = {}) {
   const coords = args.coordinates;
   if (!coords || typeof coords !== 'object' || Array.isArray(coords) || !Object.keys(coords).length) {
@@ -2904,6 +3139,7 @@ const toolHandlers = {
   xero_sync_quotes: xeroSyncQuotes,
   xero_list_invoices: xeroListInvoices,
   xero_get_invoice: xeroGetInvoice,
+  xero_get_document: xeroGetDocument,
   xero_sync_invoices: xeroSyncInvoices,
   xero_list_contacts: xeroListContacts,
   xero_list_tracking: xeroListTracking,
@@ -2923,6 +3159,10 @@ const toolHandlers = {
   pricelist_build_quote: pricelistBuildQuote,
   pricelist_set_price: pricelistSetPrice,
   pricelist_upsert_item: pricelistUpsertItem,
+  list_cube_dimensions: listCubeDimensions,
+  preview_cube: previewCube,
+  save_cube_view: saveCubeView,
+  delete_cube_view: deleteCubeView,
   add_cube_comment: addCubeComment,
   list_cube_comments: listCubeComments,
   set_cube_comment_status: setCubeCommentStatus,
