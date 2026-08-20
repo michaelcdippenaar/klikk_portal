@@ -16,7 +16,7 @@ const SERVER_INSTRUCTIONS = [
   'When giving financial analysis, distinguish market price, market value, cost, income, and ROI.',
   'Year-end audit: when MC says "audit for financial year end", "run the year-end audit" or "check the books", call run_yearend_audit(fy) and reason over the findings; list_audit_checks / run_audit_check / audit_history / add_audit_check manage the registry. These never write to Xero.',
   'Equipment price list: pricelist_list_items / pricelist_get_price / pricelist_price_history read Klikk\'s event-gear rate card (ex VAT, ZAR); pricelist_build_quote prices a job without persisting anything; pricelist_set_price and pricelist_upsert_item mutate the local price list and require confirm=true. Never writes to Xero.',
-  'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Never writes to Xero.',
+  'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Comments can carry TAGS relating them to a workstream -- tag what you write and pull your own queue back with list_cube_comments(tag=\"audit\") instead of reading the whole register -- and an @mention in the text emails that person, so always report an unresolved or failed mention rather than assuming they were told. Never writes to Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -1022,6 +1022,11 @@ const tools = [
         },
         cell_value: { type: 'number', description: 'The value you are commenting on, if known. Stored so a later drill can show whether the figure has moved since.' },
         status: { type: 'string', description: 'open (default) | actioned | dismissed.' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "Tags relating this comment to a piece of work rather than to a cell, e.g. [\"audit\",\"fy2026\"]. Tag what you write so it can be pulled back as a queue: list_cube_comments(tag=\"audit\") returns exactly the audit's own comments instead of the whole register. Normalised server-side (lowercased, trimmed, de-duplicated, bounded); a leading # is optional.",
+        },
       },
     },
   },
@@ -1035,6 +1040,12 @@ const tools = [
         measure: { type: 'string', description: 'Optional: only comments on this measure (amount, debit, credit, tax, count).' },
         tenant: { type: 'string', description: 'Optional: only comments whose filter context named this tenant.' },
         author: { type: 'string', description: 'Optional: only comments written by this author.' },
+        tag: { type: 'string', description: 'Optional: only comments carrying this tag, e.g. "audit". This is how an agent pulls its OWN queue — tag="audit" during a year-end audit rather than reading every comment in the register.' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: only comments carrying ALL of these tags, e.g. ["audit","fy2026"]. Narrows, never widens — a comment tagged only "audit" is NOT returned.',
+        },
         limit: { type: 'number', description: 'Max comments (1-5000, default 500).', default: 500 },
       },
     },
@@ -2613,6 +2624,20 @@ function cubeCommentFilters(comment) {
   return typeof raw === 'object' ? raw : {};
 }
 
+function normaliseCubeTags(raw) {
+  // Mirrors the server's normalisation so a filter built here matches what was
+  // stored. The API normalises again — this is for a predictable round trip,
+  // not a substitute for it.
+  const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? raw.split(',') : []);
+  const out = [];
+  for (const item of list) {
+    const tag = String(item ?? '').trim().replace(/^#+/, '').trim().toLowerCase().slice(0, 40);
+    if (tag && !out.includes(tag)) out.push(tag);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
 function presentCubeComment(comment) {
   return {
     id: comment?.id,
@@ -2623,6 +2648,7 @@ function presentCubeComment(comment) {
     coordinates: cubeCommentCoordinates(comment),
     cell_value: comment?.cell_value,
     filter_context: cubeCommentFilters(comment),
+    tags: Array.isArray(comment?.tags) ? comment.tags : [],
     updated_at: comment?.updated_at,
   };
 }
@@ -2661,6 +2687,8 @@ async function addCubeComment(args = {}) {
     body.cell_value = Number(args.cell_value);
   }
   if (args.status) body.status = String(args.status).trim();
+  const tags = normaliseCubeTags(args.tags);
+  if (tags.length) body.tags = tags;
 
   const data = await apiRequest('/xero/data/journals/pivot/comments/', { method: 'POST', body });
 
@@ -2684,13 +2712,41 @@ async function addCubeComment(args = {}) {
     author_verified: data?.author_verified === true,
     coordinates: coords,
     cell_value: data?.cell_value,
+    tags: Array.isArray(data?.tags) ? data.tags : [],
+    mentions: data?.mentions || null,
     agent_brief: [
       `Comment ${data?.id} saved as "${author}" on that figure.`,
       'It shows up in MC\'s Excel sheet on the cell itself once he refreshes or reopens that sheet.',
       'Re-posting the same coordinates as the same author edits this comment; an empty comment retracts it.',
+      (Array.isArray(data?.tags) && data.tags.length)
+        ? `Tagged ${data.tags.join(', ')} — pull this queue back with list_cube_comments(tag="${data.tags[0]}").`
+        : '',
+      cubeMentionBrief(data?.mentions),
       data?.author_verified === true ? '' : 'Attribution is self-declared — the MCP uses a shared service credential.',
     ].filter(Boolean).join(' '),
   };
+}
+
+function cubeMentionBrief(mentions) {
+  // An @mention that resolved to nobody, or failed to send, must be SAID OUT
+  // LOUD to whoever wrote the comment. A mention that quietly goes nowhere is
+  // worse than an error, and the agent that wrote it is the only one in a
+  // position to fix the handle or add the person to the directory.
+  if (!mentions) return '';
+  const parts = [];
+  const notified = mentions.notified || [];
+  const already = mentions.already_notified || [];
+  const failed = mentions.failed || [];
+  const unresolved = mentions.unresolved || [];
+  if (notified.length) parts.push(`Emailed ${notified.join(', ')}.`);
+  if (already.length) parts.push(`${already.join(', ')} had already been notified about this comment — not emailed again.`);
+  if (unresolved.length) {
+    parts.push(`UNRESOLVED mention(s): ${unresolved.join(', ')} — nobody was emailed. Tell MC, and either fix the handle or add the person via the people directory (POST /xero/data/journals/pivot/people/).`);
+  }
+  if (failed.length) {
+    parts.push(`Mention email FAILED for ${failed.map((f) => `${f.email} (${f.error})`).join('; ')}. The comment itself saved fine; the failure is recorded in app.cube_comment_mentions. Report it rather than assuming they were told.`);
+  }
+  return parts.join(' ');
 }
 
 async function listCubeComments(args = {}) {
@@ -2701,6 +2757,11 @@ async function listCubeComments(args = {}) {
     if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== '') {
       params.set(key, String(args[key]).trim());
     }
+  }
+  const tagList = normaliseCubeTags(args.tags);
+  if (tagList.length) params.set('tags', tagList.join(','));
+  if (args.tag !== undefined && args.tag !== null && String(args.tag).trim() !== '') {
+    params.set('tag', String(args.tag).trim());
   }
   const data = await apiRequest(`/xero/data/journals/pivot/comments/?${params}`);
   const comments = (data?.results || []).map(presentCubeComment);
@@ -2717,6 +2778,9 @@ async function listCubeComments(args = {}) {
       'Each comment names its figure by axis-independent coordinates ({dimension: value}) plus the filter_context that produced the number — the same coordinates under different filters is a DIFFERENT figure.',
       'Reproduce the number before concluding: get_comment_transactions(id) returns the journal lines behind it and checks them back to the stored cell_value.',
       'Call set_cube_comment_status(id, "actioned") once you have dealt with one, or "dismissed" if it needs no action — and tell MC why either way.',
+      (args.tag || tagList.length)
+        ? 'This is a TAG-FILTERED slice, not the whole queue — say so if you report a count.'
+        : 'Filter with tag="audit" (or tags=["audit","fy2026"], which requires ALL of them) to pull just one workstream.',
     ].join(' '),
   };
 }
