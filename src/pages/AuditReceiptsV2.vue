@@ -134,25 +134,30 @@
             </div>
           </div>
 
-          <div class="rv2-document">
-            <iframe
-              v-if="detail.is_pdf && detail.view_url"
-              :src="detail.view_url"
-              :title="`Receipt ${detail.filename || detail.sha256}`"
-            />
-            <img
-              v-else-if="detail.view_url"
-              :src="detail.view_url"
-              :alt="`Receipt ${detail.filename || detail.sha256}`"
-            />
-            <div v-else class="rv2-document__missing">Receipt preview is unavailable.</div>
-          </div>
+          <div class="rv2-receipt-workspace">
+            <div class="rv2-document">
+              <iframe
+                v-if="detail.is_pdf && detail.view_url"
+                :src="detail.view_url"
+                :title="`Receipt ${detail.filename || detail.sha256}`"
+              />
+              <img
+                v-else-if="detail.view_url"
+                :src="detail.view_url"
+                :alt="`Receipt ${detail.filename || detail.sha256}`"
+              />
+              <div v-else class="rv2-document__missing">Receipt preview is unavailable.</div>
+            </div>
 
-          <ReceiptReviewForm
-            v-model="correctionDraft"
-            @save="saveCorrectionDraft"
-            @reset="resetCorrectionDraft"
-          />
+            <ReceiptReviewForm
+              v-model="correctionDraft"
+              :editable="editingCorrection"
+              @edit="startCorrectionEdit"
+              @cancel="cancelCorrectionEdit"
+              @save="saveCorrectionDraft"
+              @reset="resetCorrectionDraft"
+            />
+          </div>
 
           <SupplierJournalSearch
             :key="detail.sha256"
@@ -168,7 +173,7 @@
             </div>
             <button
               class="btn btn-primary btn-sm"
-              :disabled="confirming || correctionHasErrors"
+              :disabled="confirming || correctionHasErrors || editingCorrection"
               @click="confirmMissing"
             >
               {{ confirming ? 'Confirming…' : 'Confirm missing from Xero' }}
@@ -268,6 +273,8 @@ const detail = ref(null);
 const detailLoading = ref(false);
 const correctionDraft = ref(null);
 const hasSavedDraft = ref(false);
+const editingCorrection = ref(false);
+const correctionEditSnapshot = ref(null);
 const confirming = ref(false);
 
 const columns = [
@@ -373,6 +380,8 @@ async function openReview(row) {
   detail.value = { ...row };
   detailLoading.value = true;
   correctionDraft.value = null;
+  editingCorrection.value = false;
+  correctionEditSnapshot.value = null;
   try {
     const full = await getReceipt(row.sha256);
     if (selectedRow.value?.sha256 !== row.sha256) return;
@@ -397,11 +406,30 @@ function saveCorrectionDraft() {
   try {
     writeDraft(detail.value.sha256, correctionDraft.value);
     hasSavedDraft.value = true;
+    editingCorrection.value = false;
+    correctionEditSnapshot.value = null;
     toast.success('Correction draft saved in this browser. Xero is unchanged.');
   } catch (err) {
     toast.error('Could not save the local correction draft.');
     console.error(err);
   }
+}
+
+function cloneCorrectionDraft(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+
+function startCorrectionEdit() {
+  if (!correctionDraft.value || editingCorrection.value) return;
+  correctionEditSnapshot.value = cloneCorrectionDraft(correctionDraft.value);
+  editingCorrection.value = true;
+}
+
+function cancelCorrectionEdit() {
+  if (!editingCorrection.value) return;
+  correctionDraft.value = cloneCorrectionDraft(correctionEditSnapshot.value);
+  editingCorrection.value = false;
+  correctionEditSnapshot.value = null;
 }
 
 function resetCorrectionDraft() {
@@ -497,7 +525,7 @@ onMounted(() => {
 .rv2-summary__item span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--kdl-text-muted); }
 .rv2-summary__item strong { display: block; margin-top: 3px; font-size: 14px; }
 .rv2-summary__hint { display: flex; align-items: center; margin-left: auto; color: var(--kdl-text-muted); font-size: 12px; }
-.rv2-workspace { display: grid; grid-template-columns: minmax(500px, 0.9fr) minmax(560px, 1.1fr); gap: 14px; align-items: start; }
+.rv2-workspace { display: grid; grid-template-columns: minmax(390px, 0.65fr) minmax(720px, 1.35fr); gap: 14px; align-items: start; }
 .rv2-queue,
 .rv2-review { min-width: 0; }
 .rv2-review { position: sticky; top: 14px; max-height: calc(100vh - 100px); overflow: auto; }
@@ -505,13 +533,14 @@ onMounted(() => {
 .rv2-money { font-family: var(--kdl-font-mono, ui-monospace, monospace); white-space: nowrap; }
 .rv2-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--kdl-text-muted); font-size: 12px; }
 .rv2-review-body { display: flex; flex-direction: column; gap: 18px; }
+.rv2-receipt-workspace { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr); gap: 18px; align-items: start; }
 .rv2-receipt-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .rv2-receipt-meta div { padding: 9px; border: 1px solid var(--kdl-border); border-radius: 8px; }
 .rv2-receipt-meta span { display: block; font-size: 10px; text-transform: uppercase; color: var(--kdl-text-muted); }
 .rv2-receipt-meta strong { display: block; margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; }
-.rv2-document { min-height: 220px; max-height: 420px; display: flex; justify-content: center; border: 1px solid var(--kdl-border); border-radius: 9px; background: var(--kdl-surface-sunken, var(--kdl-hover-bg)); overflow: hidden; }
-.rv2-document img { width: 100%; height: auto; max-height: 420px; object-fit: contain; }
-.rv2-document iframe { width: 100%; height: 420px; border: 0; }
+.rv2-document { position: sticky; top: 0; min-height: 360px; max-height: 680px; display: flex; justify-content: center; border: 1px solid var(--kdl-border); border-radius: 9px; background: var(--kdl-surface-sunken, var(--kdl-hover-bg)); overflow: hidden; }
+.rv2-document img { width: 100%; height: auto; max-height: 680px; object-fit: contain; }
+.rv2-document iframe { width: 100%; height: 680px; border: 0; }
 .rv2-document__missing { align-self: center; color: var(--kdl-text-muted); font-size: 12px; }
 .rv2-confirm,
 .rv2-future { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; border: 1px solid var(--kdl-border); border-radius: 9px; }
@@ -521,9 +550,15 @@ onMounted(() => {
 .rv2-future h3 { margin: 0; font-size: 13px; }
 .rv2-confirm p,
 .rv2-future p { margin: 3px 0 0; font-size: 12px; color: var(--kdl-text-muted); }
-@media (max-width: 1240px) {
+@media (max-width: 1420px) {
   .rv2-workspace { grid-template-columns: 1fr; }
   .rv2-review { position: static; max-height: none; }
+}
+@media (max-width: 880px) {
+  .rv2-receipt-workspace { grid-template-columns: 1fr; }
+  .rv2-document { position: static; min-height: 260px; max-height: 520px; }
+  .rv2-document img { max-height: 520px; }
+  .rv2-document iframe { height: 520px; }
 }
 @media (max-width: 640px) {
   .rv2-summary__hint { margin-left: 0; }

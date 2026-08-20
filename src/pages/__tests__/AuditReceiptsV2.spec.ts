@@ -80,7 +80,7 @@ beforeEach(() => {
 });
 
 describe('AuditReceiptsV2', () => {
-  it('keeps the original route visible and opens an editable correction workspace', async () => {
+  it('shows receipt information beside the image and unlocks changes with the edit button', async () => {
     const wrapper = mountPage();
     await flushPromises();
 
@@ -92,11 +92,24 @@ describe('AuditReceiptsV2', () => {
     await flushPromises();
 
     expect(receiptMocks.getReceipt).toHaveBeenCalledWith(ROW.sha256);
-    expect(wrapper.text()).toContain('Correct the AI extraction');
+    expect(wrapper.text()).toContain('Receipt information');
     expect(wrapper.text()).toContain('Supplier journals in Xero');
-    const supplier = wrapper.findAll('input[type="text"]')
-      .find((input) => (input.element as HTMLInputElement).value === 'BP Dorp Street');
-    expect(supplier).toBeTruthy();
+    expect(wrapper.find('.rv2-receipt-workspace').exists()).toBe(true);
+
+    const supplier = wrapper.find('form.rrf input[type="text"]');
+    expect((supplier.element as HTMLInputElement).value).toBe('BP Dorp Street');
+    expect(supplier.attributes('readonly')).toBeDefined();
+
+    const edit = wrapper.findAll('button').find((button) => button.text() === 'Edit information');
+    expect(edit).toBeTruthy();
+    await edit!.trigger('click');
+    expect(supplier.attributes('readonly')).toBeUndefined();
+
+    await supplier.setValue('Changed supplier');
+    const cancel = wrapper.findAll('button').find((button) => button.text() === 'Cancel');
+    await cancel!.trigger('click');
+    expect((wrapper.find('form.rrf input[type="text"]').element as HTMLInputElement).value).toBe('BP Dorp Street');
+    expect(wrapper.find('form.rrf input[type="text"]').attributes('readonly')).toBeDefined();
 
     wrapper.unmount();
   });
@@ -107,6 +120,9 @@ describe('AuditReceiptsV2', () => {
     await wrapper.find('tbody tr').trigger('click');
     await flushPromises();
 
+    const edit = wrapper.findAll('button').find((button) => button.text() === 'Edit information');
+    await edit!.trigger('click');
+    expect(wrapper.text()).toContain('Save changes');
     await wrapper.find('form.rrf').trigger('submit');
     await flushPromises();
     expect(localStorage.getItem('klikk.receipts-v2.correction-drafts.v1')).toContain(ROW.sha256);
