@@ -22,7 +22,7 @@
       <template #trigger>
         <button class="btn-ghost btn-sm">Filter</button>
       </template>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="flex flex-col gap-2">
         <KInput v-model="search" label="Search" />
       </div>
     </KPopover>

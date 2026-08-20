@@ -18,6 +18,24 @@ export const FY_START_MONTH = 7;
  * The FY that `today` falls in, as the FY's END year.
  * currentFy(new Date(2026, 5, 30)) → 2026; currentFy(new Date(2026, 6, 1)) → 2027.
  */
+/**
+ * A usable FY number, or null.
+ *
+ * Number('') and Number(null) are both 0 — and Number.isInteger(0) is true — so a
+ * bare Number()+isInteger check let empty input through and rendered 'FY0
+ * (Jul -1 – Jun 0)' and a {start: '-1-07-01'} range. A date range that is a lie is
+ * worse than no range, so empty/blank/boolean input is rejected outright, and the
+ * year is bounded to the range the register actually accepts.
+ */
+function toFyNumber(fy) {
+  if (fy === null || fy === undefined || typeof fy === 'boolean') return null;
+  if (typeof fy === 'string' && fy.trim() === '') return null;
+  const n = Number(fy);
+  if (!Number.isInteger(n)) return null;
+  if (n < 2015 || n > 2100) return null;
+  return n;
+}
+
 export function currentFy(today = new Date()) {
   const year = today.getFullYear();
   const month = today.getMonth() + 1; // 1-based
@@ -26,14 +44,14 @@ export function currentFy(today = new Date()) {
 
 /** 2026 → 'FY2026 (Jul 2025 – Jun 2026)'. '' for non-numeric input. */
 export function fyLabel(fy) {
-  const n = Number(fy);
-  if (!Number.isInteger(n)) return '';
+  const n = toFyNumber(fy);
+  if (n === null) return '';
   return `FY${n} (Jul ${n - 1} – Jun ${n})`;
 }
 
 /** 2026 → { start: '2025-07-01', end: '2026-06-30' }. null for non-numeric input. */
 export function fyRange(fy) {
-  const n = Number(fy);
-  if (!Number.isInteger(n)) return null;
+  const n = toFyNumber(fy);
+  if (n === null) return null;
   return { start: `${n - 1}-07-01`, end: `${n}-06-30` };
 }

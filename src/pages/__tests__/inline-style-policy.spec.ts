@@ -24,6 +24,11 @@ import { join, resolve } from 'node:path';
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PAGES_DIR = resolve(__dirname, '../');
+// src/components/ is in scope too. Extracting the findings UI into components moved
+// ~1,900 lines of styled markup out of src/pages/ -- guarding only pages would have
+// quietly shrunk this policy's blast radius exactly when it grew.
+const COMPONENTS_DIR = resolve(__dirname, '../../components');
+const GUARDED_DIRS = [PAGES_DIR, COMPONENTS_DIR];
 
 /**
  * Regex that matches literal style="..." attributes (not :style="...").
@@ -73,7 +78,11 @@ interface Violation {
 }
 
 function findViolations(filePath: string): Violation[] {
-  const content = readFileSync(filePath, 'utf-8');
+  const raw = readFileSync(filePath, 'utf-8');
+  // Blank out HTML comments before scanning. Usage examples in a component's doc
+  // comment are not rendered markup, and flagging them makes the guard cry wolf --
+  // which is how a guard gets muted. Newlines are preserved so line numbers stay true.
+  const content = raw.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
   const lines = content.split('\n');
   const violations: Violation[] = [];
 
@@ -117,9 +126,9 @@ function isAllowed(violation: Violation): boolean {
 
 // ── Test ──────────────────────────────────────────────────────────────────────
 
-describe('KDL no-inline-style policy — src/pages/', () => {
+describe('KDL no-inline-style policy — src/pages/ + src/components/', () => {
   it('has zero literal style="..." attributes across all page components', () => {
-    const vueFiles = collectVueFiles(PAGES_DIR);
+    const vueFiles = GUARDED_DIRS.flatMap((dir) => collectVueFiles(dir));
 
     expect(vueFiles.length).toBeGreaterThan(0);
 
@@ -134,7 +143,7 @@ describe('KDL no-inline-style policy — src/pages/', () => {
       const report = allViolations
         .map(
           (v) =>
-            `  ${v.file.replace(PAGES_DIR + '/', '')}:${v.line}:${v.column}\n    ${v.snippet}`
+            `  ${v.file.replace(resolve(__dirname, '../../') + '/', '')}:${v.line}:${v.column}\n    ${v.snippet}`
         )
         .join('\n\n');
 

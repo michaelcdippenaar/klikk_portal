@@ -32,7 +32,9 @@ export async function listFindings(params = {}) {
 }
 
 /**
- * Single finding detail — { finding, comments[], attachments[] }.
+ * Single finding detail — { finding, comments[], attachments[], links[] }.
+ * (`links` lands with the linked-evidence endpoints; consumers must tolerate
+ * its absence on older payloads.)
  */
 export async function getFinding(id) {
   const response = await apiClient.get(`${BASE}${encodeURIComponent(id)}/`);
@@ -116,4 +118,158 @@ export async function exportFindingsUrl(params = {}, format = 'csv') {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── Attachments ──────────────────────────────────────────────────────────────
+
+/**
+ * List a finding's attachments. Returns [attachment dicts] — the endpoint may
+ * answer either a bare array or { attachments: [...] }; both are normalised
+ * here so the caller never cares.
+ */
+export async function listFindingAttachments(id) {
+  const response = await apiClient.get(`${BASE}${encodeURIComponent(id)}/attachments/`);
+  const data = response.data;
+  if (Array.isArray(data)) return data;
+  return Array.isArray(data?.attachments) ? data.attachments : [];
+}
+
+/**
+ * Upload one file (multipart, field `file`, optional `note`). 201 → the
+ * attachment dict { id, finding_id, original_name, content_type, size,
+ * uploaded_by, created_at, view_url }.
+ *
+ * `Content-Type: null` clears the apiClient default (application/json) so the
+ * browser sets the multipart boundary itself — the house pattern from
+ * endpoints.js. Never hand-set 'multipart/form-data': it drops the boundary.
+ *
+ * `onProgress(percent)` reports upload progress (0–100, null when the total
+ * is unknown).
+ */
+export async function uploadFindingAttachment(id, file, { note, onProgress } = {}) {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (note != null && String(note).trim() !== '') formData.append('note', String(note).trim());
+  const response = await apiClient.post(`${BASE}${encodeURIComponent(id)}/attachments/`, formData, {
+    headers: { 'Content-Type': null },
+    onUploadProgress: (event) => {
+      if (typeof onProgress !== 'function') return;
+      const total = Number(event?.total) || 0;
+      onProgress(total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : null);
+    },
+  });
+  return response.data;
+}
+
+/** Delete one attachment (also removes the file from disk server-side). */
+export async function deleteFindingAttachment(attachmentId) {
+  const response = await apiClient.delete(`${BASE}attachments/${encodeURIComponent(attachmentId)}/`);
+  return response.data;
+}
+
+// ── Cube view ────────────────────────────────────────────────────────────────
+
+/**
+ * Run the finding's saved cube view.
+ * Returns { finding_id, fy, name, spec, query, params, cube: <pivot payload> }.
+ * 404 (by design) when no cube view is saved on the finding — the caller must
+ * treat that as "none saved yet", not as an error.
+ */
+export async function getFindingCubeData(id) {
+  const response = await apiClient.get(`${BASE}${encodeURIComponent(id)}/cube-view/data/`);
+  return response.data;
+}
+
+/**
+ * Save (replace) the finding's cube view.
+ * body: { name?, spec, query?, cube_note? } — `spec` is the canonical
+ * Excel-add-in shape { rows, cols, measure, filt, filters, totals, suppress, outline }.
+ */
+export async function saveFindingCubeView(id, body) {
+  const response = await apiClient.put(`${BASE}${encodeURIComponent(id)}/cube-view/`, body);
+  return response.data;
+}
+
+/** Clear the finding's saved cube view. */
+export async function deleteFindingCubeView(id) {
+  const response = await apiClient.delete(`${BASE}${encodeURIComponent(id)}/cube-view/`);
+  return response.data;
+}
+
+/**
+ * Derive a starting-point cube view from the finding's structured data
+ * (fy bounds + linked entities). NOT saved server-side. The response carries
+ * `derived_from: [...]` naming which inputs contributed — surface it so the
+ * user knows this is a seed, not an answer.
+ */
+export async function suggestFindingCubeView(id) {
+  const response = await apiClient.get(`${BASE}${encodeURIComponent(id)}/cube-view/suggest/`);
+  return response.data;
+}
+
+/**
+ * The journal-pivot dimension/measure vocabulary the cube editor offers.
+ * Returns { dimensions: [{key, label}], measures: [{key, label}] }.
+ */
+export async function getPivotDimensions() {
+  const response = await apiClient.get('/xero/data/journals/pivot/dimensions/');
+  return response.data;
+}
+
+// ── Linked evidence ──────────────────────────────────────────────────────────
+
+/**
+ * The finding's links, resolved for display.
+ * Returns { finding_id, count, links: [{ id, kind, ref, label, added_by,
+ * created_at, resolved: { found, title, subtitle?, view_url?, detail? } }] }.
+ * A dangling ref resolves to { found: false, title: <raw ref> } — normal,
+ * never an error.
+ */
+export async function listFindingLinks(id) {
+  const response = await apiClient.get(`${BASE}${encodeURIComponent(id)}/links/`);
+  return response.data;
+}
+
+/**
+ * Attach one link { kind, ref, label? }. Idempotent on (kind, ref):
+ * 201 { created: true, link } for a new one, 200 { created: false, link }
+ * for a duplicate — never a 409.
+ */
+export async function addFindingLink(id, body) {
+  const response = await apiClient.post(`${BASE}${encodeURIComponent(id)}/links/`, body);
+  return response.data;
+}
+
+/** Remove one link. → { deleted: true, id }. */
+export async function deleteFindingLink(linkId) {
+  const response = await apiClient.delete(`${BASE}links/${encodeURIComponent(linkId)}/`);
+  return response.data;
+}
+
+// ── Linked-evidence search (picker sources) ─────────────────────────────────
+// These proxy endpoints owned by other modules; they live here because the
+// findings link picker is their only console consumer. Slip search reuses
+// getReceipts() from ./receipts directly.
+
+/**
+ * Search the local Xero document mirror.
+ * params: q, invoice_number, amount, date_from, date_to, tenant_id, limit
+ * Returns { count, limit, results: [{ id, file_name, content_type,
+ * invoice_number, contact_name, date, total, view_url }] }.
+ */
+export async function searchXeroDocuments(params = {}) {
+  const response = await apiClient.get('/xero/data/documents/search/', { params });
+  return response.data;
+}
+
+/**
+ * Search Investec bank transactions across all accounts.
+ * params: amount, description, date_from, date_to, account, limit, offset
+ * Returns { count, results: [{ id, transaction_date, type, amount,
+ * description, account_number, account_name }] }.
+ * NB: credits are stored NEGATIVE; transaction_date is the reliable date.
+ */
+export async function searchBankTransactions(params = {}) {
+  const response = await apiClient.get('/api/investec/bank/transactions/', { params });
+  return response.data;
 }

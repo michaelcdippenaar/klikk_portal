@@ -176,12 +176,20 @@ Call the `pricelist_upsert_item` MCP tool (with `confirm=true`) and confirm it n
 Price-list notes: all prices are ex VAT in ZAR and returned as 2-decimal strings; the mutating tools require `confirm=true`; the price list is Klikk's own table and none of these tools ever read from or write to Xero.
 
 - `list_audit_findings`: list the audit findings register (ref, severity, status, category, owner, 2-decimal-string amount, check_code) filtered by fy / status / severity / category / owner / check_code / free-text `q`; totals cover the whole filter, not just the page.
-- `get_audit_finding`: one finding by id with its full detail, comment thread and attachments.
+- `get_audit_finding`: one finding by id with its full detail, comment thread, attachments and resolved evidence links (`links` capped at 200 with `link_count` / `links_truncated`).
 - `add_audit_finding`: guarded mutating tool (`confirm=true`) that raises a new finding; the backend allocates the permanent `FY26-013`-style ref and `fy` defaults to the current FY.
 - `update_audit_finding`: guarded mutating tool (`confirm=true`) that patches status / owner / due_date / amount / severity / category; a `note` is recorded as a comment, not a field change, and `fy` / `ref` are immutable.
 - `comment_audit_finding`: guarded mutating tool (`confirm=true`) that appends a comment to a finding's thread.
 - `audit_findings_summary`: per-FY aggregates of the findings register — count, open count, total amount, and by-severity / by-status / by-category / by-owner breakdowns.
+- `list_audit_finding_attachments`: list one finding's uploaded attachments — filename, content type, size, note, uploader, signed `view_url`.
+- `get_audit_finding_cube`: run the cube view saved on a finding and return the live cross-tab; `has_cube: false` when none is saved (a normal state, not an error).
+- `set_audit_finding_cube`: guarded mutating tool (`confirm=true`) that saves/replaces a finding's cube view; the `{spec, query}` is built with the same rules as `preview_cube` / `save_cube_view`, so it stays byte-compatible with the Excel add-in.
+- `link_audit_finding`: guarded mutating tool (`confirm=true`) that links evidence to a finding by reference — kind `slip` / `xero_document` / `bank_transaction` / `journal` / `invoice` / `asana`. `journal` and `invoice` refs are tenant-qualified `<tenant_uuid>:<number>` (Klikk `41ebfa0e-012e-4ff1-82ba-a9a7585c536c`, Tremly `0415e61e-f78c-4216-ac54-7933a6f63a5d`, Dippenaar Family `27806be4-62dd-4c50-9eb9-c8b79231f6a1`); a bare number is canonicalised to the KLIKK tenant, which is the wrong record for a Tremly / Dippenaar document — 31,071 journal numbers and 448 invoice numbers exist in more than one organisation. Duplicate links are idempotent (`created: false`).
+- `unlink_audit_finding`: guarded mutating tool (`confirm=true`) that removes one evidence link by `link_id`; the finding and the referenced record are untouched.
+- `audit_finding_graph`: the findings-evidence graph (nodes + edges). With `node_type`/`node_id` (supplied together) it traverses BOTH directions from that node — "which findings cite this slip" — and spans ALL financial years when `fy` is omitted; `depth` is capped at 2 and the edge list at 500 (`truncated: true`).
 
 Audit-findings notes: the findings register is Klikk's own Postgres table served by the Django backend at `/audit/findings/` — Klikk FY N runs 1 Jul (N-1) – 30 Jun N (FY2026 = 2025-07-01..2026-06-30); amounts are 2-decimal strings and must be passed through verbatim; the mutating tools require `confirm=true`; none of these tools ever read from or write to Xero.
+
+There is deliberately NO attachment-upload MCP tool: an agent has no local file to upload — it has references, and references are links (`link_audit_finding`, kind `xero_document` / `slip` / `bank_transaction` / ...). Uploads are a human action through the console (or a direct multipart POST with the service token). Do not add one.
 
 The server intentionally uses the existing backend as the single source of truth. It does not scrape broker pages or bypass the portal data model.

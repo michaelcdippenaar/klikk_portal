@@ -267,7 +267,19 @@
       :description="detailDescriptionLine"
       size="xl"
     >
-      <div v-if="detail" class="af-detail">
+      <template v-if="detail">
+        <!-- Tabbed so Detail / Cube view / Linked evidence / Attachments don't
+             become one unreadable wall. url-sync OFF: the page's filter state
+             owns the query string. -->
+        <KTabs
+          v-model="detailTab"
+          :tabs="detailTabs"
+          :url-sync="false"
+          aria-label="Finding sections"
+          class="af-detail-tabs"
+        />
+
+        <div v-if="detailTab === 'detail'" class="af-detail">
         <!-- Left: the finding itself -->
         <div class="af-detail__main">
           <div v-if="detailLoading" class="af-detail__loading">
@@ -316,7 +328,7 @@
                 <KBadge :label="ev.type || 'note'" tone="muted" size="sm" />
                 <a
                   v-if="ev.type === 'url' && ev.ref"
-                  :href="ev.ref"
+                  :href="safeHref(ev.ref)"
                   target="_blank"
                   rel="noopener"
                   class="af-link af-evidence__ref"
@@ -328,21 +340,6 @@
             <p v-else-if="!detailLoading" class="af-sub">No evidence recorded.</p>
           </section>
 
-          <section class="af-section">
-            <h3 class="af-section__heading">
-              Attachments
-              <span class="af-section__note">{{ detailAttachments.length }}</span>
-            </h3>
-            <ul v-if="detailAttachments.length" class="af-attachments">
-              <li v-for="a in detailAttachments" :key="a.id" class="af-attachments__row">
-                <a :href="a.view_url" target="_blank" rel="noopener" class="af-link">
-                  {{ a.original_name || `Attachment ${a.id}` }}
-                </a>
-                <span class="af-sub">{{ a.content_type || '—' }} · {{ formatBytes(a.size) }}</span>
-              </li>
-            </ul>
-            <p v-else-if="!detailLoading" class="af-sub">No attachments.</p>
-          </section>
         </div>
 
         <!-- Right: edit + comments -->
@@ -427,7 +424,28 @@
             </form>
           </section>
         </div>
-      </div>
+        </div>
+
+        <!-- Cube view — mounted on demand so opening the modal costs nothing extra. -->
+        <FindingCubeView
+          v-else-if="detailTab === 'cube'"
+          :finding-id="detail.id"
+        />
+
+        <FindingLinks
+          v-else-if="detailTab === 'links'"
+          :finding-id="detail.id"
+          :links="detailLinks"
+          @update:links="onLinksUpdate"
+        />
+
+        <FindingAttachments
+          v-else-if="detailTab === 'attachments'"
+          :finding-id="detail.id"
+          :attachments="detailAttachments"
+          @update:attachments="onAttachmentsUpdate"
+        />
+      </template>
     </KDialog>
 
     <!-- Bulk: set owner -->
@@ -498,7 +516,7 @@ import {
   BULK_MAX,
 } from '../api/findings';
 import { currentFy, fyLabel } from '../utils/fy';
-import { formatMoney, formatDateTime, formatBytes } from '../utils/receipts';
+import { formatMoney, formatDateTime } from '../utils/receipts';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
@@ -514,8 +532,12 @@ import KMultiSelect from '../components/klikk/KMultiSelect.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
+import KTabs from '../components/klikk/KTabs.vue';
 import MetricTile from '../components/klikk/MetricTile.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
+import FindingAttachments from '../components/findings/FindingAttachments.vue';
+import FindingCubeView from '../components/findings/FindingCubeView.vue';
+import FindingLinks from '../components/findings/FindingLinks.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
 
@@ -573,6 +595,27 @@ function formatAmount(value) {
 }
 
 // ── Filters ⇄ URL ────────────────────────────────────────────────────────────
+
+/**
+ * An href that is safe to put in the DOM, or null.
+ *
+ * Evidence refs are supplied by AGENTS via the MCP tools and by anyone with a
+ * service token — they are untrusted input rendered into an auditor-facing page.
+ * A ref of `javascript:...` bound straight to :href is a stored XSS vector, so
+ * only http(s) and mailto survive; anything else renders as plain text.
+ */
+function safeHref(ref) {
+  const raw = String(ref ?? '').trim();
+  if (!raw) return null;
+  // Strip control characters first: `java\tscript:` is parsed as javascript: by browsers.
+  // Matching control chars IS the point here - they are the bypass, not an accident.
+  // eslint-disable-next-line no-control-regex
+  const probe = raw.replace(/[\u0000-\u001F\u007F]/g, '').toLowerCase();
+  if (probe.startsWith('http://') || probe.startsWith('https://') || probe.startsWith('mailto:')) {
+    return raw;
+  }
+  return null;
+}
 
 const DEFAULT_FY = String(currentFy());
 
@@ -956,7 +999,16 @@ const detailOpen = ref(false);
 const detail = ref(null);
 const detailComments = ref([]);
 const detailAttachments = ref([]);
+const detailLinks = ref([]);
 const detailLoading = ref(false);
+const detailTab = ref('detail');
+
+const detailTabs = computed(() => [
+  { name: 'detail', label: 'Detail', count: detailComments.value.length || null },
+  { name: 'cube', label: 'Cube view' },
+  { name: 'links', label: 'Linked evidence', count: detailLinks.value.length || null },
+  { name: 'attachments', label: 'Attachments', count: detailAttachments.value.length || null },
+]);
 
 const statusDraft = ref('OPEN');
 const ownerDraft = ref('');
@@ -1010,6 +1062,8 @@ async function openDetail(row) {
   detail.value = { ...row };
   detailComments.value = [];
   detailAttachments.value = [];
+  detailLinks.value = [];
+  detailTab.value = 'detail';
   syncDraftsFromDetail();
   commentDraft.value = '';
   detailOpen.value = true;
@@ -1017,11 +1071,13 @@ async function openDetail(row) {
   try {
     const payload = await getFinding(row.id);
     if (detail.value && detail.value.id === row.id) {
-      // Contract shape: { finding, comments, attachments }.
+      // Contract shape: { finding, comments, attachments, links } — `links`
+      // arrives with the linked-evidence endpoints; tolerate its absence.
       const finding = payload?.finding && typeof payload.finding === 'object' ? payload.finding : payload;
       detail.value = { ...detail.value, ...finding };
       detailComments.value = Array.isArray(payload?.comments) ? payload.comments : [];
       detailAttachments.value = Array.isArray(payload?.attachments) ? payload.attachments : [];
+      detailLinks.value = Array.isArray(payload?.links) ? payload.links : [];
       syncDraftsFromDetail();
     }
   } catch (err) {
@@ -1098,9 +1154,31 @@ watch(detailOpen, (open) => {
     detail.value = null;
     detailComments.value = [];
     detailAttachments.value = [];
+    detailLinks.value = [];
+    detailTab.value = 'detail';
     detailLoading.value = false;
   }
 });
+
+/** The Attachments tab owns uploads/deletes; mirror the count everywhere. */
+function onAttachmentsUpdate(list) {
+  detailAttachments.value = Array.isArray(list) ? list : [];
+  const id = detail.value?.id;
+  if (id == null) return;
+  const count = detailAttachments.value.length;
+  detail.value = { ...detail.value, attachment_count: count };
+  rows.value = rows.value.map((r) => (r.id === id ? { ...r, attachment_count: count } : r));
+}
+
+/** The Linked-evidence tab owns attach/unlink; mirror link_count where present. */
+function onLinksUpdate(list) {
+  detailLinks.value = Array.isArray(list) ? list : [];
+  const id = detail.value?.id;
+  if (id == null) return;
+  const count = detailLinks.value.length;
+  detail.value = { ...detail.value, link_count: count };
+  rows.value = rows.value.map((r) => (r.id === id ? { ...r, link_count: count } : r));
+}
 
 // ── Export ───────────────────────────────────────────────────────────────────
 
@@ -1233,6 +1311,10 @@ async function exportAs(format) {
 }
 
 /* ── Detail dialog ──────────────────────────────────────────────────────── */
+.af-detail-tabs {
+  margin-bottom: 14px;
+}
+
 .af-detail {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
@@ -1308,8 +1390,7 @@ async function exportAs(format) {
   overflow-wrap: anywhere;
 }
 
-.af-evidence,
-.af-attachments {
+.af-evidence {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1335,13 +1416,6 @@ async function exportAs(format) {
 .af-evidence__note {
   color: var(--kdl-text-secondary);
   min-width: 0;
-}
-
-.af-attachments__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
 }
 
 /* ── Edit + comments ────────────────────────────────────────────────────── */

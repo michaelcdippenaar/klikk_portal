@@ -943,7 +943,7 @@ const tools = [
     description: 'Guarded mutating tool (confirm=true): raise a NEW finding in the audit findings register — Klikk\'s OWN Postgres table, NEVER Xero. The backend allocates the permanent ref (FY26-013 style) and stamps created_by; fy defaults to the current FY (Klikk FY N = 1 Jul N-1 .. 30 Jun N, so FY2026 = 2025-07-01..2026-06-30). Use when an audit or analysis surfaces a new issue MC wants tracked to closure ("log a finding for X", "add that to the findings register"). Always name the source (which audit run / analysis raised it) and pass amounts as decimal STRINGS exactly as given — never invent or round figures.',
     inputSchema: {
       type: 'object',
-      required: ['title', 'severity', 'category', 'description', 'source', 'confirm'],
+      required: ['fy', 'title', 'severity', 'category', 'description', 'source', 'confirm'],
       properties: {
         fy: { type: 'number', description: 'Financial year the finding belongs to (default: current FY).' },
         title: { type: 'string', description: 'Short one-line title of the finding.' },
@@ -1000,6 +1000,89 @@ const tools = [
       type: 'object',
       properties: {
         fy: { type: 'number', description: 'Financial year = the calendar year it ENDS in. Omit for the current FY.' },
+      },
+    },
+  },
+  {
+    name: 'list_audit_finding_attachments',
+    description: 'Read-only: list the file attachments on one audit finding — original filename, content type, size, optional note, uploader and a signed view_url that opens without auth. Attachments are FILES a human uploaded through the console; an agent citing evidence should add a REFERENCE with link_audit_finding instead (there is deliberately no upload tool — an agent has no local file, it has references). Use when MC asks "what documents are on FY26-006" or before opening one via its view_url. The register is Klikk\'s own table — never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+      },
+    },
+  },
+  {
+    name: 'get_audit_finding_cube',
+    description: 'Read-only: run the CUBE VIEW saved on an audit finding and return the live cross-tab — the same {spec, query} pivot shape the Excel add-in uses, executed against the journal mirror right now (not a cached snapshot). Returns has_cube=false when the finding has no saved cube; that is a normal state, not an error. Use when MC says "show me the numbers behind FY26-001", "open the finding\'s cube", or to ground a findings discussion in the actual ledger figures. Amounts in the cross-tab are strings/numbers from the pivot — quote them verbatim, never round. Save or replace the cube with set_audit_finding_cube. Never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+      },
+    },
+  },
+  {
+    name: 'set_audit_finding_cube',
+    description: 'Guarded mutating tool (confirm=true): save (or replace) the cube view stored ON an audit finding — a {spec, query} pivot built with exactly the same rules as preview_cube / save_cube_view, so it stays byte-compatible with the Excel add-in\'s Cube panel. rows is required (dimension KEYS from list_cube_dimensions); a dimension cannot sit on both axes. Remember the journal mirror double-counts across journal_type — pass query {journal_type: "transaction"} (or "journal") unless you mean every mirror of an entry. Preview with preview_cube FIRST so the numbers say what you intend — a wrong dimension gives a plausible view MC only catches by opening it. Use when MC says "pin the numbers behind this finding", "save that view on FY26-004". Writes to Klikk\'s own findings register only, never Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id', 'rows', 'confirm'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+        rows: { type: 'array', description: 'Row dimension KEYS in outline order, e.g. ["supplier"] (see list_cube_dimensions).' },
+        cols: { type: 'array', description: 'Column dimension keys, e.g. ["fin_period"]. A key cannot appear in both rows and cols.' },
+        measure: { type: 'string', description: 'Measure key (default "amount").' },
+        filters: { type: 'object', description: 'Dimension filters: {dimension: [values]}, e.g. {"account_class": ["Expense"]}.' },
+        totals: { type: 'object', description: 'Per-dimension subtotal toggles {dimension: boolean}; defaults: parent totals ON for rows, OFF for cols.' },
+        suppress: { type: 'boolean', description: 'Suppress all-zero rows (default true).' },
+        query: { type: 'object', description: 'Journal filter context: q, tenant, account, contact, journal_type, date_from, date_to.' },
+        name: { type: 'string', description: 'Display name for the saved cube, e.g. "FY26-001 payments-before-bill".' },
+        cube_note: { type: 'string', description: 'One line of context on what the cube shows and why it matters to this finding.' },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s own findings register (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'link_audit_finding',
+    description: 'Guarded mutating tool (confirm=true): LINK a piece of evidence to an audit finding by reference. kind is one of slip (ref = slip sha256), xero_document (document id), bank_transaction (transaction id), journal (journal_number), invoice (invoice_number) or asana (task gid). For kind journal and invoice the ref is TENANT-QUALIFIED: "<tenant_uuid>:<number>" — Klikk 41ebfa0e-012e-4ff1-82ba-a9a7585c536c, Tremly 0415e61e-f78c-4216-ac54-7933a6f63a5d, Dippenaar Family 27806be4-62dd-4c50-9eb9-c8b79231f6a1. A bare number is accepted but is canonicalised server-side to the KLIKK tenant; measured on this database 31,071 journal numbers and 448 invoice numbers exist in more than one organisation, so a bare number for a Tremly or Dippenaar document silently links the WRONG entity\'s record — always qualify unless you mean Klikk. Linking the same (kind, ref) twice is idempotent: created=false with the existing link, never an error. Links are references, not uploads — file uploads are a human action through the console. Use when an audit cites a slip / journal / invoice / bank line / document / Asana task as evidence ("attach that slip to FY26-009"). Writes to Klikk\'s own register only, never Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id', 'kind', 'ref', 'confirm'],
+      properties: {
+        id: { type: 'number', description: 'Finding id (from list_audit_findings).' },
+        kind: { type: 'string', description: 'slip | xero_document | bank_transaction | journal | invoice | asana.' },
+        ref: { type: 'string', description: 'The reference: slip sha256 / document id / bank txn id / journal_number / invoice_number / asana gid. journal + invoice refs should be "<tenant_uuid>:<number>" — a bare number means the Klikk tenant.' },
+        label: { type: 'string', description: 'Optional human label, e.g. "Aurras statement 31 Oct — shows R0 due".' },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s own findings register (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'unlink_audit_finding',
+    description: 'Guarded mutating tool (confirm=true): remove ONE evidence link from an audit finding by its link_id (from get_audit_finding\'s links array, list output, or the link returned by link_audit_finding). Only the link row is deleted — the finding and the referenced slip / journal / document are untouched. Use when a link was attached to the wrong finding or the wrong entity\'s document ("remove that journal link from FY26-003"). Writes to Klikk\'s own findings register only, never Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['link_id', 'confirm'],
+      properties: {
+        link_id: { type: 'number', description: 'The link id to remove (NOT the finding id).' },
+        confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s own findings register (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'audit_finding_graph',
+    description: 'Read-only: the findings-evidence GRAPH — nodes and edges connecting findings to their evidence (slip / xero_document / bank_transaction / journal / invoice / asana / attachment / check). With no node it returns every finding in the FY plus its depth-1 edges (fy defaults to the most recent FY with findings). With node_type + node_id (must be supplied TOGETHER, else 400) it traverses BOTH directions from that node — "which findings cite this slip" is the reverse walk — and when fy is omitted it deliberately spans ALL financial years: a caller naming a slip is asking who cites it, not "in some default year". depth is 1 or 2, hard-capped at 2 (depth 2 from a slip reaches the other evidence of the findings that cite it). Capped at 500 edges with truncated=true when the cap bites. Use when MC asks "which findings cite this slip / journal", "map the evidence around FY26-008", "what hangs off check BNK-05". Read-only over Klikk\'s own tables — never Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fy: { type: 'number', description: 'Financial year = the calendar year it ENDS in (FY N = 1 Jul N-1 .. 30 Jun N). Omit with a node to span ALL years; omit without a node for the most recent FY with findings.' },
+        node_type: { type: 'string', description: 'finding | slip | xero_document | bank_transaction | journal | invoice | asana | attachment | check. Requires node_id.' },
+        node_id: { type: 'string', description: 'The node\'s id: finding id / slip sha256 / document id / bank txn id / journal_number / invoice_number / asana gid / attachment id / check code. Requires node_type.' },
+        depth: { type: 'number', description: 'Traversal depth from the node: 1 (default) or 2 (hard cap).' },
       },
     },
   },
@@ -2580,15 +2663,20 @@ async function getAuditFinding(args = {}) {
   const finding = data?.finding ?? data;
   const comments = data?.comments || [];
   const attachments = data?.attachments || [];
+  const links = data?.links || [];
+  const linkCount = data?.link_count ?? links.length;
   return {
     generated_at: new Date().toISOString(),
     api_base_url: apiBaseUrl,
     finding,
     comments,
     attachments,
+    links,
+    link_count: linkCount,
+    links_truncated: data?.links_truncated === true,
     agent_brief: [
       auditFindingBrief(finding),
-      `${comments.length} comment(s), ${attachments.length} attachment(s). Add a note with comment_audit_finding or change status/owner with update_audit_finding — both require confirm=true and only touch Klikk's own register, never Xero.`,
+      `${comments.length} comment(s), ${attachments.length} attachment(s), ${linkCount} evidence link(s)${data?.links_truncated ? ' (links array truncated at 200 — link_count is the true total)' : ''}. Add a note with comment_audit_finding, link evidence with link_audit_finding, or change status/owner with update_audit_finding — all require confirm=true and only touch Klikk's own register, never Xero.`,
     ],
   };
 }
@@ -2691,6 +2779,179 @@ async function auditFindingsSummary(args = {}) {
         ? `Worst severity bucket present: ${worst.key} — ${worst.count} finding(s), amount ${worst.amount ?? 'n/a'}.`
         : 'No findings in this slice.',
       'Amounts are 2-decimal strings — quote them verbatim. Drill in with list_audit_findings(severity=..., status=...). Never touches Xero.',
+    ],
+  };
+}
+
+// ---- Audit finding evidence: attachments, cube view, links, graph ----
+
+async function listAuditFindingAttachments(args = {}) {
+  const id = auditFindingId(args.id);
+  const data = await apiRequest(`/audit/findings/${id}/attachments/`);
+  const attachments = data?.attachments || [];
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    finding_id: data?.finding_id ?? id,
+    count: data?.count ?? attachments.length,
+    attachments,
+    agent_brief: [
+      attachments.length
+        ? `${attachments.length} attachment(s) on finding ${id} — each view_url is signed and opens without auth.`
+        : `No attachments on finding ${id}.`,
+      'Attachments are human uploads through the console; an agent citing evidence should add a REFERENCE with link_audit_finding (kind slip / xero_document / bank_transaction / journal / invoice / asana) instead. Never touches Xero.',
+    ],
+  };
+}
+
+async function getAuditFindingCube(args = {}) {
+  const id = auditFindingId(args.id);
+  let data;
+  try {
+    data = await apiRequest(`/audit/findings/${id}/cube-view/data/`);
+  } catch (error) {
+    // 404 with this detail is the backend's "no cube saved" — a normal state, not a failure.
+    if (error.status === 404 && String(error.payload?.detail || '').includes('no cube view')) {
+      return {
+        generated_at: new Date().toISOString(),
+        api_base_url: apiBaseUrl,
+        finding_id: id,
+        has_cube: false,
+        agent_brief: [
+          `Finding ${id} has no saved cube view — a normal state, not an error. Save one with set_audit_finding_cube (confirm=true), previewing with preview_cube first.`,
+        ],
+      };
+    }
+    throw error;
+  }
+  const cube = data?.cube || {};
+  const rowCount = (cube.rows || []).length;
+  const colCount = (cube.cols || []).length;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    finding_id: data?.finding_id ?? id,
+    has_cube: true,
+    fy: data?.fy,
+    name: data?.name ?? null,
+    spec: data?.spec,
+    query: data?.query,
+    params: data?.params,
+    cube,
+    agent_brief: [
+      `Cube${data?.name ? ` "${data.name}"` : ''} on finding ${id}: ${rowCount} row(s) × ${colCount} column(s), grand total ${cube.grand_total ?? 'n/a'} — run live against the journal mirror just now, not a snapshot.`,
+      cube.balancing_hint ? `WARNING: ${cube.balancing_hint}` : '',
+      'Quote figures verbatim — never round-trip through float. Change the view with set_audit_finding_cube (confirm=true). Never touches Xero.',
+    ].filter(Boolean),
+  };
+}
+
+async function setAuditFindingCube(args = {}) {
+  const id = auditFindingId(args.id);
+  // cubeSpecFrom is the SAME builder the Excel add-in path uses (preview_cube /
+  // save_cube_view) — required-arg + axis validation happens here, BEFORE the
+  // confirm gate, and keeps the stored spec byte-compatible with the add-in.
+  const spec = cubeSpecFrom(args);
+  requireConfirm(args, 'save a cube view on an audit finding');
+  const body = { spec };
+  if (args.query && typeof args.query === 'object') body.query = args.query;
+  if (args.name !== undefined && args.name !== null && String(args.name).trim() !== '') body.name = String(args.name).trim();
+  if (args.cube_note !== undefined && args.cube_note !== null) body.cube_note = String(args.cube_note);
+  const data = await apiRequest(`/audit/findings/${id}/cube-view/`, { method: 'PUT', body });
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    finding_id: data?.finding_id ?? id,
+    fy: data?.fy,
+    name: data?.name ?? null,
+    spec: data?.spec ?? spec,
+    query: data?.query ?? body.query ?? {},
+    cube_note: data?.cube_note ?? '',
+    agent_brief: [
+      `Saved cube view${data?.name ? ` "${data.name}"` : ''} on finding ${id} — it replaces any previous cube on this finding.`,
+      'Read it back (run live) with get_audit_finding_cube(id). This wrote to Klikk\'s own findings register only, never Xero.',
+    ],
+  };
+}
+
+async function linkAuditFinding(args = {}) {
+  const id = auditFindingId(args.id);
+  const kind = String(args.kind || '').trim();
+  if (!kind) throw new Error('kind is required (slip, xero_document, bank_transaction, journal, invoice or asana)');
+  const ref = String(args.ref || '').trim();
+  if (!ref) throw new Error('ref is required');
+  requireConfirm(args, 'link evidence to an audit finding');
+  const body = { kind, ref };
+  if (args.label !== undefined && args.label !== null && String(args.label).trim() !== '') body.label = String(args.label);
+  const data = await apiRequest(`/audit/findings/${id}/links/`, { method: 'POST', body });
+  const link = data?.link ?? data;
+  const created = data?.created === true;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    created,
+    link,
+    agent_brief: [
+      created
+        ? `Linked ${kind} ${ref} to finding ${id} as link ${link?.id ?? '?'}.`
+        : `That ${kind} link already existed on finding ${id} (link ${link?.id ?? '?'}) — idempotent, nothing new was created.`,
+      link?.ref && link.ref !== ref ? `The ref was canonicalised server-side and stored as ${link.ref} — for journal/invoice a bare number means the KLIKK tenant; qualify as <tenant_uuid>:<number> if you meant Tremly or Dippenaar.` : '',
+      link?.resolved && link.resolved.found === false ? 'WARNING: the ref did not resolve to a known record (dangling refs are stored, not rejected) — double-check it.' : '',
+      'Remove with unlink_audit_finding(link_id). This wrote to Klikk\'s own findings register only, never Xero.',
+    ].filter(Boolean),
+  };
+}
+
+async function unlinkAuditFinding(args = {}) {
+  if (args.link_id === undefined || args.link_id === null || String(args.link_id).trim() === '') throw new Error('link_id is required');
+  const linkId = Number(args.link_id);
+  if (!Number.isFinite(linkId)) throw new Error('link_id is required');
+  requireConfirm(args, 'remove a link from an audit finding');
+  const data = await apiRequest(`/audit/findings/links/${linkId}/`, { method: 'DELETE' });
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    deleted: data?.deleted === true,
+    link_id: data?.id ?? linkId,
+    agent_brief: [
+      `Link ${data?.id ?? linkId} removed. Only the link row was deleted — the finding and the referenced record are untouched. Klikk's own register only, never Xero.`,
+    ],
+  };
+}
+
+async function auditFindingGraph(args = {}) {
+  const fy = auditFyOrNull(args.fy);
+  const nodeType = args.node_type === undefined || args.node_type === null ? '' : String(args.node_type).trim();
+  const nodeId = args.node_id === undefined || args.node_id === null ? '' : String(args.node_id).trim();
+  if ((nodeType && !nodeId) || (!nodeType && nodeId)) {
+    throw new Error('node_type and node_id must be supplied together');
+  }
+  const params = new URLSearchParams();
+  if (fy !== null) params.set('fy', String(fy));
+  if (nodeType) {
+    params.set('node_type', nodeType);
+    params.set('node_id', nodeId);
+  }
+  if (args.depth !== undefined && args.depth !== null) params.set('depth', String(clampNumber(args.depth, 1, 1, 2)));
+  const qs = params.toString();
+  const data = await apiRequest(`/audit/findings/graph/${qs ? `?${qs}` : ''}`);
+  const nodes = data?.nodes || [];
+  const edges = data?.edges || [];
+  const scope = data?.fy
+    ? ` for FY${data.fy}`
+    : (nodeType ? ' across ALL financial years (deliberate: naming a node asks "which findings cite this", not "in some default year")' : '');
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    fy: data?.fy ?? fy,
+    current_fy: data?.current_fy,
+    depth: data?.depth,
+    truncated: data?.truncated === true,
+    nodes,
+    edges,
+    agent_brief: [
+      `${nodes.length} node(s), ${edges.length} edge(s)${scope}${data?.truncated ? ' — TRUNCATED at the 500-edge cap; narrow with fy or a more specific node' : ''}.`,
+      'Edges run finding → evidence (slip / xero_document / bank_transaction / journal / invoice / asana / attachment / check); traversal from a named node walks BOTH directions. Read-only over Klikk\'s own tables — never Xero.',
     ],
   };
 }
@@ -3421,6 +3682,12 @@ const toolHandlers = {
   update_audit_finding: updateAuditFinding,
   comment_audit_finding: commentAuditFinding,
   audit_findings_summary: auditFindingsSummary,
+  list_audit_finding_attachments: listAuditFindingAttachments,
+  get_audit_finding_cube: getAuditFindingCube,
+  set_audit_finding_cube: setAuditFindingCube,
+  link_audit_finding: linkAuditFinding,
+  unlink_audit_finding: unlinkAuditFinding,
+  audit_finding_graph: auditFindingGraph,
   pricelist_list_items: pricelistListItems,
   pricelist_get_price: pricelistGetPrice,
   pricelist_price_history: pricelistPriceHistory,
