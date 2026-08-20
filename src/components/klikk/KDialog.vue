@@ -13,6 +13,11 @@
     description? (String)    — auto-rendered subtext below title
     size?        (String)    — 'sm'|'md'|'lg'|'xl' → 380/540/720/960px (default 'md')
 
+  Height: the panel never exceeds the viewport (see --kd-top / max-height in the
+  styles). Header and footer are pinned; the default slot scrolls. Callers should
+  therefore NOT put a fixed/min height on their body content — it will just push
+  the scroll further, which is exactly the bug that made this a rule.
+
   Slots:
     trigger   — element that opens the dialog (wrapped in DialogTrigger)
     header    — fully custom header (replaces auto title+description+close)
@@ -153,8 +158,24 @@ defineEmits(['update:modelValue']);
 /* ── Content panel ────────────────────────────────────────────────────────── */
 /* z-index is set globally in src/css/portals.css via --kdl-z-dialog + 1 (DialogPortal → body) */
 .kd-content {
+  /*
+    Vertical anchor AND the ceiling on the panel height, in one place.
+
+    The panel is a flex column whose body is `overflow-y: auto`, but a scroll
+    container only scrolls when something bounds its height. Without an explicit
+    max-height the panel grew past the bottom of the viewport and the body never
+    became scrollable — the footer/action row and the tail of any tall dialog
+    were simply unreachable below the fold (reported on Audit -> Receipts at
+    1280x800). max-height is therefore load-bearing, not decoration.
+
+    Large panels get a smaller top offset: at 800px tall, 15vh spends 120px of a
+    very scarce budget on empty space above a dialog that wants every pixel.
+  */
+  --kd-top: 15vh;
+  --kd-gutter: 24px;
   position: fixed;
-  top: 15vh;
+  top: var(--kd-top);
+  max-height: calc(100vh - var(--kd-top) - var(--kd-gutter));
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 32px);
@@ -175,8 +196,8 @@ defineEmits(['update:modelValue']);
 /* Size variants */
 .kd-content--sm { max-width: 380px; }
 .kd-content--md { max-width: 540px; }
-.kd-content--lg { max-width: 720px; }
-.kd-content--xl { max-width: 960px; }
+.kd-content--lg { max-width: 720px; --kd-top: 8vh; }
+.kd-content--xl { max-width: 960px; --kd-top: 6vh; }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
 .kd-header {
@@ -296,6 +317,9 @@ defineEmits(['update:modelValue']);
     transform: none;
     max-width: 100%;
     width: 100%;
+    /* top is auto here, so the base calc would subtract a --kd-top that no
+       longer applies; restate the ceiling against the viewport instead. */
+    max-height: calc(100vh - var(--kd-gutter));
     border-radius: 12px 12px 0 0;
   }
 

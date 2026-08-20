@@ -7,7 +7,7 @@
  * Audit → Receipts console page (src/pages/AuditReceipts.vue).
  *
  * Same harness as AuditReceipts.modal.spec.ts: mount the REAL page (KTable /
- * KDialog / KMenu / KToggle / bulk bar all real), mock only src/api/receipts
+ * KDialog / KToggle / bulk bar all real), mock only src/api/receipts
  * and vue-router. Fixtures mirror hostile production shapes — journal: null,
  * total: null, a row with NO review block at all, non-numeric totals, and a
  * 200-row page.
@@ -18,9 +18,13 @@
  *     getRowId falls back to the row INDEX and a bulk action would silently
  *     hit the wrong receipts on other pages. The cross-page test asserts the
  *     POSTed sha256s are the PAGE-1 hashes after navigating to page 2.
- *   - The "" decision (Clear decision) reaches the API as decision: '' —
- *     never the '__none__' KSelect sentinel (the server would 400) and never
- *     dropped/undefined.
+ *   - Optimistic bulk state REVERTS on failure — for to_process and for
+ *     set_archived — with the partial-progress detail surfaced and NO refetch
+ *     on the failure path (the snapshot is the truth).
+ *
+ * The bulk Decision menu was REMOVED with the decision control (2026-08-20);
+ * its tests went with it. Bulk Archive / Restore bodies and the archived
+ * filter live in AuditReceipts.archive.spec.ts.
  *
  * Every test keeps the house guarantee: zero Vue warnings.
  */
@@ -51,7 +55,6 @@ vi.mock('vue-router', () => ({
 
 import * as api from '../../api/receipts';
 import AuditReceipts from '../AuditReceipts.vue';
-import KMenuItem from '../../components/klikk/KMenuItem.vue';
 import { useToast } from '../../composables/useToast';
 
 const mocked = api as unknown as {
@@ -510,51 +513,6 @@ describe('AuditReceipts bulk — action bodies', () => {
     w.unmount();
   });
 
-  it('a Decision menu item posts {decision: "CAPTURE"}; Clear decision posts decision: "" — the literal empty string, never the __none__ sentinel', async () => {
-    const w = await mountSelected();
-
-    // Open the KMenu (reka dropdown) and activate the Capture item.
-    (w.vm as unknown as { decisionMenuOpen: boolean }).decisionMenuOpen = true;
-    await nextTick();
-    await flushPromises();
-    let items = w.findAllComponents(KMenuItem);
-    expect(items.length).toBeGreaterThan(0);
-    const capture = items.find((i) => i.text() === 'Capture');
-    expect(capture).toBeTruthy();
-    capture!.vm.$emit('select');
-    await flushPromises();
-
-    let body = mocked.bulkUpdateReceipts.mock.calls.at(-1)![1];
-    expect(body).toEqual({ decision: 'CAPTURE' });
-
-    // Clear decision.
-    (w.vm as unknown as { decisionMenuOpen: boolean }).decisionMenuOpen = true;
-    await nextTick();
-    await flushPromises();
-    items = w.findAllComponents(KMenuItem);
-    const clear = items.find((i) => i.text() === 'Clear decision');
-    expect(clear).toBeTruthy();
-    clear!.vm.$emit('select');
-    await flushPromises();
-
-    body = mocked.bulkUpdateReceipts.mock.calls.at(-1)![1];
-    expect(Object.prototype.hasOwnProperty.call(body, 'decision')).toBe(true);
-    expect(body.decision).toBe('');
-    expect(body.decision).not.toBe('__none__');
-    expect(body).toEqual({ decision: '' });
-    w.unmount();
-  });
-
-  it('every bulk-bar menu decision option is a real enum value — the "" placeholder is not in the menu', async () => {
-    const w = await mountSelected();
-    (w.vm as unknown as { decisionMenuOpen: boolean }).decisionMenuOpen = true;
-    await nextTick();
-    await flushPromises();
-    const labels = w.findAllComponents(KMenuItem).map((i) => i.text());
-    expect(labels).toEqual(['Capture', 'Meal (skip)', 'Personal', 'Duplicate', 'Already in Xero', 'Clear decision']);
-    expect(labels).not.toContain('—');
-    w.unmount();
-  });
 });
 
 // ── Bulk comment dialog ─────────────────────────────────────────────────────
@@ -650,7 +608,7 @@ describe('AuditReceipts bulk — comment dialog', () => {
 // ── Optimistic apply / revert + selection persistence ───────────────────────
 
 describe('AuditReceipts bulk — optimistic revert and selection persistence', () => {
-  it('when bulkUpdateReceipts rejects, rows revert to their previous to_process / decision state and an error is surfaced', async () => {
+  it('when a bulk TO-PROCESS rejects, rows revert to their previous to_process state and an error is surfaced', async () => {
     let rejectBulk!: (e: Error) => void;
     mocked.bulkUpdateReceipts.mockImplementation(
       () => new Promise((_resolve, reject) => { rejectBulk = reject; }),
@@ -659,9 +617,8 @@ describe('AuditReceipts bulk — optimistic revert and selection persistence', (
     const w = mountPage();
     await flushPromises();
 
-    // Pre-state: row0 toggle OFF, row2 decision "Capture".
+    // Pre-state: row0 toggle OFF.
     expect(bodyRows(w)[0].get('[role="switch"]').attributes('aria-checked')).toBe('false');
-    expect(cellFor(w, bodyRows(w)[2], 'Decision').text()).toContain('Capture');
 
     await headerCheckbox(w).setValue(true);
     await nextTick();
@@ -680,7 +637,9 @@ describe('AuditReceipts bulk — optimistic revert and selection persistence', (
     // Reverted in the DOM.
     expect(bodyRows(w)[0].get('[role="switch"]').attributes('aria-checked')).toBe('false');
     expect(bodyRows(w)[1].get('[role="switch"]').attributes('aria-checked')).toBe('false');
-    expect(cellFor(w, bodyRows(w)[2], 'Decision').text()).toContain('Capture');
+    // The stored decision DATA on row2 survived the snapshot/revert cycle
+    // (the decision UI is gone; the field is not).
+    expect(((w.vm as any).rows[2] as { review: { decision: string } }).review.decision).toBe('CAPTURE');
 
     // Error surfaced — with the partial-progress detail.
     expect(w.text()).toContain('Bulk update failed');
@@ -691,6 +650,58 @@ describe('AuditReceipts bulk — optimistic revert and selection persistence', (
     // No refetch happened on the failure path — the snapshot is the truth.
     expect(mocked.getReceipts).toHaveBeenCalledTimes(1);
     // Selection is kept so the user can retry.
+    expect(bulkBar(w).text()).toContain('3 selected');
+    w.unmount();
+  });
+
+  it('when a bulk ARCHIVE rejects, the optimistic "Archived" pills revert and no refetch happens', async () => {
+    let rejectBulk!: (e: Error) => void;
+    mocked.bulkUpdateReceipts.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectBulk = reject; }),
+    );
+
+    const w = mountPage();
+    await flushPromises();
+
+    // Pre-state: no row is archived. (Scoped to the supplier cells — the
+    // filter bar's own "Archived" select label would trip a whole-page check.)
+    for (const tr of bodyRows(w)) {
+      expect(cellFor(w, tr, 'Supplier').text()).not.toContain('Archived');
+    }
+
+    await headerCheckbox(w).setValue(true);
+    await nextTick();
+    await barButton(w, 'Archive').trigger('click');
+    await nextTick();
+
+    expect(mocked.bulkUpdateReceipts).toHaveBeenCalledTimes(1);
+    expect(mocked.bulkUpdateReceipts.mock.calls[0][1]).toEqual({ set_archived: true });
+
+    // Optimistic while in flight: every selected row shows the Archived pill
+    // in its supplier cell, and the per-row action flips to Restore.
+    for (const tr of bodyRows(w)) {
+      expect(cellFor(w, tr, 'Supplier').text()).toContain('Archived');
+      expect(tr.findAll('button').some((b) => b.text() === 'Restore')).toBe(true);
+    }
+
+    const err = new Error('500') as Error & { partial?: unknown };
+    err.partial = { updated: 0, commented: 0, unknown: [], batchesDone: 0, batchesTotal: 1 };
+    rejectBulk(err);
+    await flushPromises();
+
+    // Reverted in the DOM — no pill, per-row action back to Archive.
+    for (const tr of bodyRows(w)) {
+      expect(cellFor(w, tr, 'Supplier').text()).not.toContain('Archived');
+      expect(tr.findAll('button').some((b) => b.text() === 'Archive')).toBe(true);
+      expect(tr.findAll('button').some((b) => b.text() === 'Restore')).toBe(false);
+    }
+
+    // Error surfaced; NO refetch on failure (the reverted snapshot is the truth
+    // — reloading under the default 'hide' filter would vanish rows that were
+    // never actually archived server-side).
+    expect(w.text()).toContain('Bulk update failed');
+    expect(mocked.getReceipts).toHaveBeenCalledTimes(1);
+    // Selection kept for retry.
     expect(bulkBar(w).text()).toContain('3 selected');
     w.unmount();
   });

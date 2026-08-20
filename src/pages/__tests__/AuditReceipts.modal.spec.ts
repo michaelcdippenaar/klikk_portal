@@ -21,10 +21,13 @@
  *     getReceipt(sha256); closes again and the open state resets
  *   - PDF vs image branch renders <iframe> vs <img src=view_url>
  *   - opening a SECOND receipt after closing the first shows the second's data
+ *     (drafts tracked via noteDraft — the note is the only review draft left)
  *   - KToggle → patchReceiptReview(sha, { to_process: true }); when the PATCH
- *     rejects, the optimistic toggle reverts and an error alert is raised
- *   - decision select → patchReceiptReview(sha, { decision }) with the spec
- *     enum value
+ *     rejects, the optimistic toggle reverts and an error alert is raised —
+ *     and the revert restores the row's stored decision/note DATA untouched
+ *     (`review.decision` still exists as data; only its UI control was removed
+ *     on 2026-08-20 — see AuditReceipts.archive.spec.ts for the no-decision-UI
+ *     and archive-flow coverage)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -541,9 +544,9 @@ describe('AuditReceipts — detail modal open / close', () => {
     expect(dlg.textContent).not.toContain('ONLY-ON-FIRST');
     expect(dlg.textContent).not.toContain('first-receipt-comment');
     expect(dlg.textContent).not.toContain('Makro');
-    // Review drafts follow the second receipt.
+    // The review draft follows the second receipt. (noteDraft is the only
+    // review draft left — decisionDraft went with the decision control.)
     expect((w.vm as any).noteDraft).toBe('lunch');
-    expect((w.vm as any).decisionDraft).toBe('MEAL_SKIP');
     // Its review toggle is ON in the dialog.
     const dialogSwitch = dlg.querySelector('[role="switch"]');
     expect(dialogSwitch!.getAttribute('aria-checked')).toBe('true');
@@ -575,9 +578,9 @@ describe('AuditReceipts — detail modal open / close', () => {
   });
 });
 
-// ── To-process toggle + decision select ─────────────────────────────────────
+// ── To-process toggle ───────────────────────────────────────────────────────
 
-describe('AuditReceipts — to-process toggle and decision select', () => {
+describe('AuditReceipts — to-process toggle', () => {
   it('toggling the row switch PATCHes { to_process: true } for that sha256 and keeps the optimistic state on success', async () => {
     const w = mountPage();
     await flushPromises();
@@ -632,7 +635,9 @@ describe('AuditReceipts — to-process toggle and decision select', () => {
     w.unmount();
   });
 
-  it('revert on failure also restores the previous decision for a row whose review was non-default', async () => {
+  // The decision CONTROL is gone from the UI (2026-08-20), but `review.decision`
+  // is still DATA the API returns and the revert path must not corrupt it.
+  it('revert on failure also restores the previous stored decision/note data for a row whose review was non-default', async () => {
     mocked.patchReceiptReview.mockRejectedValue(new Error('500'));
     const w = mountPage();
     await flushPromises();
@@ -643,33 +648,6 @@ describe('AuditReceipts — to-process toggle and decision select', () => {
     expect(r.review.to_process).toBe(true);
     expect(r.review.decision).toBe('MEAL_SKIP');
     expect(r.review.note).toBe('lunch');
-    w.unmount();
-  });
-
-  it('setting a decision via the row select PATCHes { decision: <enum> }; choosing the NONE sentinel sends decision: ""', async () => {
-    const w = mountPage();
-    await flushPromises();
-
-    // Drive the handler the KSelect emits into — the reka Select popover is
-    // not reliably clickable in happy-dom, so emit from the component.
-    const rowSelect = bodyRows(w)[1].findComponent({ name: 'KSelect' });
-    expect(rowSelect.exists()).toBe(true);
-    rowSelect.vm.$emit('update:modelValue', 'CAPTURE');
-    await flushPromises();
-    expect(mocked.patchReceiptReview).toHaveBeenLastCalledWith(SHA_UNMATCHED, { decision: 'CAPTURE' });
-
-    const flaggedSelect = bodyRows(w)[5].findComponent({ name: 'KSelect' });
-    flaggedSelect.vm.$emit('update:modelValue', '__none__');
-    await flushPromises();
-    expect(mocked.patchReceiptReview).toHaveBeenLastCalledWith(SHA_SKIPPED, { decision: '' });
-    w.unmount();
-  });
-
-  it('row select reflects the stored decision label (MEAL_SKIP → "Meal (skip)", "" → "—")', async () => {
-    const w = mountPage();
-    await flushPromises();
-    expect(cellFor(w, bodyRows(w)[5], 'Decision').text()).toContain('Meal (skip)');
-    expect(cellFor(w, bodyRows(w)[0], 'Decision').text()).toContain('—');
     w.unmount();
   });
 });

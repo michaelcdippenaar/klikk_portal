@@ -8,6 +8,11 @@
  *   - currency / date / datetime formatting
  *   - status_group → StatusPill tone / label
  *   - hydrateFromQuery() / buildRouteQuery() — the URL ⇄ filter-state contract
+ *
+ * NOTE on `decision`: the decision control was removed from the UI (2026-08-20)
+ * but the enum, the label helper and the filter plumbing stay — the model field
+ * and the API parameter are unchanged and still carry existing data, and other
+ * callers of the bulk endpoint rely on the contract.
  */
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -81,6 +86,31 @@ export const DECISION_FILTER_OPTIONS = [
   { value: DECISION_FILTER_UNDECIDED, label: 'Undecided' },
   ...DECISION_VALUES.filter((d) => d.value !== '').map((d) => ({ value: d.value, label: d.label })),
 ];
+
+/**
+ * Archived filter — THREE-WAY, and the default is not "no filter".
+ *
+ * Archiving takes a receipt out of the working list without deleting anything,
+ * so the whole point is that the list EXCLUDES archived rows unless asked. The
+ * ALL sentinel is deliberately not used here: '__all__' would read as "no
+ * filter", and the default state is a real filter.
+ *
+ * Values are the literal strings the API accepts on `?archived=`:
+ *   'hide'  — default; the param is omitted and the server excludes archived
+ *   'true'  — archived rows only
+ *   'all'   — both
+ */
+export const ARCHIVED_HIDE = 'hide';
+export const ARCHIVED_ONLY = 'true';
+export const ARCHIVED_ALL = 'all';
+
+export const ARCHIVED_OPTIONS = [
+  { value: ARCHIVED_HIDE, label: 'Hide archived' },
+  { value: ARCHIVED_ONLY, label: 'Archived only' },
+  { value: ARCHIVED_ALL, label: 'Incl. archived' },
+];
+
+const ARCHIVED_VALUES = ARCHIVED_OPTIONS.map((o) => o.value);
 
 /** Decision options for the row/detail KSelect — NONE sentinel stands in for ''. */
 export const DECISION_SELECT_OPTIONS = DECISION_VALUES.map((d) => ({
@@ -231,6 +261,7 @@ export function defaultFilters() {
     status: ALL,
     to_process: ALL,
     decision: ALL,
+    archived: ARCHIVED_HIDE,
     date_from: '',
     date_to: '',
     page: 1,
@@ -258,6 +289,10 @@ export function hydrateFromQuery(q = {}) {
   if (str('status')) f.status = str('status');
   if (['true', 'false'].includes(str('to_process'))) f.to_process = str('to_process');
   if (str('decision')) f.decision = str('decision');
+  // Only the two non-default values are honoured; anything else (incl. a
+  // hand-typed 'archived=banana') falls back to hiding archived rows, which is
+  // the same thing the server does with an unrecognised value.
+  if (ARCHIVED_VALUES.includes(str('archived'))) f.archived = str('archived');
   if (str('date_from')) f.date_from = str('date_from');
   if (str('date_to')) f.date_to = str('date_to');
 
@@ -282,6 +317,7 @@ export function buildRouteQuery(f) {
   if (f.status && f.status !== ALL) query.status = f.status;
   if (f.to_process && f.to_process !== ALL) query.to_process = f.to_process;
   if (f.decision && f.decision !== ALL) query.decision = f.decision;
+  if (f.archived && f.archived !== ARCHIVED_HIDE) query.archived = f.archived;
   if (f.date_from) query.date_from = f.date_from;
   if (f.date_to) query.date_to = f.date_to;
   if (Number(f.page) > 1) query.page = String(f.page);
@@ -303,6 +339,8 @@ export function buildApiParams(f, { includePaging = true } = {}) {
   if (f.status && f.status !== ALL) params.status = f.status;
   if (f.to_process && f.to_process !== ALL) params.to_process = f.to_process;
   if (f.decision && f.decision !== ALL) params.decision = f.decision;
+  // 'hide' is the server's default behaviour, so it is sent as nothing at all.
+  if (f.archived && f.archived !== ARCHIVED_HIDE) params.archived = f.archived;
   if (f.date_from) params.date_from = f.date_from;
   if (f.date_to) params.date_to = f.date_to;
   if (includePaging) {
@@ -315,6 +353,6 @@ export function buildApiParams(f, { includePaging = true } = {}) {
 /** True when any non-paging filter differs from its default. */
 export function hasActiveFilters(f) {
   const d = defaultFilters();
-  return ['q', 'fy', 'synced', 'status', 'to_process', 'decision', 'date_from', 'date_to']
+  return ['q', 'fy', 'synced', 'status', 'to_process', 'decision', 'archived', 'date_from', 'date_to']
     .some((k) => f[k] !== d[k]);
 }

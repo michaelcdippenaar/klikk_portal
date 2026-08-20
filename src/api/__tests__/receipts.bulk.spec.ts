@@ -144,6 +144,27 @@ describe('bulkUpdateReceipts — aggregation across batches', () => {
     expect(Object.prototype.hasOwnProperty.call(body, 'decision')).toBe(true);
     expect(body.decision).toBe('');
   });
+
+  // Archive (2026-08-20): a "select all N" archive is exactly the flow that
+  // exceeds BULK_MAX, so set_archived must ride every batch like the others —
+  // and set_archived: false (Restore) must never be dropped as falsy.
+  it('set_archived rides EVERY batch of an oversized selection, and false is not dropped as falsy', async () => {
+    client.post.mockResolvedValue(okBatch({ updated: 1 }));
+    await bulkUpdateReceipts(ids(600), { set_archived: true });
+    expect(client.post).toHaveBeenCalledTimes(2);
+    expect(client.post.mock.calls[0][1].sha256s.length).toBe(500);
+    expect(client.post.mock.calls[1][1].sha256s.length).toBe(100);
+    for (const [, body] of client.post.mock.calls) {
+      expect(body.set_archived).toBe(true);
+      expect(Object.keys(body).sort()).toEqual(['set_archived', 'sha256s']);
+    }
+
+    client.post.mockClear();
+    await bulkUpdateReceipts(ids(2), { set_archived: false });
+    const body = client.post.mock.calls[0][1];
+    expect(Object.prototype.hasOwnProperty.call(body, 'set_archived')).toBe(true);
+    expect(body.set_archived).toBe(false);
+  });
 });
 
 describe('bulkUpdateReceipts — mid-flight failure', () => {

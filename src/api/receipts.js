@@ -15,7 +15,11 @@ export const BULK_MAX = 500;
 /**
  * Paginated receipt list.
  * params: q, synced, status, fy, date_from, date_to, to_process, decision,
- *         category, min_total, max_total, ordering, page, page_size
+ *         archived, category, min_total, max_total, ordering, page, page_size
+ *
+ * `archived` is three-way and its DEFAULT is a filter, not the absence of one:
+ * omitted -> archived receipts are EXCLUDED (that is the point of archiving),
+ * 'true'  -> archived only, 'all' -> both. See utils/receipts ARCHIVED_OPTIONS.
  * Returns: { count, page, page_size, num_pages, totals: { count, sum_total }, results[] }
  */
 export async function getReceipts(params = {}) {
@@ -40,8 +44,8 @@ export async function getReceiptIds(params = {}) {
  * summed. Batches are POSTed sequentially (not in parallel) to keep the DB
  * write load predictable and the failure mode simple.
  *
- * actions: { set_to_process?, decision?, note?, comment? } — at least one
- * required (server 400s otherwise). Unknown sha256s are reported by the
+ * actions: { set_to_process?, set_archived?, decision?, note?, comment? } — at
+ * least one required (server 400s otherwise). Unknown sha256s are reported by the
  * server, not fatal — valid ones in the same batch are still processed.
  *
  * Returns the aggregate { updated, commented, unknown } across batches.
@@ -86,8 +90,12 @@ export async function getReceipt(sha256) {
 }
 
 /**
- * PATCH the review block. body: { to_process?, decision?, note? }
- * Returns the updated review object.
+ * PATCH the review block. body: { to_process?, archived?, decision?, note? }
+ * Returns the updated review object (incl. archived / archived_at / archived_by).
+ *
+ * `decision` is still accepted and still stores — the control was removed from
+ * the UI on 2026-08-20, the contract was not. Never send it as '' from a screen
+ * that does not display it, or you silently clear existing data.
  */
 export async function patchReceiptReview(sha256, body) {
   const response = await apiClient.patch(`${BASE}${encodeURIComponent(sha256)}/review/`, body);

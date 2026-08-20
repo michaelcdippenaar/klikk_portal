@@ -80,9 +80,9 @@
         class="ar-filter--medium"
       />
       <KSelect
-        v-model="filters.decision"
-        label="Decision"
-        :options="DECISION_FILTER_OPTIONS"
+        v-model="filters.archived"
+        label="Archived"
+        :options="ARCHIVED_OPTIONS"
         class="ar-filter--medium"
       />
       <KInput
@@ -145,23 +145,12 @@
         To process ✗
       </button>
 
-      <KMenu v-model="decisionMenuOpen">
-        <template #trigger>
-          <button class="btn btn-ghost btn-sm" :disabled="bulkRunning">Decision ▾</button>
-        </template>
-        <KMenuItem
-          v-for="opt in BULK_DECISION_OPTIONS"
-          :key="opt.value"
-          :disabled="bulkRunning"
-          @select="runBulk({ decision: opt.value })"
-        >
-          {{ opt.label }}
-        </KMenuItem>
-        <KMenuSeparator />
-        <KMenuItem :disabled="bulkRunning" @select="runBulk({ decision: '' })">
-          Clear decision
-        </KMenuItem>
-      </KMenu>
+      <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="runBulk({ set_archived: true })">
+        Archive
+      </button>
+      <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="runBulk({ set_archived: false })">
+        Restore
+      </button>
 
       <button class="btn btn-ghost btn-sm" :disabled="bulkRunning" @click="bulkCommentOpen = true">
         Add comment…
@@ -211,6 +200,7 @@
 
         <template #cell-supplier="{ value, row }">
           <span :class="value ? '' : 'text-muted'" :title="row.filename || ''">{{ value || '—' }}</span>
+          <StatusPill v-if="row.review?.archived" tone="neutral" label="Archived" size="sm" />
         </template>
 
         <template #cell-total="{ value }">
@@ -242,27 +232,25 @@
           </span>
         </template>
 
-        <template #cell-decision="{ row }">
-          <span class="ar-inline-control ar-inline-control--select" @click.stop>
-            <KSelect
-              :modelValue="row.review?.decision ? row.review.decision : NONE"
-              :options="DECISION_SELECT_OPTIONS"
-              :disabled="isSaving(row.sha256)"
-              aria-label="Decision"
-              class="ar-row-select"
-              @update:modelValue="(v) => setDecision(row, v)"
-            />
-          </span>
-        </template>
-
-        <template #cell-comment_count="{ value }">
-          <span :class="value ? '' : 'text-muted'">{{ value || 0 }}</span>
+        <template #cell-comment_count="{ value, row }">
+          <ReceiptCommentCell
+            :sha256="row.sha256"
+            :count="Number(value) || 0"
+            @added="onInlineComment"
+          />
         </template>
 
         <template #cell-actions="{ row }">
           <span class="ar-actions" @click.stop>
             <button class="btn btn-ghost btn-xs" @click="openDetail(row)">View</button>
-            <button class="btn btn-ghost btn-xs" @click="openDetail(row, { focusComment: true })">Comment</button>
+            <button
+              class="btn btn-ghost btn-xs"
+              :disabled="isSaving(row.sha256)"
+              :title="row.review?.archived ? 'Put this receipt back in the working list' : 'Take this receipt out of the working list (nothing is deleted)'"
+              @click="setArchived(row, !row.review?.archived)"
+            >
+              {{ row.review?.archived ? 'Restore' : 'Archive' }}
+            </button>
           </span>
         </template>
       </KTable>
@@ -358,12 +346,6 @@
                 :disabled="isSaving(detail.sha256)"
                 @update:modelValue="(v) => setToProcess(detail, v)"
               />
-              <KSelect
-                v-model="decisionDraft"
-                label="Decision"
-                :options="DECISION_SELECT_OPTIONS"
-                :disabled="isSaving(detail.sha256)"
-              />
               <label class="ar-field">
                 <span class="ar-field__label">Note</span>
                 <textarea
@@ -374,20 +356,6 @@
                   :disabled="isSaving(detail.sha256)"
                 />
               </label>
-              <div class="ar-review__actions">
-                <span class="ar-sub">
-                  <template v-if="detail.review?.updated_at">
-                    Last saved {{ formatDateTime(detail.review.updated_at) }}<template v-if="detail.review.updated_by"> by {{ detail.review.updated_by }}</template>
-                  </template>
-                </span>
-                <button
-                  class="btn btn-primary btn-sm"
-                  :disabled="!reviewDirty || isSaving(detail.sha256)"
-                  @click="saveReview"
-                >
-                  {{ isSaving(detail.sha256) ? 'Saving…' : 'Save review' }}
-                </button>
-              </div>
             </div>
           </section>
 
@@ -429,6 +397,28 @@
           </section>
         </div>
       </div>
+
+      <template v-if="detail" #footer>
+        <span class="ar-footer__meta">
+          <template v-if="detail.review?.updated_at">
+            Last saved {{ formatDateTime(detail.review.updated_at) }}<template v-if="detail.review.updated_by"> by {{ detail.review.updated_by }}</template>
+          </template>
+        </span>
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="isSaving(detail.sha256)"
+          @click="setArchived(detail, !detail.review?.archived)"
+        >
+          {{ detail.review?.archived ? 'Restore' : 'Archive' }}
+        </button>
+        <button
+          class="btn btn-primary btn-sm"
+          :disabled="!reviewDirty || isSaving(detail.sha256)"
+          @click="saveReview"
+        >
+          {{ isSaving(detail.sha256) ? 'Saving…' : 'Save review' }}
+        </button>
+      </template>
     </KDialog>
 
     <!-- Bulk comment -->
@@ -476,15 +466,12 @@ import {
   downloadReceiptsExport,
 } from '../api/receipts';
 import {
-  NONE,
-  DECISION_VALUES,
   PAGE_SIZE_OPTIONS,
   FY_OPTIONS,
   SYNCED_OPTIONS,
   STATUS_OPTIONS,
   TO_PROCESS_OPTIONS,
-  DECISION_FILTER_OPTIONS,
-  DECISION_SELECT_OPTIONS,
+  ARCHIVED_OPTIONS,
   formatMoney,
   formatDateShort,
   formatDateTime,
@@ -506,14 +493,12 @@ import KAlert from '../components/klikk/KAlert.vue';
 import KBadge from '../components/klikk/KBadge.vue';
 import KDialog from '../components/klikk/KDialog.vue';
 import KInput from '../components/klikk/KInput.vue';
-import KMenu from '../components/klikk/KMenu.vue';
-import KMenuItem from '../components/klikk/KMenuItem.vue';
-import KMenuSeparator from '../components/klikk/KMenuSeparator.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
 import KToggle from '../components/klikk/KToggle.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
+import ReceiptCommentCell from '../components/receipts/ReceiptCommentCell.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
 
@@ -539,9 +524,8 @@ const columns = [
   { accessorKey: 'category', header: 'Category', enableSorting: false, meta: { width: '140px' } },
   { accessorKey: 'status_group', header: 'Xero status', enableSorting: false, meta: { width: '220px' } },
   { id: 'to_process', accessorFn: (r) => !!r.review?.to_process, header: 'To process', enableSorting: false, meta: { align: 'center', width: '96px' } },
-  { id: 'decision', accessorFn: (r) => r.review?.decision || '', header: 'Decision', enableSorting: false, meta: { width: '150px' } },
   { accessorKey: 'comment_count', header: 'Comments', enableSorting: false, meta: { align: 'center', width: '90px' } },
-  { id: 'actions', header: '', enableSorting: false, meta: { width: '140px' } },
+  { id: 'actions', header: '', enableSorting: false, meta: { width: '160px' } },
 ];
 
 const filtersActive = computed(() => hasActiveFilters(filters));
@@ -558,9 +542,6 @@ const selection = useReceiptSelection(filterSignature);
 const allPageRowsSelected = computed(
   () => rows.value.length > 0 && rows.value.every((r) => selection.has(r.sha256)),
 );
-
-/** Decision menu items — every real decision value (the '' sentinel is the separated "Clear decision" item). */
-const BULK_DECISION_OPTIONS = DECISION_VALUES.filter((d) => d.value !== '');
 
 const countLabel = computed(() => {
   if (loading.value && !rows.value.length) return 'Loading receipts…';
@@ -621,7 +602,7 @@ function syncRoute() {
 // Filter change → back to page 1, refetch, sync URL.
 watch(
   () => [filters.q, filters.fy, filters.synced, filters.status, filters.to_process,
-    filters.decision, filters.date_from, filters.date_to],
+    filters.decision, filters.archived, filters.date_from, filters.date_to],
   () => {
     filters.page = 1;
     load();
@@ -708,15 +689,37 @@ function setToProcess(row, value) {
   return patchReview(row.sha256, { to_process: !!value }, { optimistic: { to_process: !!value } });
 }
 
-function setDecision(row, selectValue) {
-  const decision = selectValue === NONE || selectValue == null ? '' : String(selectValue);
-  return patchReview(row.sha256, { decision }, { optimistic: { decision } });
+/**
+ * Archive / restore one receipt.
+ *
+ * Deliberately NOT optimistic: with the default 'Hide archived' filter the row
+ * is about to leave the population entirely, so a local patch would leave a
+ * ghost row and a stale count behind. Reload instead — that is also what keeps
+ * the toolbar count/total honest about the working set.
+ */
+async function setArchived(row, value) {
+  const archived = !!value;
+  const ok = await patchReview(row.sha256, { archived });
+  if (!ok) return false;
+  toast.success(archived ? 'Receipt archived.' : 'Receipt restored.');
+  if (detail.value && detail.value.sha256 === row.sha256) detailOpen.value = false;
+  await load();
+  return true;
+}
+
+/** A comment was posted from the row's inline cell — keep the row count in step. */
+function onInlineComment({ sha256 }) {
+  rows.value = rows.value.map((r) =>
+    r.sha256 === sha256 ? { ...r, comment_count: (Number(r.comment_count) || 0) + 1 } : r,
+  );
+  if (detail.value && detail.value.sha256 === sha256) {
+    detail.value = { ...detail.value, comment_count: (Number(detail.value.comment_count) || 0) + 1 };
+  }
 }
 
 // ── Bulk actions ────────────────────────────────────────────────────────────
 const bulkRunning = ref(false);
 const selectAllLoading = ref(false);
-const decisionMenuOpen = ref(false);
 const bulkCommentOpen = ref(false);
 const bulkCommentDraft = ref('');
 
@@ -754,6 +757,7 @@ async function runBulk(actions) {
   const snapshot = rows.value;
   const review = {};
   if ('set_to_process' in actions) review.to_process = actions.set_to_process;
+  if ('set_archived' in actions) review.archived = actions.set_archived;
   if ('decision' in actions) review.decision = actions.decision;
   if ('note' in actions) review.note = actions.note;
   if (Object.keys(review).length) applyReviewToSelection(review);
@@ -805,7 +809,6 @@ async function submitBulkComment() {
 const detailOpen = ref(false);
 const detail = ref(null);
 const detailLoading = ref(false);
-const decisionDraft = ref(NONE);
 const noteDraft = ref('');
 const commentDraft = ref('');
 const commentSaving = ref(false);
@@ -825,13 +828,11 @@ const detailDescription = computed(() => {
 const reviewDirty = computed(() => {
   if (!detail.value) return false;
   const current = detail.value.review || {};
-  const draftDecision = decisionDraft.value === NONE ? '' : String(decisionDraft.value || '');
-  return draftDecision !== (current.decision || '') || noteDraft.value !== (current.note || '');
+  return noteDraft.value !== (current.note || '');
 });
 
 function syncDraftsFromDetail() {
   const review = detail.value?.review || {};
-  decisionDraft.value = review.decision ? review.decision : NONE;
   noteDraft.value = review.note || '';
 }
 
@@ -862,8 +863,10 @@ async function openDetail(row, { focusComment = false } = {}) {
 
 async function saveReview() {
   if (!detail.value) return;
-  const decision = decisionDraft.value === NONE ? '' : String(decisionDraft.value || '');
-  await patchReview(detail.value.sha256, { decision, note: noteDraft.value });
+  // `decision` is intentionally not sent: the control is gone from the UI, but
+  // the field and the API parameter still exist and still hold data, and a
+  // save from this screen must not blank a decision it never showed.
+  await patchReview(detail.value.sha256, { note: noteDraft.value });
   syncDraftsFromDetail();
 }
 
@@ -964,15 +967,6 @@ onMounted(() => {
   align-items: center;
 }
 
-.ar-inline-control--select {
-  width: 100%;
-  min-width: 0;
-}
-
-.ar-row-select {
-  width: 100%;
-}
-
 .ar-actions {
   display: inline-flex;
   gap: 4px;
@@ -989,12 +983,25 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 20px;
-  min-height: 420px;
+  /*
+    NO min-height. KDialog caps the panel at the viewport and scrolls its body;
+    a floor here would push the review + comments below the fold again at 800px,
+    which is the bug this replaced.
+  */
 }
 
 @media (max-width: 840px) {
   .ar-detail {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Keep the receipt in view while the review/comments column scrolls past it. */
+@media (min-width: 841px) {
+  .ar-detail__media {
+    position: sticky;
+    top: 0;
+    align-self: start;
   }
 }
 
@@ -1007,7 +1014,9 @@ onMounted(() => {
 
 .ar-detail__img {
   width: 100%;
-  max-height: 70vh;
+  /* Sized to the viewport, not to a fixed pixel height: at 800px tall the old
+     70vh preview alone consumed the whole dialog body. */
+  max-height: 52vh;
   object-fit: contain;
   border: 1px solid var(--kdl-border);
   border-radius: 8px;
@@ -1016,7 +1025,8 @@ onMounted(() => {
 
 .ar-detail__frame {
   width: 100%;
-  height: 70vh;
+  height: 52vh;
+  min-height: 240px;
   border: 1px solid var(--kdl-border);
   border-radius: 8px;
   background: var(--kdl-surface-sunken, var(--kdl-hover-bg));
@@ -1194,5 +1204,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Pushes the pinned footer's action buttons to the right of the saved-state text. */
+.ar-footer__meta {
+  margin-right: auto;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--kdl-text-muted);
 }
 </style>

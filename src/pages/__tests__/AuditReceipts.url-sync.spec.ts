@@ -18,9 +18,16 @@
  *     keys, min_total=notanumber, synced=yes, repeated params as arrays)
  *     degrades to sane defaults — no NaN / undefined ever reaches the API
  *   - 'Undecided' is sent as decision=NONE, never decision=''
+ *   - `archived` is THREE-WAY with a defaulted filter ('hide'): the default is
+ *     omitted from URL and API params (the server already excludes archived),
+ *     'true'/'all' round-trip, and anything else degrades to 'hide'
  *   - buildApiParams drops the ALL sentinels, sends page/page_size as numbers,
  *     and omits paging for the export call
  *   - hasActiveFilters ignores paging, notices any real filter
+ *
+ * NOTE: the decision CONTROL left the UI on 2026-08-20, but the decision
+ * filter plumbing (model field + API param) deliberately stayed — these
+ * decision assertions cover the surviving contract, not a UI feature.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -28,6 +35,9 @@ import {
   ALL,
   DEFAULT_PAGE_SIZE,
   DECISION_FILTER_UNDECIDED,
+  ARCHIVED_HIDE,
+  ARCHIVED_ONLY,
+  ARCHIVED_ALL,
   defaultFilters,
   hydrateFromQuery,
   buildRouteQuery,
@@ -42,6 +52,7 @@ const FULL = () => ({
   status: 'NOT IN XERO',
   to_process: 'false',
   decision: DECISION_FILTER_UNDECIDED,
+  archived: ARCHIVED_ONLY,
   date_from: '2026-01-01',
   date_to: '2026-06-30',
   page: 3,
@@ -78,11 +89,19 @@ describe('defaultFilters', () => {
       status: ALL,
       to_process: ALL,
       decision: ALL,
+      archived: ARCHIVED_HIDE,
       date_from: '',
       date_to: '',
       page: 1,
       page_size: DEFAULT_PAGE_SIZE,
     });
+  });
+
+  it("archived defaults to 'hide' — a REAL filter, not the ALL sentinel", () => {
+    // 'hide' must never be the '__all__' no-filter sentinel: the default state
+    // EXCLUDES archived rows, which is the entire point of archiving.
+    expect(defaultFilters().archived).toBe('hide');
+    expect(defaultFilters().archived).not.toBe(ALL);
   });
 });
 
@@ -108,11 +127,18 @@ describe('buildRouteQuery', () => {
       status: 'NOT IN XERO',
       to_process: 'false',
       decision: 'NONE',
+      archived: 'true',
       date_from: '2026-01-01',
       date_to: '2026-06-30',
       page: '3',
       page_size: '25',
     });
+  });
+
+  it("archived: 'hide' (the default) is omitted; 'true' and 'all' are serialised", () => {
+    expect(buildRouteQuery({ ...defaultFilters(), archived: ARCHIVED_HIDE })).toEqual({});
+    expect(buildRouteQuery({ ...defaultFilters(), archived: ARCHIVED_ONLY })).toEqual({ archived: 'true' });
+    expect(buildRouteQuery({ ...defaultFilters(), archived: ARCHIVED_ALL })).toEqual({ archived: 'all' });
   });
 
   it('drops the ALL sentinel for every select filter', () => {
@@ -213,6 +239,16 @@ describe('hydrateFromQuery', () => {
     expect(buildApiParams(hydrateFromQuery({ decision: '' }))).not.toHaveProperty('decision');
   });
 
+  it("archived='true'/'all' are honoured; everything else falls back to 'hide'", () => {
+    expect(hydrateFromQuery({ archived: 'true' }).archived).toBe(ARCHIVED_ONLY);
+    expect(hydrateFromQuery({ archived: 'all' }).archived).toBe(ARCHIVED_ALL);
+    for (const junk of ['banana', 'false', 'TRUE', 'hide', '', '1', 'yes', null, ['x']]) {
+      expect(hydrateFromQuery({ archived: junk as never }).archived, `archived=${String(junk)}`).toBe(ARCHIVED_HIDE);
+    }
+    // Repeated param → first value wins, like every other filter.
+    expect(hydrateFromQuery({ archived: ['all', 'true'] }).archived).toBe(ARCHIVED_ALL);
+  });
+
   it('repeated params (arrays from vue-router) take the first value; empty arrays → default', () => {
     expect(hydrateFromQuery({ fy: ['FY26', 'FY27'] }).fy).toBe('FY26');
     expect(hydrateFromQuery({ page: ['4', '9'] }).page).toBe(4);
@@ -264,6 +300,7 @@ describe('buildApiParams', () => {
       status: 'NOT IN XERO',
       to_process: 'false',
       decision: 'NONE',
+      archived: 'true',
       date_from: '2026-01-01',
       date_to: '2026-06-30',
       page: 3,
@@ -278,6 +315,15 @@ describe('buildApiParams', () => {
     const p = buildApiParams({ ...defaultFilters(), decision: DECISION_FILTER_UNDECIDED });
     expect(p.decision).toBe('NONE');
     expect(p.decision).not.toBe('');
+  });
+
+  it("archived: 'hide' sends NO archived param (server default already excludes); 'true'/'all' are sent literally", () => {
+    expect(buildApiParams(defaultFilters())).not.toHaveProperty('archived');
+    expect(buildApiParams({ ...defaultFilters(), archived: ARCHIVED_ONLY }).archived).toBe('true');
+    expect(buildApiParams({ ...defaultFilters(), archived: ARCHIVED_ALL }).archived).toBe('all');
+    // The export call inherits the same behaviour.
+    expect(buildApiParams(defaultFilters(), { includePaging: false })).not.toHaveProperty('archived');
+    expect(buildApiParams({ ...defaultFilters(), archived: ARCHIVED_ALL }, { includePaging: false }).archived).toBe('all');
   });
 
   it('corrupted page / page_size (NaN, 0, negative, string garbage) degrade to 1 / 50 — never NaN', () => {
@@ -311,7 +357,7 @@ describe('hasActiveFilters', () => {
   it('true when any single filter is set', () => {
     for (const [k, v] of Object.entries({
       q: 'x', fy: 'FY26', synced: 'false', status: 'SKIPPED', to_process: 'true',
-      decision: 'NONE', date_from: '2026-01-01', date_to: '2026-06-30',
+      decision: 'NONE', archived: 'all', date_from: '2026-01-01', date_to: '2026-06-30',
     })) {
       expect(hasActiveFilters({ ...defaultFilters(), [k]: v }), k).toBe(true);
     }
