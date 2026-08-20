@@ -15,6 +15,17 @@
     <KAlert v-if="error" variant="error" :title="error" class="mb-4" dismissible />
     <KAlert v-if="actionError" variant="error" :title="actionError" class="mb-4" dismissible />
 
+    <!-- Undo. Marking a comment actioned removes it from an "open" list, which
+         is correct but leaves no way back from where the user is standing --
+         they would have to know to change the status filter first. -->
+    <div v-if="undo" class="cc-undo">
+      <span>Marked <strong>{{ undo.status }}</strong>: "{{ undo.excerpt }}"</span>
+      <button class="btn btn-ghost btn-sm" :disabled="undoBusy" @click="undoLast">
+        {{ undoBusy ? 'Undoing…' : 'Undo' }}
+      </button>
+      <button class="btn btn-ghost btn-sm" @click="undo = null" aria-label="Dismiss">&times;</button>
+    </div>
+
     <FilterBar class="mb-3">
       <KSelect
         v-model="filters.status"
@@ -246,12 +257,51 @@ function formatWhen(iso) {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
 }
 
+const undo = ref(null);
+const undoBusy = ref(false);
+let undoTimer = null;
+
+/**
+ * Put a comment back the way it was.
+ *
+ * Deliberately restores the PREVIOUS status rather than forcing "open": undoing
+ * a dismissal on something that was already actioned should not quietly promote
+ * it back into the queue.
+ */
+async function undoLast() {
+  if (!undo.value) return;
+  undoBusy.value = true;
+  actionError.value = null;
+  try {
+    const { id, from } = undo.value;
+    const restored = await setCubeCommentStatus(id, from);
+    undo.value = null;
+    if (undoTimer) clearTimeout(undoTimer);
+    // It belongs back in view if it matches the current filter again.
+    if (filters.status === 'all' || restored.status === filters.status) await load();
+  } catch (e) {
+    actionError.value = e?.response?.data?.error || e.message || 'Could not undo that.';
+  } finally {
+    undoBusy.value = false;
+  }
+}
+
 async function setStatus(row, status) {
   busyId.value = row.id;
   actionError.value = null;
   try {
+    const previous = row.status;
     const updated = await setCubeCommentStatus(row.id, status);
     row.status = updated.status;
+    undo.value = {
+      id: row.id,
+      from: previous,
+      status: updated.status,
+      excerpt: (row.comment || '').slice(0, 60) + ((row.comment || '').length > 60 ? '…' : ''),
+    };
+    // Long enough to notice and act on, short enough not to linger as clutter.
+    if (undoTimer) clearTimeout(undoTimer);
+    undoTimer = setTimeout(() => { undo.value = null; }, 15000);
     // Drop it from view when it no longer matches the filter, rather than
     // leaving a row that says "actioned" in a list captioned "open".
     if (filters.status !== 'all' && updated.status !== filters.status) {
@@ -314,6 +364,19 @@ onMounted(load);
 </script>
 
 <style scoped>
+.cc-undo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--k-border, #e3e3e3);
+  border-radius: 6px;
+  background: var(--k-subtle, #f3f4f6);
+  font-size: 12.5px;
+}
+.cc-undo > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .cc-list { display: flex; flex-direction: column; gap: 10px; }
 .cc {
   border: 1px solid var(--k-border, #e3e3e3);
