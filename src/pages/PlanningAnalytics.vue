@@ -462,8 +462,11 @@ export default defineComponent({
       testingConnection.value = true;
       connectionResult.value = null;
       try {
+        // '********' is the server's mask for the stored password — don't send it
+        // as a literal password; omit it so the backend uses the saved one.
+        const password = tm1.password === '********' ? undefined : tm1.password;
         const res = await api.testTm1Connection({
-          base_url: tm1.baseUrl, user: tm1.user, password: tm1.password,
+          base_url: tm1.baseUrl, user: tm1.user, password,
         });
         connectionResult.value = res;
       } catch (e) {
