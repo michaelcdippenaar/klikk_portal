@@ -34,20 +34,11 @@
       </button>
     </FilterBar>
 
-    <div class="rv2-summary mb-3">
-      <div class="rv2-summary__item">
-        <span>Receipts in queue</span>
-        <strong>{{ totals.count }}</strong>
-      </div>
-      <div class="rv2-summary__item">
-        <span>Filtered value</span>
-        <strong>{{ formatMoney(totals.sum_total) }}</strong>
-      </div>
-      <div class="rv2-summary__item">
-        <span>Default order</span>
-        <strong>Newest first</strong>
-      </div>
-      <div class="rv2-summary__hint">Click Date, Supplier or Total to sort the complete queue.</div>
+    <div class="rv2-summary mb-3" aria-label="Receipt queue summary">
+      <MetricTile label="Receipts in queue" :value="totals.count" />
+      <MetricTile label="Filtered value" :value="formatMoney(totals.sum_total)" />
+      <MetricTile label="Default order" value="Newest first" />
+      <p class="rv2-summary__hint">Sort the complete queue by selecting Date, Supplier or Total.</p>
     </div>
 
     <KAlert v-if="error" variant="error" :title="error" class="mb-3" />
@@ -217,6 +208,7 @@ import KInput from '../components/klikk/KInput.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
 import KTable from '../components/klikk/KTable.vue';
+import MetricTile from '../components/klikk/MetricTile.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
@@ -520,48 +512,143 @@ onMounted(() => {
 .rv2-filter { flex: 0 1 130px; min-width: 120px; }
 .rv2-filter--wide { flex-basis: 170px; min-width: 150px; }
 .rv2-filter__clear { align-self: flex-end; }
-.rv2-summary { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
-.rv2-summary__item { min-width: 150px; padding: 10px 12px; border: 1px solid var(--kdl-border); border-radius: 9px; background: var(--kdl-card-bg); }
-.rv2-summary__item span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--kdl-text-muted); }
-.rv2-summary__item strong { display: block; margin-top: 3px; font-size: 14px; }
-.rv2-summary__hint { display: flex; align-items: center; margin-left: auto; color: var(--kdl-text-muted); font-size: 12px; }
-.rv2-workspace { display: grid; grid-template-columns: minmax(390px, 0.65fr) minmax(720px, 1.35fr); gap: 14px; align-items: start; }
+.rv2-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 190px)) minmax(240px, 1fr);
+  gap: var(--kdl-space-2);
+  align-items: stretch;
+}
+.rv2-summary__hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0;
+  color: var(--kdl-text-muted);
+  font-size: var(--kdl-font-size-caption);
+}
+.rv2-workspace {
+  display: grid;
+  grid-template-columns: minmax(390px, 0.65fr) minmax(720px, 1.35fr);
+  gap: var(--kdl-space-4);
+  align-items: start;
+}
 .rv2-queue,
 .rv2-review { min-width: 0; }
-.rv2-review { position: sticky; top: 14px; max-height: calc(100vh - 100px); overflow: auto; }
-.rv2-sub { display: block; font-size: 10px; color: var(--kdl-text-muted); }
-.rv2-money { font-family: var(--kdl-font-mono, ui-monospace, monospace); white-space: nowrap; }
-.rv2-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--kdl-text-muted); font-size: 12px; }
-.rv2-review-body { display: flex; flex-direction: column; gap: 18px; }
-.rv2-receipt-workspace { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr); gap: 18px; align-items: start; }
-.rv2-receipt-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.rv2-receipt-meta div { padding: 9px; border: 1px solid var(--kdl-border); border-radius: 8px; }
-.rv2-receipt-meta span { display: block; font-size: 10px; text-transform: uppercase; color: var(--kdl-text-muted); }
-.rv2-receipt-meta strong { display: block; margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; }
-.rv2-document { position: sticky; top: 0; min-height: 360px; max-height: 680px; display: flex; justify-content: center; border: 1px solid var(--kdl-border); border-radius: 9px; background: var(--kdl-surface-sunken, var(--kdl-hover-bg)); overflow: hidden; }
+.rv2-review {
+  position: sticky;
+  top: var(--kdl-space-4);
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+}
+.rv2-sub {
+  display: block;
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-muted);
+}
+.rv2-money {
+  font-family: var(--kdl-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rv2-loading {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kdl-space-2);
+  color: var(--kdl-text-muted);
+  font-size: var(--kdl-font-size-caption);
+}
+.rv2-review-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kdl-space-5);
+}
+.rv2-receipt-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  gap: var(--kdl-space-5);
+  align-items: start;
+}
+.rv2-receipt-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--kdl-space-2);
+}
+.rv2-receipt-meta div {
+  padding: var(--kdl-space-3);
+  border: var(--kdl-border-width) solid var(--kdl-border-subtle);
+  border-radius: var(--kdl-radius-md);
+  background: var(--kdl-surface-sunken);
+}
+.rv2-receipt-meta span {
+  display: block;
+  font-size: var(--kdl-font-size-overline);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--kdl-text-hint);
+}
+.rv2-receipt-meta strong {
+  display: block;
+  margin-top: var(--kdl-space-1);
+  font-size: var(--kdl-font-size-caption);
+  overflow-wrap: anywhere;
+}
+.rv2-document {
+  position: sticky;
+  top: 0;
+  min-height: 360px;
+  max-height: 680px;
+  display: flex;
+  justify-content: center;
+  border: var(--kdl-border-width) solid var(--kdl-border-subtle);
+  border-radius: var(--kdl-radius-lg);
+  background: var(--kdl-surface-sunken);
+  overflow: hidden;
+}
 .rv2-document img { width: 100%; height: auto; max-height: 680px; object-fit: contain; }
 .rv2-document iframe { width: 100%; height: 680px; border: 0; }
-.rv2-document__missing { align-self: center; color: var(--kdl-text-muted); font-size: 12px; }
+.rv2-document__missing {
+  align-self: center;
+  color: var(--kdl-text-muted);
+  font-size: var(--kdl-font-size-caption);
+}
 .rv2-confirm,
-.rv2-future { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; border: 1px solid var(--kdl-border); border-radius: 9px; }
+.rv2-future {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--kdl-space-4);
+  padding: var(--kdl-space-4);
+  border: var(--kdl-border-width) solid var(--kdl-border-subtle);
+  border-radius: var(--kdl-radius-lg);
+}
 .rv2-confirm { border-color: color-mix(in srgb, var(--kdl-accent) 35%, var(--kdl-border)); background: color-mix(in srgb, var(--kdl-accent) 5%, var(--kdl-card-bg)); }
-.rv2-future { background: var(--kdl-surface-sunken, var(--kdl-hover-bg)); }
+.rv2-future { background: var(--kdl-surface-sunken); }
 .rv2-confirm h3,
-.rv2-future h3 { margin: 0; font-size: 13px; }
+.rv2-future h3 { margin: 0; font-size: var(--kdl-font-size-small); }
 .rv2-confirm p,
-.rv2-future p { margin: 3px 0 0; font-size: 12px; color: var(--kdl-text-muted); }
+.rv2-future p {
+  margin: var(--kdl-space-1) 0 0;
+  font-size: var(--kdl-font-size-caption);
+  color: var(--kdl-text-muted);
+}
 @media (max-width: 1420px) {
   .rv2-workspace { grid-template-columns: 1fr; }
   .rv2-review { position: static; max-height: none; }
 }
 @media (max-width: 880px) {
+  .rv2-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rv2-summary__hint { grid-column: 1 / -1; justify-content: flex-start; }
   .rv2-receipt-workspace { grid-template-columns: 1fr; }
   .rv2-document { position: static; min-height: 260px; max-height: 520px; }
   .rv2-document img { max-height: 520px; }
   .rv2-document iframe { height: 520px; }
 }
 @media (max-width: 640px) {
-  .rv2-summary__hint { margin-left: 0; }
+  .rv2-summary { grid-template-columns: 1fr; }
+  .rv2-summary__hint { grid-column: auto; }
   .rv2-receipt-meta { grid-template-columns: 1fr; }
   .rv2-confirm,
   .rv2-future { flex-direction: column; align-items: flex-start; }

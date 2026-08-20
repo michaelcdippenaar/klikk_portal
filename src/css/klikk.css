@@ -18,6 +18,33 @@
     --ease-standard:   cubic-bezier(0.2, 0, 0, 1);
     --ease-enter:      cubic-bezier(0, 0, 0, 1);
 
+    /* Shared foundations — use these before introducing component-local values. */
+    --kdl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --kdl-font-size-overline: 11px;
+    --kdl-font-size-caption: 12px;
+    --kdl-font-size-small: 13px;
+    --kdl-font-size-body: 14px;
+    --kdl-font-size-section: 16px;
+    --kdl-line-height-tight: 1.2;
+    --kdl-line-height-body: 1.45;
+
+    --kdl-space-1: 4px;
+    --kdl-space-2: 8px;
+    --kdl-space-3: 12px;
+    --kdl-space-4: 16px;
+    --kdl-space-5: 20px;
+    --kdl-space-6: 24px;
+    --kdl-space-8: 32px;
+
+    --kdl-radius-sm: 6px;
+    --kdl-radius-md: 8px;
+    --kdl-radius-lg: 12px;
+    --kdl-radius-pill: 999px;
+    --kdl-border-width: 1px;
+    --kdl-focus-ring-width: 2px;
+    --kdl-control-sm: 32px;
+    --kdl-control-md: 40px;
+
     /* Z-index stacking scale — Reka portal primitives
      * All portal-rendered content uses these tokens via portals.css so that
      * scoped data-v-* attributes (which don't follow teleported nodes) are
@@ -35,6 +62,7 @@
     --kdl-page-bg:        #F5F5F8;
     --kdl-card-bg:        #FFFFFF;
     --kdl-raised-bg:      #FFFFFF;
+    --kdl-surface-sunken: #F8F8FB;
     --kdl-hover-bg:       #F9FAFB;
     --kdl-border-subtle:  #EFEFF5;
     --kdl-border:         #E5E7EB;
@@ -46,6 +74,12 @@
     --kdl-accent:         #FF3D7F;
     --kdl-accent-pressed: #E02D6B;
     --kdl-dot-grid:       #2B2D6E0D;
+    --kdl-status-success: #0D9488;
+    --kdl-status-warning: #B45309;
+    --kdl-status-danger:  #DC2626;
+    --kdl-status-info:    #2563EB;
+    --kdl-success:        var(--kdl-status-success);
+    --kdl-danger:         var(--kdl-status-danger);
 
     /* Shadows (light) */
     --shadow-soft:     0 1px 2px rgba(15,17,57,0.04), 0 2px 6px rgba(15,17,57,0.04);
@@ -58,6 +92,7 @@
     --kdl-page-bg:        #0E0F1A;
     --kdl-card-bg:        #161827;
     --kdl-raised-bg:      #1D1F30;
+    --kdl-surface-sunken: #121421;
     --kdl-hover-bg:       #23253A;
     --kdl-border-subtle:  #262842;
     --kdl-border:         #34365A;
@@ -69,6 +104,10 @@
     --kdl-accent:         #FF4F8A;
     --kdl-accent-pressed: #FF3D7F;
     --kdl-dot-grid:       rgba(255, 255, 255, 0.04);
+    --kdl-status-success: #2DD4BF;
+    --kdl-status-warning: #FBBF24;
+    --kdl-status-danger:  #F87171;
+    --kdl-status-info:    #60A5FA;
 
     --shadow-soft:     inset 0 1px 0 rgba(255,255,255,0.04);
     --shadow-lifted:   inset 0 1px 0 rgba(255,255,255,0.06), 0 12px 32px rgba(0,0,0,0.4);

@@ -25,6 +25,45 @@ function readSrc(rel: string): string {
 
 const klikkcss   = readSrc('src/css/klikk.css');
 const portalscss = readSrc('src/css/portals.css');
+const receiptsV2Css = [
+  readSrc('src/pages/AuditReceiptsV2.vue'),
+  readSrc('src/components/receipts-v2/ReceiptReviewForm.vue'),
+  readSrc('src/components/receipts-v2/SupplierJournalSearch.vue'),
+].join('\n');
+
+describe('Klikk shared design foundations', () => {
+  const FOUNDATION_TOKENS = [
+    '--kdl-font-mono',
+    '--kdl-font-size-caption',
+    '--kdl-font-size-body',
+    '--kdl-space-1',
+    '--kdl-space-2',
+    '--kdl-space-3',
+    '--kdl-space-4',
+    '--kdl-radius-md',
+    '--kdl-radius-lg',
+    '--kdl-border-width',
+    '--kdl-control-md',
+    '--kdl-surface-sunken',
+    '--kdl-status-danger',
+  ] as const;
+
+  for (const token of FOUNDATION_TOKENS) {
+    it(`declares ${token}`, () => {
+      expect(klikkcss).toContain(`${token}:`);
+    });
+  }
+
+  it('keeps Receipts V2 free of component-local colour literals', () => {
+    expect(receiptsV2Css).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  });
+
+  it('uses shared spacing, typography and radius tokens in Receipts V2', () => {
+    expect(receiptsV2Css).toContain('var(--kdl-space-');
+    expect(receiptsV2Css).toContain('var(--kdl-font-size-');
+    expect(receiptsV2Css).toContain('var(--kdl-radius-');
+  });
+});
 
 // ── 1. Token declarations in klikk.css ──────────────────────────────────────
 
