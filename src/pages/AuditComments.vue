@@ -1,0 +1,356 @@
+<template>
+  <AppPage>
+    <PageHeader
+      title="Cell comments"
+      subtitle="Notes pinned to figures in Excel — by MC and by the agents — and the transactions behind them"
+    >
+      <template #actions>
+        <button class="btn btn-ghost btn-sm" :disabled="loading" @click="load">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mr-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Refresh
+        </button>
+      </template>
+    </PageHeader>
+
+    <KAlert v-if="error" variant="error" :title="error" class="mb-4" dismissible />
+    <KAlert v-if="actionError" variant="error" :title="actionError" class="mb-4" dismissible />
+
+    <FilterBar class="mb-3">
+      <KSelect
+        v-model="filters.status"
+        label="Status"
+        :options="STATUS_OPTIONS"
+        class="min-w-40"
+      />
+      <KSelect
+        v-model="filters.author"
+        label="Author"
+        :options="authorOptions"
+        class="min-w-48"
+      />
+      <KInput
+        v-model="filters.q"
+        label="Search"
+        placeholder="Comment text, account, supplier…"
+        clearable
+        :debounce="300"
+        class="flex-1 min-w-56"
+      />
+    </FilterBar>
+
+    <SectionCard>
+      <KSpinner v-if="loading && !rows.length" size="sm" tone="accent" />
+      <EmptyState
+        v-else-if="!loading && !error && rows.length === 0"
+        title="Nothing here"
+        :body="emptyBody"
+      />
+      <div v-else class="cc-list">
+        <article v-for="row in rows" :key="row.id" class="cc">
+          <header class="cc__head">
+            <div class="cc__who">
+              <KBadge :tone="row.status === 'open' ? 'warning' : 'neutral'">
+                {{ row.status }}
+              </KBadge>
+              <strong class="cc__author">{{ row.author || 'unattributed' }}</strong>
+              <span class="cc__when">{{ formatWhen(row.updated_at) }}</span>
+            </div>
+            <div class="cc__actions">
+              <button
+                v-if="row.status !== 'actioned'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busyId === row.id"
+                @click="setStatus(row, 'actioned')"
+              >Actioned</button>
+              <button
+                v-if="row.status !== 'dismissed'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busyId === row.id"
+                @click="setStatus(row, 'dismissed')"
+              >Dismiss</button>
+              <button
+                v-if="row.status !== 'open'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busyId === row.id"
+                @click="setStatus(row, 'open')"
+              >Reopen</button>
+            </div>
+          </header>
+
+          <p class="cc__text">{{ row.comment }}</p>
+
+          <!-- The anchor, shown as coordinates. This is what the comment is
+               ABOUT; without it the note is just a sentence. -->
+          <div class="cc__coords">
+            <span v-for="(v, k) in coordsOf(row)" :key="k" class="cc__coord">
+              <span class="cc__dim">{{ k }}</span>{{ v }}
+            </span>
+            <span class="cc__measure">{{ row.measure }}</span>
+            <span v-if="row.cell_value !== null" class="cc__value">{{ money(row.cell_value) }}</span>
+          </div>
+
+          <!-- Filters are part of the anchor: the same coordinates under a
+               different date window is a different number. Showing them is the
+               difference between a reader trusting the figure and guessing. -->
+          <div v-if="hasFilters(row)" class="cc__filters">
+            <span v-for="(v, k) in filtersOf(row)" :key="k" class="cc__filter">
+              {{ k }}: {{ v }}
+            </span>
+          </div>
+
+          <div class="cc__drill">
+            <button
+              class="btn btn-ghost btn-sm"
+              :disabled="drillBusy === row.id"
+              @click="toggleDrill(row)"
+            >
+              {{ drillBusy === row.id
+                ? 'Resolving…'
+                : (drills[row.id] ? 'Hide transactions' : 'Show transactions') }}
+            </button>
+
+            <span v-if="drills[row.id]" class="cc__recon" :class="reconClass(row)">
+              {{ reconText(row) }}
+            </span>
+          </div>
+
+          <div v-if="drills[row.id]" class="cc__lines">
+            <table class="cc__table">
+              <thead>
+                <tr>
+                  <th>Date</th><th>Jrnl #</th><th>Type</th><th>Account</th>
+                  <th>Supplier</th><th>Description</th><th class="ta-r">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="line in drills[row.id].rows" :key="line.id">
+                  <td>{{ line.date }}</td>
+                  <td>{{ line.journal_number }}</td>
+                  <td>{{ line.journal_type }}</td>
+                  <td>{{ line.account_code }} {{ line.account_name }}</td>
+                  <td>{{ line.supplier_name }}</td>
+                  <td>{{ line.description }}</td>
+                  <td class="ta-r">{{ money(line.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-if="drills[row.id].truncated" class="cc__note">
+              Line cap reached — this shows the first {{ drills[row.id].rows.length }}.
+            </p>
+          </div>
+        </article>
+      </div>
+    </SectionCard>
+  </AppPage>
+</template>
+
+<script setup>
+import { ref, reactive, computed, watch, onMounted } from 'vue';
+import {
+  getCubeComments,
+  setCubeCommentStatus,
+  drillCubeComment,
+  commentCoordinates,
+  normaliseFilters,
+} from '../api/cubeComments';
+import AppPage from '../components/shell/AppPage.vue';
+import PageHeader from '../components/klikk/PageHeader.vue';
+import SectionCard from '../components/klikk/SectionCard.vue';
+import EmptyState from '../components/klikk/EmptyState.vue';
+import FilterBar from '../components/klikk/FilterBar.vue';
+import KAlert from '../components/klikk/KAlert.vue';
+import KBadge from '../components/klikk/KBadge.vue';
+import KInput from '../components/klikk/KInput.vue';
+import KSelect from '../components/klikk/KSelect.vue';
+import KSpinner from '../components/klikk/KSpinner.vue';
+
+const STATUS_OPTIONS = [
+  { label: 'Open', value: 'open' },
+  { label: 'Actioned', value: 'actioned' },
+  { label: 'Dismissed', value: 'dismissed' },
+  { label: 'All', value: 'all' },
+];
+
+const loading = ref(false);
+const error = ref(null);
+const actionError = ref(null);
+const busyId = ref(null);
+const drillBusy = ref(null);
+const all = ref([]);
+const drills = reactive({});
+
+const filters = reactive({ status: 'open', author: '', q: '' });
+
+async function load() {
+  loading.value = true;
+  error.value = null;
+  try {
+    const data = await getCubeComments({ status: filters.status, limit: 2000 });
+    all.value = data.results || [];
+  } catch (e) {
+    error.value = e?.response?.data?.error || e.message || 'Could not load comments.';
+  } finally {
+    loading.value = false;
+  }
+}
+
+// Author and text filtering are done here rather than server-side: the whole
+// queue is small (hundreds), and filtering locally keeps the status counts
+// honest without a second round trip per keystroke.
+const rows = computed(() => {
+  const term = (filters.q || '').toLowerCase();
+  return all.value.filter((r) => {
+    if (filters.author && (r.author_key || r.author || '') !== filters.author) return false;
+    if (!term) return true;
+    const hay = [
+      r.comment,
+      r.author,
+      ...(r.row_path || []),
+      String(r.col_path || ''),
+    ].join(' ').toLowerCase();
+    return hay.includes(term);
+  });
+});
+
+const authorOptions = computed(() => {
+  const seen = new Map();
+  all.value.forEach((r) => {
+    const key = r.author_key || r.author || '';
+    if (key && !seen.has(key)) seen.set(key, r.author || key);
+  });
+  return [{ label: 'Everyone', value: '' },
+    ...[...seen.entries()].map(([value, label]) => ({ label, value }))];
+});
+
+const emptyBody = computed(() =>
+  filters.status === 'open'
+    ? 'No open comments. Comments are written on a cell in the Excel add-in, or by an agent through the MCP.'
+    : 'Nothing matches these filters.');
+
+function coordsOf(row) { return commentCoordinates(row); }
+function filtersOf(row) {
+  const f = normaliseFilters(row.filters);
+  return Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v != null));
+}
+function hasFilters(row) { return Object.keys(filtersOf(row)).length > 0; }
+
+function money(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
+}
+
+async function setStatus(row, status) {
+  busyId.value = row.id;
+  actionError.value = null;
+  try {
+    const updated = await setCubeCommentStatus(row.id, status);
+    row.status = updated.status;
+    // Drop it from view when it no longer matches the filter, rather than
+    // leaving a row that says "actioned" in a list captioned "open".
+    if (filters.status !== 'all' && updated.status !== filters.status) {
+      all.value = all.value.filter((r) => r.id !== row.id);
+    }
+  } catch (e) {
+    actionError.value = e?.response?.data?.error || e.message || 'Could not update that comment.';
+  } finally {
+    busyId.value = null;
+  }
+}
+
+async function toggleDrill(row) {
+  if (drills[row.id]) {
+    delete drills[row.id];
+    return;
+  }
+  drillBusy.value = row.id;
+  actionError.value = null;
+  try {
+    drills[row.id] = await drillCubeComment(row);
+  } catch (e) {
+    actionError.value = e?.response?.data?.error || e.message || 'Could not resolve the transactions.';
+  } finally {
+    drillBusy.value = null;
+  }
+}
+
+/**
+ * Reconciliation is reported, not assumed.
+ *
+ * The lines behind a figure move when Xero is re-synced. A drill that no longer
+ * adds up to the value the comment was written about is a real signal — the
+ * ledger changed under a figure someone already reviewed — so it is stated
+ * plainly rather than quietly displayed as if it agreed.
+ */
+function reconDiff(row) {
+  const d = drills[row.id];
+  if (!d || row.cell_value === null || row.cell_value === undefined) return null;
+  return Math.abs(Number(row.cell_value) - Number(d.line_total));
+}
+function reconClass(row) {
+  const diff = reconDiff(row);
+  if (diff === null) return 'cc__recon--plain';
+  return diff > 0.005 ? 'cc__recon--bad' : 'cc__recon--ok';
+}
+function reconText(row) {
+  const d = drills[row.id];
+  if (!d) return '';
+  const base = `${d.count} line${d.count === 1 ? '' : 's'}, ${money(d.line_total)}`;
+  const diff = reconDiff(row);
+  if (diff === null) return base;
+  return diff > 0.005
+    ? `${base} — does not match the commented ${money(row.cell_value)} (out by ${money(diff)}). The data has changed since.`
+    : `${base} — matches the commented value.`;
+}
+
+watch(() => filters.status, load);
+onMounted(load);
+</script>
+
+<style scoped>
+.cc-list { display: flex; flex-direction: column; gap: 10px; }
+.cc {
+  border: 1px solid var(--k-border, #e3e3e3);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.cc__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cc__who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cc__author { font-size: 13px; }
+.cc__when { font-size: 11px; opacity: .6; }
+.cc__actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.cc__text { margin: 8px 0; white-space: pre-wrap; }
+.cc__coords { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cc__coord {
+  font-size: 11px;
+  background: var(--k-subtle, #f3f4f6);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.cc__dim { opacity: .6; margin-right: 4px; }
+.cc__measure { font-size: 11px; opacity: .6; }
+.cc__value { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cc__filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.cc__filter { font-size: 10.5px; opacity: .65; border: 1px dashed var(--k-border, #ddd); border-radius: 4px; padding: 1px 5px; }
+.cc__drill { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.cc__recon { font-size: 11.5px; }
+.cc__recon--ok { color: var(--k-success, #157347); }
+.cc__recon--bad { color: var(--k-danger, #b02a37); font-weight: 600; }
+.cc__lines { margin-top: 8px; overflow-x: auto; }
+.cc__table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.cc__table th, .cc__table td {
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--k-border, #eee);
+  white-space: nowrap;
+}
+.cc__table th { opacity: .65; font-weight: 500; }
+.ta-r { text-align: right; font-variant-numeric: tabular-nums; }
+.cc__note { font-size: 11px; opacity: .65; margin-top: 4px; }
+</style>

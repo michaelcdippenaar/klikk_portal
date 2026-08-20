@@ -187,6 +187,9 @@
                     <circle cx="11" cy="11" r="8" />
                     <path d="m21 21-4.3-4.3" />
                   </template>
+                  <template v-else-if="item.lucide === 'message-square'">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </template>
                   <template v-else-if="item.lucide === 'receipt'">
                     <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
                     <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
@@ -266,6 +269,7 @@ const navGroups = [
       { name: 'audit-procedures', label: 'Audit Procedures', lucide: 'clipboard-check' },
       { name: 'audit-findings',   label: 'Findings',         lucide: 'search-check' },
       { name: 'audit-receipts',   label: 'Receipts',         lucide: 'receipt' },
+      { name: 'audit-comments',  label: 'Cell Comments',    lucide: 'message-square' },
     ],
   },
   {
