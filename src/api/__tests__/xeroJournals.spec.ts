@@ -13,7 +13,7 @@ beforeEach(() => client.get.mockReset());
 
 describe('searchXeroJournals', () => {
   it('uses the authenticated journal search endpoint with supplier paging', async () => {
-    const payload = { count: 1, journals: [{ id: 1 }] };
+    const payload = { count: 1, results: [{ id: 1 }] };
     client.get.mockResolvedValue({ data: payload });
 
     await expect(searchXeroJournals({ contact: 'BP Dorp Street', limit: 200, offset: 0 }))

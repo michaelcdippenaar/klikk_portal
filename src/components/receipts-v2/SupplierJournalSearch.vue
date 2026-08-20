@@ -156,7 +156,12 @@ async function search(reset) {
       limit: PAGE_LIMIT,
       offset: reset ? 0 : lines.value.length,
     });
-    const incoming = Array.isArray(data?.journals) ? data.journals : [];
+    // The Django endpoint returns `results`; the MCP adapter exposes the same
+    // rows as `journals`. Accept both shapes so the production UI and agent
+    // interface stay compatible with the same read-only search service.
+    const incoming = Array.isArray(data?.results)
+      ? data.results
+      : (Array.isArray(data?.journals) ? data.journals : []);
     lines.value = reset ? incoming : [...lines.value, ...incoming];
     totalLineCount.value = Number(data?.count) || lines.value.length;
     searched.value = true;

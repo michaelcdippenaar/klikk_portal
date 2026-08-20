@@ -76,7 +76,7 @@ beforeEach(() => {
     to_process: true,
     decision: 'CAPTURE',
   });
-  journalMocks.searchXeroJournals.mockReset().mockResolvedValue({ count: 0, journals: [] });
+  journalMocks.searchXeroJournals.mockReset().mockResolvedValue({ count: 0, results: [] });
 });
 
 describe('AuditReceiptsV2', () => {
