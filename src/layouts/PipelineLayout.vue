@@ -269,6 +269,7 @@ const navGroups = [
       { name: 'audit-procedures', label: 'Audit Procedures', lucide: 'clipboard-check' },
       { name: 'audit-findings',   label: 'Findings',         lucide: 'search-check' },
       { name: 'audit-receipts',   label: 'Receipts',         lucide: 'receipt' },
+      { name: 'audit-receipts-v2', label: 'Receipts V2',     lucide: 'receipt' },
       { name: 'audit-comments',  label: 'Cell Comments',    lucide: 'message-square' },
     ],
   },
