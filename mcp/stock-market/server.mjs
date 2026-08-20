@@ -16,6 +16,7 @@ const SERVER_INSTRUCTIONS = [
   'When giving financial analysis, distinguish market price, market value, cost, income, and ROI.',
   'Year-end audit: when MC says "audit for financial year end", "run the year-end audit" or "check the books", call run_yearend_audit(fy) and reason over the findings; list_audit_checks / run_audit_check / audit_history / add_audit_check manage the registry. These never write to Xero.',
   'Equipment price list: pricelist_list_items / pricelist_get_price / pricelist_price_history read Klikk\'s event-gear rate card (ex VAT, ZAR); pricelist_build_quote prices a job without persisting anything; pricelist_set_price and pricelist_upsert_item mutate the local price list and require confirm=true. Never writes to Xero.',
+  'Books knowledge base: the kb_* tools are the allocation doctrine for Klikk\'s Xero books — kb_search / kb_read_document serve the doctrine docs (processing rules, transaction flows, chart-of-accounts taxonomy), kb_lookup_supplier / kb_lookup_customer / kb_lookup_account / kb_list_tracking give expected codings with rule strength, and kb_list_events is the gig register: pass the transaction date (on=YYYY-MM-DD) and if it falls in an event window the spend is an EVENT cost, not personal. Consult these BEFORE proposing any transaction allocation or audit verdict. All read-only; never touches Xero.',
   'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Comments can carry TAGS relating them to a workstream -- tag what you write and pull your own queue back with list_cube_comments(tag=\"audit\") instead of reading the whole register -- and an @mention in the text emails that person, so always report an unresolved or failed mention rather than assuming they were told. Never writes to Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
@@ -1350,6 +1351,88 @@ const tools = [
       properties: {
         id: { type: 'number', description: 'Comment id from list_cube_comments.' },
         limit: { type: 'number', description: 'Max journal lines to return (1-5000, default 500).', default: 500 },
+      },
+    },
+  },
+  {
+    name: 'kb_list_documents',
+    description: 'Books KB: list the allocation-doctrine documents (processing rules, chart-of-accounts taxonomy, supplier knowledge, tracking categories, data-quality watchlist, transaction flows, event register). Read one with kb_read_document. Read-only.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'kb_read_document',
+    description: "Books KB: read one doctrine document (markdown) by slug, e.g. '01-processing-rules', '06-transaction-flows', '07-event-register'. Read 01 before doing any allocation work.",
+    inputSchema: {
+      type: 'object',
+      required: ['slug'],
+      properties: { slug: { type: 'string', description: 'Document slug from kb_list_documents.' } },
+    },
+  },
+  {
+    name: 'kb_search',
+    description: "Books KB: full-text search across the doctrine documents. Natural-language queries, e.g. 'personal groceries loan account' or 'municipal split water electricity'. Returns matching docs with highlighted snippets.",
+    inputSchema: {
+      type: 'object',
+      required: ['q'],
+      properties: {
+        q: { type: 'string', description: 'websearch-style query.' },
+        limit: { type: 'number', description: 'Max documents (1-50, default 5).', default: 5 },
+      },
+    },
+  },
+  {
+    name: 'kb_lookup_supplier',
+    description: "Books KB: a supplier's expected coding (account, tax, tracking) from 2016-2025 observed history. rule_strength hard (>=80% consistency, safe to auto-code) / soft (verify) / info (line-level judgement). reviewed_by_mc=false means observed, not MC-confirmed. Partial name match.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Supplier name or fragment, e.g. herotel.' },
+        strength: { type: 'string', description: 'Optional filter: hard | soft | info.' },
+        limit: { type: 'number', description: 'Max rules (1-50, default 20).', default: 20 },
+      },
+    },
+  },
+  {
+    name: 'kb_lookup_customer',
+    description: 'Books KB: a customer\'s expected income coding (account, tax, tracking). Same strength semantics as kb_lookup_supplier. Partial name match.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Customer name or fragment.' },
+        limit: { type: 'number', description: 'Max rules (1-50, default 20).', default: 20 },
+      },
+    },
+  },
+  {
+    name: 'kb_lookup_account',
+    description: "Books KB: chart-of-accounts dictionary — look up accounts by code or name fragment (e.g. 'PM--SE01', '883', 'security') with usage stats and documented meaning. The prefix taxonomy is doctrine doc '02-accounts'.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string', description: 'Account code or name fragment.' },
+        limit: { type: 'number', description: 'Max accounts (1-50, default 25).', default: 25 },
+      },
+    },
+  },
+  {
+    name: 'kb_list_tracking',
+    description: 'Books KB: tracking options. Slot 1 = Profit Center (segment/location — every P&L line needs one), slot 2 = Room, slot 3 = Custom Tracking (Personal-*, Stefanie-*, Event-*, Flexibond-*).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slot: { type: 'number', description: 'Optional: 1, 2 or 3.' },
+        q: { type: 'string', description: 'Optional option-name filter.' },
+      },
+    },
+  },
+  {
+    name: 'kb_list_events',
+    description: "Books KB: the event/gig register with date windows. Pass on=YYYY-MM-DD (the transaction date) — if an event window covers it, food/fuel/accommodation/travel in that window is an EVENT cost (Event-* tracking, ER/EE accounts, or a recharge when Dippenaar Family invoiced the gig), NOT Personal-*. Check this BEFORE classifying consumer-merchant spend as personal.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        on: { type: 'string', description: 'Date YYYY-MM-DD to screen against event windows.' },
+        q: { type: 'string', description: 'Optional event-name filter, e.g. earthdance.' },
       },
     },
   },
@@ -3734,7 +3817,71 @@ async function getCommentTransactions(args = {}) {
   };
 }
 
+function kbParams(args, keys) {
+  const params = new URLSearchParams();
+  for (const key of keys) {
+    if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== '') {
+      params.set(key, String(args[key]).trim());
+    }
+  }
+  return params;
+}
+
+async function kbListDocuments() {
+  return apiRequest('/api/kb/documents/');
+}
+
+async function kbReadDocument(args = {}) {
+  const slug = String(args.slug || '').trim();
+  if (!slug) throw new Error('slug is required (from kb_list_documents)');
+  return apiRequest(`/api/kb/documents/${encodeURIComponent(slug)}/`);
+}
+
+async function kbSearch(args = {}) {
+  const q = String(args.q || '').trim();
+  if (!q) throw new Error('q is required');
+  const params = new URLSearchParams({ q, limit: String(clampNumber(args.limit, 5, 1, 50)) });
+  return apiRequest(`/api/kb/search/?${params}`);
+}
+
+async function kbLookupSupplier(args = {}) {
+  const params = kbParams(args, ['name', 'strength']);
+  params.set('limit', String(clampNumber(args.limit, 20, 1, 50)));
+  return apiRequest(`/api/kb/suppliers/?${params}`);
+}
+
+async function kbLookupCustomer(args = {}) {
+  const params = kbParams(args, ['name']);
+  params.set('limit', String(clampNumber(args.limit, 20, 1, 50)));
+  return apiRequest(`/api/kb/customers/?${params}`);
+}
+
+async function kbLookupAccount(args = {}) {
+  const params = kbParams(args, ['q']);
+  params.set('limit', String(clampNumber(args.limit, 25, 1, 50)));
+  return apiRequest(`/api/kb/accounts/?${params}`);
+}
+
+async function kbListTracking(args = {}) {
+  const params = kbParams(args, ['q']);
+  if (args.slot !== undefined && args.slot !== null && args.slot !== '') params.set('slot', String(args.slot));
+  return apiRequest(`/api/kb/tracking/?${params}`);
+}
+
+async function kbListEvents(args = {}) {
+  const params = kbParams(args, ['on', 'q']);
+  return apiRequest(`/api/kb/events/?${params}`);
+}
+
 const toolHandlers = {
+  kb_list_documents: kbListDocuments,
+  kb_read_document: kbReadDocument,
+  kb_search: kbSearch,
+  kb_lookup_supplier: kbLookupSupplier,
+  kb_lookup_customer: kbLookupCustomer,
+  kb_lookup_account: kbLookupAccount,
+  kb_list_tracking: kbListTracking,
+  kb_list_events: kbListEvents,
   data_health_summary: dataHealthSummary,
   xero_connection_status: xeroConnectionStatus,
   xero_list_tenants: xeroListTenants,

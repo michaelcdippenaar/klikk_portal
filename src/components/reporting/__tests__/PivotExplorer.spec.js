@@ -4158,3 +4158,554 @@ describe('PivotExplorer — interim freeze-guard: MAX row cap + cancellable quer
     expect(wrapper.find('button.pivot-toolbar__btn--cancel').exists()).toBe(true);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// 21 — PAW-style COLLAPSIBLE NESTED ROWS  [independent tester — author≠tester]
+//
+// Locks the PAW nested-row hierarchy that landed in 832276c: with ≥2 row dims,
+// each OUTER member renders ONCE as a collapsible PARENT row (a twisty on a
+// .pivot-grid__row-seg--parent segment), the inner rows indented beneath it, and
+// a CLIENT-SIDE collapse fold (collapsedRowKeys → visibleRows) that hides a
+// group's descendants with NO re-query while leaving the TOTALS (which read the
+// full pre-fold displayRows) byte-identical.
+//
+// The author left a single SMOKE test in the "multi-dimension row drill" block
+// (collapse FY24 → children gone, no re-query, totals unchanged, expand back).
+// This block is the independent-tester COMPLEMENT — deeper, mutation-targeted
+// coverage the smoke does NOT have:
+//   • outer-shown-ONCE (the parent is not repeated per inner account);
+//   • the cap counts the VISIBLE (folded) set, so collapsing a big group drops
+//     the rendered <tr> count below MAX_RENDER_ROWS and clears the cap banner;
+//   • RECURSIVE 3-dim (year ▸ entity ▸ account) — an INTERMEDIATE-level parent
+//     is itself collapsible and folds only its own subtree;
+//   • the outer parent label honours the per-dim ALIAS (entity UUID → name),
+//     principal in :title;
+//   • single-row-dim is the degenerate outerCount-0 case (no parent rows).
+//
+// Bar: mount the REAL PivotExplorer over the proven fake cube, drive collapse via
+// the REAL twisty <button> click (toggleOuter), assert OBSERVABLE DOM (rendered
+// <tr>, parent labels, footer/banner text) + the runTm1Query call count. Every
+// helper here is the module-level set the author supplied (parentRows /
+// parentLabelOf / outerTwistyFor / toggleOuterGroup / outerGroupOf / rowsByInner
+// / colTotalTexts / grandTotalText), plus the drag/zone wiring helpers.
+// ════════════════════════════════════════════════════════════════════════════
+describe('PivotExplorer — PAW collapsible nested rows [independent tester]', () => {
+  // Generic "drag dim D onto the Rows well" via the proven drag WIRING (real
+  // draggable grip + real role="group" Rows zone + stubbed dataTransfer). rowDims
+  // follows CUBE DECLARATION ORDER (rowDims = dimensions.filter(rows)), not drop
+  // order — so the order outer→inner is fixed by how the cube lists its dims, and
+  // this just flips the assignment. Mirrors the author's dragYearToRows, dim-agnostic.
+  async function dragDimToRows(wrapper, dim) {
+    const dt = makeDataTransfer(dim);
+    const rowsWell = zone(wrapper, 'rows');
+    fireDrag(filterGrip(wrapper, dim).element, 'dragstart', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'dragover', { dataTransfer: dt });
+    fireDrag(rowsWell.element, 'drop', { dataTransfer: dt });
+    await settle();
+  }
+
+  // ── Test 1: the OUTER member is shown ONCE (PAW), inner rows indented beneath ─
+  it('shows each outer (year) member ONCE as a parent row — never repeated per inner account — with the inner rows under each year', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper); // rowDims = [year, account], account innermost.
+
+    // Two YEAR parents, each emitted EXACTLY ONCE. The defect this guards (outer
+    // repeated on every inner row) would yield FY24 twice (once per account) etc.
+    const parents = parentRows(wrapper).map(parentLabelOf);
+    expect(parents).toEqual(['FY24', 'FY25']);
+    expect(parents.filter((p) => p === 'FY24').length).toBe(1);
+    expect(parents.filter((p) => p === 'FY25').length).toBe(1);
+
+    // The two inner account members render UNDER each year parent (not as outer
+    // columns): two EXPENSE rows + two COGS rows, one set per year block.
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(2);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
+    // …and each inner row's STRUCTURAL outer (nearest preceding parent) is a year,
+    // confirming the indent-beneath layout: the first EXPENSE/COGS sit under FY24,
+    // the second pair under FY25.
+    const expenseOuters = rowsByInner(wrapper, 'EXPENSE').map((tr) => outerGroupOf(wrapper, tr));
+    expect(expenseOuters).toEqual(['FY24', 'FY25']);
+
+    // A parent row carries NO drillable INNER segment (it's a group header, not an
+    // account leaf) — its label lives on the --parent segment, the inner labels on
+    // separate rows. So the inner-segment reader finds nothing on a parent row.
+    const fy24Parent = parentRows(wrapper).find((tr) => parentLabelOf(tr) === 'FY24');
+    expect(innerLabelOf(fy24Parent)).toBeNull();
+
+    // Document order is parent-then-its-children, per group: FY24, (its accounts),
+    // FY25, (its accounts) — the parent is adjacent to / above its own block.
+    const labels = bodyRows(wrapper).map(
+      (tr) => parentLabelOf(tr) ?? innerLabelOf(tr),
+    );
+    expect(labels).toEqual(['FY24', 'EXPENSE', 'COGS', 'FY25', 'EXPENSE', 'COGS']);
+  });
+
+  // ── Test 2: per-level collapse HIDES children, fires NO re-query (load-bearing) ─
+  it('collapsing a year parent hides ITS inner rows with no re-query, keeps the parent + the other year, and re-expand restores — still no query', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper);
+
+    // Baseline: each year has its EXPENSE + COGS inner rows.
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(2);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
+
+    // CAPTURE the query count — the whole point is that an outer collapse is a
+    // PURELY CLIENT-SIDE fold over already-fetched rows (contrast the inner drill,
+    // which DOES re-query). Mutating visibleRows to ignore collapsedRowKeys (so the
+    // fold is a no-op) is caught here: the FY24 children would NOT disappear.
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    await toggleOuterGroup(wrapper, 'FY24'); // collapse
+
+    // NO new query.
+    expect(runTm1Query.mock.calls.length, 'collapse must not re-query').toBe(callsBefore);
+
+    // FY24 itself STAYS (it owns the re-expand twisty); FY25 stays too. Only FY24's
+    // descendants are folded → exactly ONE EXPENSE + ONE COGS now, both under FY25.
+    expect(parentRows(wrapper).map(parentLabelOf)).toEqual(['FY24', 'FY25']);
+    expect(rowsByInner(wrapper, 'EXPENSE').length, 'FY24 children hidden').toBe(1);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(1);
+    rowsByInner(wrapper, 'EXPENSE').forEach((tr) => {
+      expect(outerGroupOf(wrapper, tr), 'the surviving inner rows are FY25’s').toBe('FY25');
+    });
+    // And FY24 has NO inner rows beneath it (its block is folded to just the header).
+    const order = bodyRows(wrapper).map((tr) => parentLabelOf(tr) ?? innerLabelOf(tr));
+    expect(order).toEqual(['FY24', 'FY25', 'EXPENSE', 'COGS']);
+
+    // The collapsed parent's twisty reports aria-expanded=false (it is the handle).
+    expect(outerTwistyFor(wrapper, 'FY24').attributes('aria-expanded')).toBe('false');
+    // FY25 is still open.
+    expect(outerTwistyFor(wrapper, 'FY25').attributes('aria-expanded')).toBe('true');
+
+    // RE-EXPAND FY24 → children come back, STILL no re-query (rows were never lost).
+    await toggleOuterGroup(wrapper, 'FY24');
+    expect(runTm1Query.mock.calls.length, 'expand must not re-query').toBe(callsBefore);
+    expect(rowsByInner(wrapper, 'EXPENSE').length, 'FY24 children restored').toBe(2);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(2);
+    expect(outerTwistyFor(wrapper, 'FY24').attributes('aria-expanded')).toBe('true');
+  });
+
+  // ── Test 3: TOTALS invariant under collapse (load-bearing — mutate-target) ───
+  it('column totals + grand total are BYTE-IDENTICAL before and after collapsing FY24 (totals read the full displayRows, not the folded visibleRows)', async () => {
+    const wrapper = await mountExplorerMultiDim();
+    await dragYearToRows(wrapper);
+
+    // Per year: EXPENSE 100 + COGS 40 = 140; two years → Jul column 280, grand 280.
+    // Snapshot the WHOLE footer cell array (Jul, Aug, per-row Total col) + grand.
+    const colTotalsBefore = colTotalTexts(wrapper);
+    const grandBefore = grandTotalText(wrapper);
+    expect(colTotalsBefore[0]).toBe('280'); // Jul
+    expect(grandBefore).toBe('280');
+
+    // Collapse FY24 — half the inner rows leave the SCREEN…
+    await toggleOuterGroup(wrapper, 'FY24');
+    expect(rowsByInner(wrapper, 'EXPENSE').length, 'FY24 folded off-screen').toBe(1);
+
+    // …but the totals are byte-identical: they roll up displayRows (the full
+    // pre-fold set), which the render-only fold never touches. If totalRows were
+    // (wrongly) derived from visibleRows, the Jul total would HALVE to 140 here.
+    expect(colTotalTexts(wrapper), 'col totals unchanged by the fold').toEqual(colTotalsBefore);
+    expect(grandTotalText(wrapper), 'grand total unchanged by the fold').toBe(grandBefore);
+    expect(colTotalTexts(wrapper)[0]).toBe('280');
+    expect(colTotalTexts(wrapper)[0]).not.toBe('140');
+    expect(grandTotalText(wrapper)).toBe('280');
+
+    // Collapse FY25 TOO — now BOTH groups are folded (only the two parent headers
+    // render) — totals STILL 280 (parents are excluded from totalRows regardless of
+    // collapse state, and every inner row still lives in displayRows).
+    await toggleOuterGroup(wrapper, 'FY25');
+    expect(rowsByInner(wrapper, 'EXPENSE').length, 'both groups folded').toBe(0);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(0);
+    expect(colTotalTexts(wrapper)[0], 'totals survive a full fold').toBe('280');
+    expect(grandTotalText(wrapper)).toBe('280');
+
+    // Expand both back — totals never moved.
+    await toggleOuterGroup(wrapper, 'FY24');
+    await toggleOuterGroup(wrapper, 'FY25');
+    expect(colTotalTexts(wrapper)).toEqual(colTotalsBefore);
+    expect(grandTotalText(wrapper)).toBe(grandBefore);
+  });
+
+  // ── Test 4: the CAP counts the VISIBLE (folded) set — collapse drops <tr> below
+  //    MAX_RENDER_ROWS and clears the cap banner ────────────────────────────────
+  // A real >1,000-row view: 2 years × 600 distinct account leaves = 1,200 visible
+  // inner rows + 2 parents (1,202 > 1,000 → capped). Collapsing FY24 folds 600 of
+  // them away → ~602 visible (under the cap) → banner clears, every visible row
+  // renders, and the footer drops its "of" wording. This is the multi-dim mirror
+  // of the freeze-guard cap suite, here driven by the PAW outer fold.
+  it('a capped multi-dim view un-caps when a big outer group is collapsed: rendered <tr> tracks visibleRows, the cap banner clears', async () => {
+    const N = 600; // per-year inner leaves → 2*N = 1,200 inner rows (> 1,000 cap).
+    const leaves = Array.from({ length: N }, (_, i) => `Acct${String(i + 1).padStart(4, '0')}`);
+    const ACC_TOP = 'All_Account';
+
+    // Big single-level account dim (numeric leaves; no inner consolidations so the
+    // tree is flat and every leaf is one visible row). year stays a 2-member dim.
+    installCubeMocks({ dimensions: ['year', 'account', 'month', 'measure'] });
+    getTm1DimensionElements.mockImplementation(async (dimension) => {
+      if (dimension === 'account') {
+        return { elements: [{ name: ACC_TOP, type: 'C' }, ...leaves.map((name) => ({ name, type: 'N' }))] };
+      }
+      return { elements: ELEMENTS[dimension] || [] };
+    });
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent) => {
+      if (dimension === 'account' && parent === ACC_TOP) {
+        return { children: leaves.map((name) => ({ name, type: 'N' })) };
+      }
+      return { children: (CHILDREN[dimension] && CHILDREN[dimension][parent]) || [] };
+    });
+    // year × account crossjoin: one row per (year, leaf), each valued 1 in Jul.
+    runTm1Query.mockImplementation(async (payload) => {
+      const rowDims = payload.rows || [];
+      const colMembers = (payload.cols?.[0]?.members || []).slice();
+      const columns = colMembers.map((m) => [m]);
+      const cellsFor = () => colMembers.map((cm) => ({ value: cm === 'Jul' ? 1 : 0, formatted: null }));
+      let rows = [];
+      if (rowDims.length === 2) {
+        const [outer, inner] = rowDims;
+        for (const om of outer.members || []) {
+          for (const im of inner.members || []) rows.push({ members: [om, im], cells: cellsFor() });
+        }
+      } else {
+        rows = (rowDims[0]?.members || []).map((m) => ({ members: [m], cells: cellsFor() }));
+      }
+      return {
+        columns,
+        rows,
+        colAxis: { dimensions: payload.cols?.[0]?.dimension ? [payload.cols[0].dimension] : [], tuples: columns.map((c) => c.slice()) },
+        rowAxis: { dimensions: rowDims.map((d) => d.dimension), tuples: rows.map((r) => r.members.slice()) },
+        mdx: `SELECT FROM [${payload.cube}]`,
+      };
+    });
+
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    await setSuppress(wrapper, false); // keep all 1,200 (value-1) rows in the set.
+    await dragYearToRows(wrapper); // rowDims = [year, account] → the big crossjoin.
+
+    // CAPPED: 1,200 inner + 2 parents = 1,202 visible, but the body is sliced to
+    // MAX_RENDER_ROWS (1,000). The banner + footer announce the cap.
+    expect(bodyRows(wrapper).length, 'body capped at the render limit').toBe(1000);
+    const banner = wrapper.find('[data-test="pivot-cap-banner"]');
+    expect(banner.exists(), 'cap banner shown while over the limit').toBe(true);
+    expect(banner.text()).toContain('1,000 of 1,202');
+    expect(wrapper.find('.pivot-footer__size').text()).toContain('1,000 of 1,202 rows');
+
+    // Both years present; FY24 owns 600 inner rows.
+    expect(parentRows(wrapper).map(parentLabelOf)).toEqual(['FY24', 'FY25']);
+
+    const callsBefore = runTm1Query.mock.calls.length;
+
+    // COLLAPSE FY24 — folds 600 inner rows away (client-side, no re-query). The
+    // visible set is now 600 (FY25 inner) + 2 parents = 602, UNDER the 1,000 cap.
+    await toggleOuterGroup(wrapper, 'FY24');
+    expect(runTm1Query.mock.calls.length, 'collapse on a big group does not re-query').toBe(callsBefore);
+
+    // UN-CAPPED: every visible row now renders (602 ≤ 1,000), so the rendered <tr>
+    // count TRACKS visibleRows — NOT the full 1,202 displayRows. A regression where
+    // renderRows/isCapped read displayRows would keep this at 1,000 + the banner up.
+    expect(bodyRows(wrapper).length, 'rendered rows track the folded visible set').toBe(602);
+    expect(wrapper.find('[data-test="pivot-cap-banner"]').exists(), 'cap banner cleared by the fold').toBe(false);
+    expect(wrapper.find('.pivot-footer__size').text(), 'footer drops the "of" cap wording').not.toContain('of');
+    expect(wrapper.find('.pivot-footer__size').text()).toContain('602 rows');
+
+    // The 602 rendered = FY24 header + FY25 header + 600 FY25 inner leaves.
+    expect(parentRows(wrapper).map(parentLabelOf)).toEqual(['FY24', 'FY25']);
+    expect(rowsByInner(wrapper, 'Acct0001').every((tr) => outerGroupOf(wrapper, tr) === 'FY25')).toBe(true);
+
+    // Totals are unaffected by either the cap or the fold: 1,200 leaves × 1 = 1,200.
+    expect(grandTotalText(wrapper), 'grand total sums the full set, not the rendered slice').toBe('1,200');
+    expect(colTotalTexts(wrapper)[0]).toBe('1,200');
+  });
+
+  // ── Test 5: RECURSIVE 3-dim (year ▸ entity ▸ account) — an INTERMEDIATE-level
+  //    parent is itself collapsible and folds only its own subtree ───────────────
+  // entity is a CONSOLIDATION root (ENT_GROUP) with two child UUIDs → on Rows its
+  // members are the two companies. Cube declared [year, entity, account, …] so
+  // rowDims (declaration order) = [year, entity, account]: year OUTERMOST, entity
+  // INTERMEDIATE, account INNERMOST. The author's buildMultiDimResponse only models
+  // 2 row dims, so this block ships its own deterministic 3-dim crossjoin builder.
+  describe('recursive 3-dim hierarchy (year ▸ entity ▸ account)', () => {
+    const ENT_TOP = 'ENT_GROUP';
+    const ENT_A = 'ent-aaaa-0001';
+    const ENT_B = 'ent-bbbb-0002';
+
+    // Wire entity onto the shared cube: a consolidation root with two leaf members.
+    function installEntity3d() {
+      installCubeMocks({ dimensions: ['year', 'entity', 'account', 'month', 'measure'] });
+      const baseElements = getTm1DimensionElements.getMockImplementation();
+      getTm1DimensionElements.mockImplementation(async (dimension, hier) => {
+        if (dimension === 'entity') {
+          return { elements: [{ name: ENT_TOP, type: 'C' }, { name: ENT_A, type: 'N' }, { name: ENT_B, type: 'N' }] };
+        }
+        return baseElements(dimension, hier);
+      });
+      const baseChildren = getTm1DimensionChildren.getMockImplementation();
+      getTm1DimensionChildren.mockImplementation(async (dimension, parent, hier) => {
+        if (dimension === 'entity') {
+          return parent === ENT_TOP
+            ? { children: [{ name: ENT_A, type: 'N' }, { name: ENT_B, type: 'N' }] }
+            : { children: [] };
+        }
+        return baseChildren(dimension, parent, hier);
+      });
+      // 3-row-dim crossjoin: year × entity × account, outer-slowest. Account is the
+      // inner tree (its members arrive depth-first from the drill order); year +
+      // entity are pure fans. Each account occurrence carries ITS contextual value
+      // (the proven leafValueFor walk, scope reset per (year,entity) block).
+      runTm1Query.mockImplementation(async (payload) => {
+        const rowDims = payload.rows || [];
+        const colMembers = (payload.cols?.[0]?.members || []).slice();
+        const columns = colMembers.map((m) => [m]);
+        const cellsFor = (scalar) => colMembers.map((cm) => ({ value: cm === 'Jul' ? scalar : 0, formatted: null }));
+        let rows = [];
+        if (rowDims.length === 3) {
+          const [yr, ent, acc] = rowDims;
+          for (const ym of yr.members || []) {
+            for (const em of ent.members || []) {
+              let scope = null;
+              for (const am of acc.members || []) {
+                const { value, scope: next } = leafValueFor(am, scope);
+                scope = next;
+                rows.push({ members: [ym, em, am], cells: cellsFor(value) });
+              }
+            }
+          }
+        } else if (rowDims.length === 2) {
+          // year × entity (before account-as-inner is reached, or any 2-dim probe).
+          const [a, b] = rowDims;
+          for (const am of a.members || []) {
+            for (const bm of b.members || []) rows.push({ members: [am, bm], cells: cellsFor(50) });
+          }
+        } else {
+          let scope = null;
+          rows = (rowDims[0]?.members || []).map((m) => {
+            const { value, scope: next } = leafValueFor(m, scope);
+            scope = next;
+            return { members: [m], cells: cellsFor(value) };
+          });
+        }
+        return {
+          columns,
+          rows,
+          colAxis: { dimensions: payload.cols?.[0]?.dimension ? [payload.cols[0].dimension] : [], tuples: columns.map((c) => c.slice()) },
+          rowAxis: { dimensions: rowDims.map((d) => d.dimension), tuples: rows.map((r) => r.members.slice()) },
+          mdx: `SELECT FROM [${payload.cube}]`,
+        };
+      });
+    }
+
+    it('an intermediate (entity) parent is itself collapsible: collapsing one entity hides ITS accounts but not the other entity, and the year parents are unaffected', async () => {
+      installEntity3d();
+      const wrapper = mount(PivotExplorer, { attachTo: document.body });
+      attachedWrappers.push(wrapper);
+      await settle();
+      // account is on Rows by default; add entity then year so rowDims (declaration
+      // order) = [year, entity, account].
+      await dragDimToRows(wrapper, 'entity');
+      await dragDimToRows(wrapper, 'year');
+
+      // PARENTS span TWO levels now: year (level-0) AND entity (level-1). Each year
+      // shows once; each entity shows once PER year (entity nests under year). So
+      // the parent labels are FY24, A, B, FY25, A, B (years + their two entities).
+      const parentLabels = parentRows(wrapper).map(parentLabelOf);
+      expect(parentLabels).toEqual(['FY24', ENT_A, ENT_B, 'FY25', ENT_A, ENT_B]);
+      // Each year is shown ONCE (PAW); each entity shows once per year → twice total.
+      expect(parentLabels.filter((p) => p === 'FY24').length).toBe(1);
+      expect(parentLabels.filter((p) => p === ENT_A).length).toBe(2);
+
+      // The INNER account rows: EXPENSE + COGS under every (year,entity) block → 2
+      // years × 2 entities × 2 accounts = 4 EXPENSE + 4 COGS inner rows.
+      expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(4);
+      expect(rowsByInner(wrapper, 'COGS').length).toBe(4);
+
+      const callsBefore = runTm1Query.mock.calls.length;
+
+      // COLLAPSE the FIRST entity parent (ENT_A — under FY24). Because the collapse
+      // key is the FULL outer-tuple path (FY24‹sep›ENT_A), only THAT entity block
+      // folds: FY24/ENT_A's accounts vanish; FY24/ENT_B's stay; FY25 (both entities)
+      // is wholly untouched. No re-query — it's the client-side fold.
+      await toggleOuterGroup(wrapper, ENT_A);
+      expect(runTm1Query.mock.calls.length, 'intermediate collapse is client-side').toBe(callsBefore);
+
+      // The collapsed ENT_A (under FY24) loses its 2 accounts → EXPENSE count drops
+      // from 4 to 3 (FY24/ENT_B + FY25/ENT_A + FY25/ENT_B keep theirs).
+      expect(rowsByInner(wrapper, 'EXPENSE').length, 'only the one entity block folded').toBe(3);
+      expect(rowsByInner(wrapper, 'COGS').length).toBe(3);
+
+      // The surviving EXPENSE rows belong to ENT_B-under-FY24 + BOTH entities under
+      // FY25 — NONE to the collapsed FY24/ENT_A. We verify by the nearest-parent
+      // (entity) label of each survivor: ENT_A appears once (the FY25 one), ENT_B twice.
+      const survivingEntityOf = rowsByInner(wrapper, 'EXPENSE').map((tr) => outerGroupOf(wrapper, tr));
+      expect(survivingEntityOf.filter((e) => e === ENT_A).length, 'the FY25 ENT_A survives, the FY24 one folded').toBe(1);
+      expect(survivingEntityOf.filter((e) => e === ENT_B).length).toBe(2);
+
+      // YEAR parents are UNAFFECTED — both still render (the fold targeted an entity,
+      // not a year), and BOTH entity headers under FY24 still render (ENT_A is the
+      // fold handle, ENT_B is intact).
+      const labelsNow = parentRows(wrapper).map(parentLabelOf);
+      expect(labelsNow).toContain('FY24');
+      expect(labelsNow).toContain('FY25');
+      expect(labelsNow.filter((p) => p === ENT_A).length, 'collapsed ENT_A header still present as the handle').toBe(2);
+
+      // Now collapse the YEAR above it (FY24) — the WHOLE FY24 subtree folds: both
+      // its entities AND all their accounts disappear; FY25 is whole. EXPENSE count
+      // = 2 (FY25/ENT_A + FY25/ENT_B), and FY24's entity headers are gone.
+      await toggleOuterGroup(wrapper, 'FY24');
+      expect(rowsByInner(wrapper, 'EXPENSE').length, 'collapsing the year folds its entire subtree').toBe(2);
+      const afterYearFold = parentRows(wrapper).map(parentLabelOf);
+      expect(afterYearFold).toContain('FY24'); // the handle remains
+      expect(afterYearFold).toContain('FY25');
+      // FY25's two entity headers survive; FY24's are folded → ENT_A/ENT_B once each.
+      expect(afterYearFold.filter((p) => p === ENT_A).length).toBe(1);
+      expect(afterYearFold.filter((p) => p === ENT_B).length).toBe(1);
+
+      // Totals unchanged through both folds (every inner row still in displayRows):
+      // per (year,entity) EXPENSE 100 + COGS 40 = 140; 2 years × 2 entities = 560.
+      expect(colTotalTexts(wrapper)[0], 'totals are fold-invariant in 3-dim too').toBe('560');
+      expect(grandTotalText(wrapper)).toBe('560');
+    });
+  });
+
+  // ── Test 6: the outer PARENT label honours the per-dim ALIAS (UUID → name) ───
+  // entity OUTER row dim with a `name` alias → the parent group header shows the
+  // human name (displayMember), the principal UUID surfacing only in :title — the
+  // SAME alias contract the inner rows + filter pills use, now on the group header.
+  it('the outer parent uses the displayMember alias for its label and exposes the principal in :title', async () => {
+    const ENT_TOP = 'ENT_GROUP';
+    const UUID_A = '41ebfa0e-7c2b-4f1a-9d3e-2a6b8c0d1e2f';
+    const UUID_B = '9f2c1d77-5b3a-4e08-8c6d-1a2b3c4d5e6f';
+    const NAME = { [UUID_A]: 'Klikk (Pty) Ltd', [UUID_B]: 'Tremly Holdings' };
+
+    // Cube: [entity, account, …] → rowDims becomes [entity, account] (entity outer,
+    // account inner) after the entity→Rows drag. entity advertises `name`; the label
+    // map resolves each UUID to its company name; entity rows carry a non-zero value
+    // so they survive Suppress-zeros (per the alias suite's convention).
+    installCubeMocks({ dimensions: ['entity', 'account', 'month', 'measure'] });
+    getTm1DimensionElements.mockImplementation(async (dimension) => {
+      if (dimension === 'entity') {
+        return { elements: [{ name: ENT_TOP, type: 'C' }, { name: UUID_A, type: 'N' }, { name: UUID_B, type: 'N' }] };
+      }
+      return { elements: ELEMENTS[dimension] || [] };
+    });
+    getTm1DimensionChildren.mockImplementation(async (dimension, parent) => {
+      if (dimension === 'entity') {
+        return parent === ENT_TOP
+          ? { children: [{ name: UUID_A, type: 'N' }, { name: UUID_B, type: 'N' }] }
+          : { children: [] };
+      }
+      return { children: (CHILDREN[dimension] && CHILDREN[dimension][parent]) || [] };
+    });
+    getTm1DimensionAliases.mockImplementation(async (dimension) =>
+      dimension === 'entity' ? { dimension, aliases: ['name'] } : { dimension, aliases: [] },
+    );
+    getTm1ElementLabels.mockImplementation(async (dimension, alias, elements) => {
+      if (dimension !== 'entity') return { dimension, alias, labels: {} };
+      const labels = {};
+      for (const m of elements || Object.keys(NAME)) if (NAME[m] != null) labels[m] = NAME[m];
+      return { dimension, alias, labels };
+    });
+    // entity × account crossjoin (entity outer); each entity member valued non-zero
+    // so its block survives suppression, account carries its own contextual value.
+    runTm1Query.mockImplementation(async (payload) => {
+      const rowDims = payload.rows || [];
+      const colMembers = (payload.cols?.[0]?.members || []).slice();
+      const columns = colMembers.map((m) => [m]);
+      const cellsFor = (scalar) => colMembers.map((cm) => ({ value: cm === 'Jul' ? scalar : 0, formatted: null }));
+      let rows = [];
+      if (rowDims.length === 2) {
+        const [ent, acc] = rowDims;
+        for (const em of ent.members || []) {
+          let scope = null;
+          for (const am of acc.members || []) {
+            const { value, scope: next } = leafValueFor(am, scope);
+            scope = next;
+            rows.push({ members: [em, am], cells: cellsFor(value || 1) });
+          }
+        }
+      } else {
+        let scope = null;
+        rows = (rowDims[0]?.members || []).map((m) => {
+          const { value, scope: next } = leafValueFor(m, scope);
+          scope = next;
+          return { members: [m], cells: cellsFor(value) };
+        });
+      }
+      return {
+        columns,
+        rows,
+        colAxis: { dimensions: payload.cols?.[0]?.dimension ? [payload.cols[0].dimension] : [], tuples: columns.map((c) => c.slice()) },
+        rowAxis: { dimensions: rowDims.map((d) => d.dimension), tuples: rows.map((r) => r.members.slice()) },
+        mdx: `SELECT FROM [${payload.cube}]`,
+      };
+    });
+
+    const wrapper = mount(PivotExplorer, { attachTo: document.body });
+    attachedWrappers.push(wrapper);
+    await settle();
+    await dragDimToRows(wrapper, 'entity'); // rowDims = [entity, account], entity outer.
+
+    // The parent group headers show the entity ALIAS (human names) — NOT the raw
+    // UUIDs. A regression that labelled parents off the principal would show UUIDs.
+    const parentLabels = parentRows(wrapper).map(parentLabelOf);
+    expect(parentLabels).toEqual(['Klikk (Pty) Ltd', 'Tremly Holdings']);
+    expect(parentLabels).not.toContain(UUID_A);
+    expect(parentLabels).not.toContain(UUID_B);
+
+    // The principal UUID is preserved on the parent segment's :title (rowSegTitle →
+    // the principal when an alias relabelled it). Read the --parent label span's title.
+    const klikkParent = parentRows(wrapper).find((tr) => parentLabelOf(tr) === 'Klikk (Pty) Ltd');
+    expect(klikkParent, 'the aliased Klikk parent row exists').toBeTruthy();
+    const titleSpan = klikkParent.find('.pivot-grid__row-seg--parent .pivot-grid__row-label');
+    expect(titleSpan.attributes('title'), 'principal UUID surfaces in :title').toBe(UUID_A);
+
+    // The collapse twisty's aria-label uses the alias too (Collapse <name>), so the
+    // accessible name is the human label, not the UUID.
+    const klikkTwisty = klikkParent.find('.pivot-grid__row-seg--parent button.pivot-grid__twisty');
+    expect(klikkTwisty.attributes('aria-label')).toBe('Collapse Klikk (Pty) Ltd');
+
+    // And the fold still WORKS with the alias in place: collapsing the Klikk group
+    // hides its accounts while Tremly's stay, and the totals don't move.
+    const julBefore = colTotalTexts(wrapper)[0];
+    await toggleOuterGroup(wrapper, 'Klikk (Pty) Ltd');
+    rowsByInner(wrapper, 'EXPENSE').forEach((tr) => {
+      expect(outerGroupOf(wrapper, tr), 'only Tremly accounts survive the Klikk fold').toBe('Tremly Holdings');
+    });
+    expect(colTotalTexts(wrapper)[0], 'aliasing does not disturb the totals invariant').toBe(julBefore);
+  });
+
+  // ── Test 7: single-row-dim is the DEGENERATE case (outerCount 0 → no parents) ─
+  it('with a single row dim there are NO parent rows — the grid behaves exactly as the pre-PAW flat drill', async () => {
+    // mountExplorerMultiDim seeds [year, account, …] but does NOT drag year onto
+    // rows, so rowDims = [account] only — the degenerate outerCount-0 path.
+    const wrapper = await mountExplorerMultiDim();
+
+    // NO PAW parent rows at all (outerCount 0 → gridRows emits no isOuterParent row).
+    expect(parentRows(wrapper).length, 'single row dim → zero parent rows').toBe(0);
+
+    // The body is the familiar flat account drill: the two top consolidations, each
+    // with its inner-segment twisty (the drill, which DOES re-query). No --parent
+    // segment anywhere; the labels are the plain account rows.
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE', 'COGS']);
+    expect(rowsByInner(wrapper, 'EXPENSE').length).toBe(1);
+    expect(rowsByInner(wrapper, 'COGS').length).toBe(1);
+
+    // The inner drill still re-queries (the SEPARATE, unchanged toggleRow path):
+    // expanding EXPENSE issues a query and reveals its children.
+    const callsBefore = runTm1Query.mock.calls.length;
+    await expandInner(wrapper, 'EXPENSE');
+    expect(runTm1Query.mock.calls.length, 'the inner drill DOES re-query (unchanged)').toBeGreaterThan(callsBefore);
+    expect(rowLabels(wrapper)).toEqual(['EXPENSE', 'Rent', 'Salaries', 'COGS']);
+    // STILL no parent rows after the drill (drilling never introduces PAW parents).
+    expect(parentRows(wrapper).length, 'drilling a single-dim grid never creates parents').toBe(0);
+
+    // Totals behave as the legacy single-dim path: EXPENSE expanded → Rent 60 +
+    // Salaries 40 + COGS 40 = 140 (parent excluded), unchanged from collapsed.
+    expect(colTotalTexts(wrapper)[0]).toBe('140');
+    expect(grandTotalText(wrapper)).toBe('140');
+
+    await collapseInner(wrapper, 'EXPENSE');
+    expect(parentRows(wrapper).length).toBe(0);
+    expect(colTotalTexts(wrapper)[0]).toBe('140');
+  });
+});
