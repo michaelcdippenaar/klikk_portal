@@ -17,6 +17,46 @@ export async function getCubeComments(params = {}) {
   return response.data;
 }
 
+/**
+ * The whole register, every kind of subject — cube cells, bank transactions,
+ * and whatever is added next. One queue rather than one page per feature.
+ */
+export async function getComments(params = {}) {
+  const response = await apiClient.get('/xero/data/comments/', { params });
+  return response.data;
+}
+
+/**
+ * Record a verdict on a non-cube subject.
+ *
+ * Sends the subject and the decision only; the API upserts on
+ * (subject, author), so the existing note and tags are preserved.
+ */
+export async function setCommentDecision(comment, decision) {
+  const response = await apiClient.post('/xero/data/comments/', {
+    subject_type: comment.subject_type,
+    subject_key: comment.subject_key,
+    subject_label: comment.subject_label,
+    comment: comment.comment,
+    author: comment.author,
+    tags: comment.tags,
+    value: comment.cell_value,
+    context: normaliseFilters(comment.filters),
+    status: comment.status,
+    decision,
+  });
+  return response.data;
+}
+
+export const DECISIONS = [
+  { value: '', label: 'Undecided' },
+  { value: 'business_expense', label: 'Business expense' },
+  { value: 'personal', label: 'Personal' },
+  { value: 'duplicate', label: 'Duplicate' },
+  { value: 'needs_info', label: 'Needs info' },
+  { value: 'no_action', label: 'No action' },
+];
+
 /** Mark one actioned or dismissed. Does not touch its text or its anchor. */
 export async function setCubeCommentStatus(id, status) {
   const response = await apiClient.post(

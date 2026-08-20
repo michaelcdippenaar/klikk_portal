@@ -34,6 +34,18 @@
         class="min-w-40"
       />
       <KSelect
+        v-model="filters.subject_type"
+        label="Kind"
+        :options="KIND_OPTIONS"
+        class="min-w-40"
+      />
+      <KSelect
+        v-model="filters.decision"
+        label="Verdict"
+        :options="DECISION_OPTIONS"
+        class="min-w-44"
+      />
+      <KSelect
         v-model="filters.author"
         label="Author"
         :options="authorOptions"
@@ -63,6 +75,9 @@
               <KBadge :tone="row.status === 'open' ? 'warning' : 'neutral'">
                 {{ row.status }}
               </KBadge>
+              <KBadge v-if="row.subject_type !== 'cube_cell'" tone="info">
+                {{ kindLabel(row.subject_type) }}
+              </KBadge>
               <strong class="cc__author">{{ row.author || 'unattributed' }}</strong>
               <span class="cc__when">{{ formatWhen(row.updated_at) }}</span>
             </div>
@@ -88,11 +103,29 @@
             </div>
           </header>
 
+          <p v-if="row.subject_label" class="cc__subject">{{ row.subject_label }}</p>
           <p class="cc__text">{{ row.comment }}</p>
+
+          <!-- The verdict answers a different question from the status: what
+               IS this, versus have we finished with it. -->
+          <div v-if="row.subject_type !== 'cube_cell'" class="cc__verdict">
+            <label :for="'dec-' + row.id">Verdict</label>
+            <select
+              :id="'dec-' + row.id"
+              :value="row.decision || ''"
+              :disabled="busyId === row.id"
+              @change="setDecision(row, $event.target.value)"
+            >
+              <option v-for="d in DECISIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
+            </select>
+            <span v-if="row.tags && row.tags.length" class="cc__tags">
+              <span v-for="t in row.tags" :key="t" class="cc__tag">{{ t }}</span>
+            </span>
+          </div>
 
           <!-- The anchor, shown as coordinates. This is what the comment is
                ABOUT; without it the note is just a sentence. -->
-          <div class="cc__coords">
+          <div v-if="row.subject_type === 'cube_cell'" class="cc__coords">
             <span v-for="(v, k) in coordsOf(row)" :key="k" class="cc__coord">
               <span class="cc__dim">{{ k }}</span>{{ v }}
             </span>
@@ -109,7 +142,7 @@
             </span>
           </div>
 
-          <div class="cc__drill">
+          <div v-if="row.subject_type === 'cube_cell'" class="cc__drill">
             <button
               class="btn btn-ghost btn-sm"
               :disabled="drillBusy === row.id"
@@ -125,7 +158,7 @@
             </span>
           </div>
 
-          <div v-if="drills[row.id]" class="cc__lines">
+          <div v-if="row.subject_type === 'cube_cell' && drills[row.id]" class="cc__lines">
             <table class="cc__table">
               <thead>
                 <tr>
@@ -158,7 +191,9 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import {
-  getCubeComments,
+  getComments,
+  DECISIONS,
+  setCommentDecision,
   setCubeCommentStatus,
   drillCubeComment,
   commentCoordinates,
@@ -190,13 +225,29 @@ const drillBusy = ref(null);
 const all = ref([]);
 const drills = reactive({});
 
-const filters = reactive({ status: 'open', author: '', q: '' });
+const filters = reactive({ status: 'open', subject_type: '', decision: '', author: '', q: '' });
+
+const KIND_OPTIONS = [
+  { label: 'Everything', value: '' },
+  { label: 'Cube cells', value: 'cube_cell' },
+  { label: 'Bank transactions', value: 'bank_txn' },
+];
+const DECISION_OPTIONS = [
+  { label: 'Any', value: '' },
+  ...DECISIONS.filter((d) => d.value).map((d) => ({ label: d.label, value: d.value })),
+  { label: 'Undecided only', value: '__none__' },
+];
 
 async function load() {
   loading.value = true;
   error.value = null;
   try {
-    const data = await getCubeComments({ status: filters.status, limit: 2000 });
+    const params = { status: filters.status, limit: 2000 };
+    if (filters.subject_type) params.subject_type = filters.subject_type;
+    // "__none__" cannot be a server-side equality filter -- an empty decision is
+    // the ABSENCE of one -- so it is applied client-side below.
+    if (filters.decision && filters.decision !== '__none__') params.decision = filters.decision;
+    const data = await getComments(params);
     all.value = data.results || [];
   } catch (e) {
     error.value = e?.response?.data?.error || e.message || 'Could not load comments.';
@@ -211,6 +262,7 @@ async function load() {
 const rows = computed(() => {
   const term = (filters.q || '').toLowerCase();
   return all.value.filter((r) => {
+    if (filters.decision === '__none__' && r.decision) return false;
     if (filters.author && (r.author_key || r.author || '') !== filters.author) return false;
     if (!term) return true;
     const hay = [
@@ -239,6 +291,28 @@ const emptyBody = computed(() =>
     : 'Nothing matches these filters.');
 
 function coordsOf(row) { return commentCoordinates(row); }
+
+function kindLabel(kind) {
+  return ({ bank_txn: 'Bank transaction', cube_cell: 'Cube cell',
+            journal_line: 'Journal line', slip: 'Receipt', invoice: 'Invoice' })[kind] || kind;
+}
+
+async function setDecision(row, decision) {
+  busyId.value = row.id;
+  actionError.value = null;
+  try {
+    const updated = await setCommentDecision(row, decision);
+    row.decision = updated.decision;
+    if (filters.decision && filters.decision !== '__none__'
+        && updated.decision !== filters.decision) {
+      all.value = all.value.filter((r) => r.id !== row.id);
+    }
+  } catch (e) {
+    actionError.value = e?.response?.data?.error || e.message || 'Could not record that verdict.';
+  } finally {
+    busyId.value = null;
+  }
+}
 function filtersOf(row) {
   const f = normaliseFilters(row.filters);
   return Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v != null));
@@ -359,7 +433,7 @@ function reconText(row) {
     : `${base} — matches the commented value.`;
 }
 
-watch(() => filters.status, load);
+watch(() => [filters.status, filters.subject_type, filters.decision], load);
 onMounted(load);
 </script>
 
@@ -389,6 +463,11 @@ onMounted(load);
 .cc__when { font-size: 11px; opacity: .6; }
 .cc__actions { display: flex; gap: 4px; flex: 0 0 auto; }
 .cc__text { margin: 8px 0; white-space: pre-wrap; }
+.cc__subject { margin: 6px 0 0; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cc__verdict { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.cc__verdict label { font-size: 11px; opacity: .65; }
+.cc__tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.cc__tag { font-size: 10.5px; background: var(--k-subtle, #f3f4f6); border-radius: 3px; padding: 1px 5px; }
 .cc__coords { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .cc__coord {
   font-size: 11px;
