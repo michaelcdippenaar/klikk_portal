@@ -16,6 +16,7 @@ const SERVER_INSTRUCTIONS = [
   'When giving financial analysis, distinguish market price, market value, cost, income, and ROI.',
   'Year-end audit: when MC says "audit for financial year end", "run the year-end audit" or "check the books", call run_yearend_audit(fy) and reason over the findings; list_audit_checks / run_audit_check / audit_history / add_audit_check manage the registry. These never write to Xero.',
   'Equipment price list: pricelist_list_items / pricelist_get_price / pricelist_price_history read Klikk\'s event-gear rate card (ex VAT, ZAR); pricelist_build_quote prices a job without persisting anything; pricelist_set_price and pricelist_upsert_item mutate the local price list and require confirm=true. Never writes to Xero.',
+  'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Never writes to Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -998,6 +999,44 @@ const tools = [
         notes: { type: 'string', description: 'Free-text notes.' },
         replace: { type: 'boolean', description: 'Set true to update an existing code (default false → error if it exists).', default: false },
         confirm: { type: 'boolean', description: 'Must be true — writes to Klikk\'s local price list (not Xero).' },
+      },
+    },
+  },
+  {
+    name: 'list_cube_comments',
+    description: 'Read-only: the comments MC has pinned to cells in Excel (app.cube_comments), newest first. This is the human->agent to-do queue: MC right-clicks a figure in a cube or PivotTable sheet, writes what is wrong or what he wants checked, and it lands here anchored to the exact intersection — the measure, a flat {dimension: value} coordinates object, and the filter_context that produced the number. The coordinates are deliberately axis-independent: a cell is identified by which dimension holds which value, NOT by whether the field sat on rows or on columns, so the same figure never reads as two different figures. Default status=open. Use when MC says "what did I flag", "my Excel comments", "what needs looking at", "the cube comments". Read the anchor to know WHICH figure is meant, pull the underlying lines with get_comment_transactions, investigate with xero_search_journals / run_audit_check, then close it with set_cube_comment_status. Never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'open (default) | actioned | dismissed | all.' },
+        measure: { type: 'string', description: 'Optional: only comments on this measure (amount, debit, credit, tax, count).' },
+        tenant: { type: 'string', description: 'Optional: only comments whose filter context named this tenant.' },
+        author: { type: 'string', description: 'Optional: only comments written by this author.' },
+        limit: { type: 'number', description: 'Max comments (1-5000, default 500).', default: 500 },
+      },
+    },
+  },
+  {
+    name: 'set_cube_comment_status',
+    description: 'Mark one Excel cube comment actioned or dismissed without touching its text or its anchor. Use after acting on an item from list_cube_comments — "actioned" when you have dealt with it, "dismissed" when it needs no action, and say why to MC either way. Writes ONLY to app.cube_comments in Klikk\'s own Postgres — never to Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id', 'status'],
+      properties: {
+        id: { type: 'number', description: 'Comment id from list_cube_comments.' },
+        status: { type: 'string', description: 'open | actioned | dismissed.' },
+      },
+    },
+  },
+  {
+    name: 'get_comment_transactions',
+    description: 'Read-only: answers "which transactions make up this number" for ONE Excel cube comment. Resolves the comment by id, rebuilds its axis-independent {dimension: value} coordinates, and drills the journal ledger at exactly that intersection under exactly the filters the comment was written with — returning the individual journal lines (date, journal number and type, tenant, account, supplier, description, reference, amount / debit / credit, source document type + id) plus line_total. It also checks line_total back to the cell_value stored on the comment (0.005 tolerance) and reports reconciled true/false: a MISMATCH is meaningful, not noise — it means the underlying ledger moved since MC wrote the comment, so report it plainly rather than quietly using the new figure. Use whenever MC asks "what is in this number", "show me the transactions behind this", "break this comment down", or before answering any flagged figure. Never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'number', description: 'Comment id from list_cube_comments.' },
+        limit: { type: 'number', description: 'Max journal lines to return (1-5000, default 500).', default: 500 },
       },
     },
   },
@@ -2516,6 +2555,162 @@ async function pricelistUpsertItem(args = {}) {
   };
 }
 
+function cubeCommentCoordinates(comment) {
+  // The anchor is axis-independent on purpose: a cell is identified by which
+  // dimension holds which value, not by whether MC dragged the field onto rows
+  // or onto columns. Flattening both axes into one {dimension: value} object
+  // stops the same figure reading as two different figures.
+  const coordinates = {};
+  const rowDims = comment?.row_dims || [];
+  const rowPath = comment?.row_path || [];
+  rowDims.forEach((dim, i) => {
+    if (rowPath[i] !== undefined) coordinates[dim] = rowPath[i];
+  });
+  const rawCol = comment?.col_path;
+  const colParts = (rawCol && String(rawCol) !== 'Total') ? String(rawCol).split(' | ') : [];
+  (comment?.col_dims || []).forEach((dim, i) => {
+    if (colParts[i] !== undefined && colParts[i] !== '') coordinates[dim] = colParts[i];
+  });
+  return coordinates;
+}
+
+function cubeCommentFilters(comment) {
+  // The API stores the filter context as a JSON string on some rows and as an
+  // object on others; normalise so callers always get a plain object.
+  const raw = comment?.filters;
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof raw === 'object' ? raw : {};
+}
+
+function presentCubeComment(comment) {
+  return {
+    id: comment?.id,
+    status: comment?.status,
+    comment: comment?.comment,
+    author: comment?.author || null,
+    measure: comment?.measure,
+    coordinates: cubeCommentCoordinates(comment),
+    cell_value: comment?.cell_value,
+    filter_context: cubeCommentFilters(comment),
+    updated_at: comment?.updated_at,
+  };
+}
+
+const CUBE_COMMENT_STATUSES = ['open', 'actioned', 'dismissed'];
+const CUBE_DRILL_FILTER_KEYS = ['tenant', 'date_from', 'date_to', 'account', 'contact', 'reference', 'description', 'amount', 'q', 'journal_type'];
+
+async function listCubeComments(args = {}) {
+  const params = new URLSearchParams();
+  params.set('status', String(args.status || 'open').trim() || 'open');
+  params.set('limit', String(clampNumber(args.limit, 500, 1, 5000)));
+  for (const key of ['measure', 'tenant', 'author']) {
+    if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== '') {
+      params.set(key, String(args[key]).trim());
+    }
+  }
+  const data = await apiRequest(`/xero/data/journals/pivot/comments/?${params}`);
+  const comments = (data?.results || []).map(presentCubeComment);
+  const open = comments.filter((c) => c.status === 'open').length;
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    count: comments.length,
+    comments,
+    agent_brief: [
+      comments.length
+        ? `${comments.length} comment(s) returned, ${open} still open.`
+        : 'No comments match — nothing waiting in the queue.',
+      'Each comment names its figure by axis-independent coordinates ({dimension: value}) plus the filter_context that produced the number — the same coordinates under different filters is a DIFFERENT figure.',
+      'Reproduce the number before concluding: get_comment_transactions(id) returns the journal lines behind it and checks them back to the stored cell_value.',
+      'Call set_cube_comment_status(id, "actioned") once you have dealt with one, or "dismissed" if it needs no action — and tell MC why either way.',
+    ].join(' '),
+  };
+}
+
+async function setCubeCommentStatus(args = {}) {
+  const id = Number(args.id);
+  if (!Number.isFinite(id) || id <= 0) throw new Error('id is required (from list_cube_comments)');
+  const status = String(args.status || '').trim();
+  if (!CUBE_COMMENT_STATUSES.includes(status)) {
+    throw new Error(`status must be one of ${CUBE_COMMENT_STATUSES.join(', ')}`);
+  }
+  const data = await apiRequest(`/xero/data/journals/pivot/comments/${id}/status/`, {
+    method: 'POST',
+    body: { status },
+  });
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    updated: { id: data?.id ?? id, status: data?.status ?? status, comment: data?.comment },
+    agent_brief: `Comment ${id} is now ${data?.status ?? status}. Only app.cube_comments changed — nothing was written to Xero.`,
+  };
+}
+
+async function getCommentTransactions(args = {}) {
+  const id = Number(args.id);
+  if (!Number.isFinite(id) || id <= 0) throw new Error('id is required (from list_cube_comments)');
+  const limit = clampNumber(args.limit, 500, 1, 5000);
+
+  const lookup = new URLSearchParams({ status: 'all', limit: '5000' });
+  const commentPayload = await apiRequest(`/xero/data/journals/pivot/comments/?${lookup}`);
+  const raw = (commentPayload?.results || []).find((c) => Number(c?.id) === id);
+  if (!raw) throw new Error(`No cube comment with id ${id} — list_cube_comments(status="all") shows what exists.`);
+
+  const coordinates = cubeCommentCoordinates(raw);
+  const filters = cubeCommentFilters(raw);
+  const params = new URLSearchParams();
+  params.set('coords', JSON.stringify(coordinates));
+  params.set('limit', String(limit));
+  for (const key of CUBE_DRILL_FILTER_KEYS) {
+    const value = filters[key];
+    if (value === undefined || value === null || String(value).trim() === '') continue;
+    params.set(key, String(value).trim());
+  }
+
+  const data = await apiRequest(`/xero/data/journals/pivot/drill/?${params}`);
+  const rows = data?.rows || [];
+  const lineTotal = toNumber(data?.line_total);
+  const cellValue = raw?.cell_value === null || raw?.cell_value === undefined ? null : Number(raw.cell_value);
+  const reconciled = cellValue === null || !Number.isFinite(cellValue)
+    ? null
+    : Math.abs(lineTotal - cellValue) <= 0.005;
+  const difference = reconciled === null ? null : Number((lineTotal - cellValue).toFixed(2));
+
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    comment: presentCubeComment(raw),
+    coordinates,
+    filter_context: filters,
+    measure: raw?.measure,
+    count: data?.count ?? rows.length,
+    truncated: data?.truncated === true,
+    line_total: lineTotal,
+    cell_value: cellValue,
+    reconciled,
+    difference,
+    rows,
+    agent_brief: [
+      `Comment ${id} anchors to ${Object.entries(coordinates).map(([k, v]) => `${k}=${v}`).join(', ') || 'the grand total'} on measure ${raw?.measure || 'amount'}.`,
+      `${rows.length} journal line(s) returned${data?.truncated === true ? ' (TRUNCATED — raise limit before totalling)' : ''}, line_total ${lineTotal}.`,
+      reconciled === null
+        ? 'The comment stored no cell_value, so there is nothing to reconcile against — treat line_total as the current figure.'
+        : reconciled
+          ? `Reconciled: line_total ties to the cell_value MC commented on (${cellValue}).`
+          : `MISMATCH — line_total ${lineTotal} does NOT tie to the cell_value MC commented on (${cellValue}), difference ${difference}. The ledger has moved since the comment was written; say so plainly to MC rather than answering on the new number as if nothing changed.`,
+      'Read-only drill on Klikk\'s own copy of the ledger — Xero is untouched.',
+    ].join(' '),
+  };
+}
+
 const toolHandlers = {
   data_health_summary: dataHealthSummary,
   xero_connection_status: xeroConnectionStatus,
@@ -2578,6 +2773,9 @@ const toolHandlers = {
   pricelist_build_quote: pricelistBuildQuote,
   pricelist_set_price: pricelistSetPrice,
   pricelist_upsert_item: pricelistUpsertItem,
+  list_cube_comments: listCubeComments,
+  set_cube_comment_status: setCubeCommentStatus,
+  get_comment_transactions: getCommentTransactions,
 };
 
 async function handleRequest(request, respond = send) {
