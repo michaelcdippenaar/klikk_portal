@@ -1275,6 +1275,41 @@ const tools = [
     },
   },
   {
+    name: 'add_comment',
+    description: "Comment on ANY subject in the register — a bank transaction from the Investec feed, a journal line, a slip. (For a cube cell use add_cube_comment, which builds the anchor from coordinates.) The classic use: an Investec transaction that never made it into Xero — flag it where MC will see it, with a tag like 'unprocessed', instead of describing it in chat. Identify it by an id that SURVIVES A RESYNC: for a bank transaction that is the uuid from investec_bank_search_transactions, never a row number or a position in a list. Re-posting the same subject as the same author edits your comment; an empty comment retracts it. Writes only to our own Postgres — it cannot reach Xero or the bank.",
+    inputSchema: {
+      type: 'object',
+      required: ['subject_type', 'subject_key', 'comment', 'author'],
+      properties: {
+        subject_type: { type: 'string', description: "bank_txn | journal_line | slip | invoice. Use bank_txn for an Investec feed transaction." },
+        subject_key: { type: 'string', description: "The subject's stable id — for bank_txn, Investec's transaction uuid." },
+        subject_label: { type: 'string', description: "Human-readable, e.g. '2026-08-17 Santam R-10,570.41'. Shown in queues so a mixed list is readable without looking each one up." },
+        comment: { type: 'string', description: 'The note. Empty retracts yours.' },
+        author: { type: 'string', description: "Who is writing, e.g. 'claude:bank-recon'. Required — the MCP uses a shared credential that names the tool, not the writer." },
+        tags: { type: 'array', items: { type: 'string' }, description: "Lowercased and de-duplicated, e.g. ['unprocessed','fy2026']." },
+        value: { type: 'number', description: 'The amount in question, if there is one.' },
+        context: { type: 'object', description: 'Anything needed to find it again — account number, date, tenant.' },
+        status: { type: 'string', description: 'open (default) | actioned | dismissed.' },
+      },
+    },
+  },
+  {
+    name: 'list_comments',
+    description: "The comment queue across EVERY kind of subject — bank transactions, cube cells, and anything else in the register. Filter by subject_type, subject_key, tag(s), author or status. Use this to pick up work ('what is tagged unprocessed?') or to check whether something has already been raised before raising it again.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject_type: { type: 'string', description: 'bank_txn | cube_cell | journal_line | slip | invoice' },
+        subject_key: { type: 'string', description: 'Everything said about one specific subject.' },
+        tag: { type: 'string', description: 'Single tag.' },
+        tags: { type: 'string', description: 'Comma-separated; a comment must carry ALL of them.' },
+        author: { type: 'string' },
+        status: { type: 'string', description: 'open (default) | actioned | dismissed | all' },
+        limit: { type: 'number', default: 500 },
+      },
+    },
+  },
+  {
     name: 'list_cube_comments',
     description: 'Read-only: the comments MC has pinned to cells in Excel (app.cube_comments), newest first. This is the human->agent to-do queue: MC right-clicks a figure in a cube or PivotTable sheet, writes what is wrong or what he wants checked, and it lands here anchored to the exact intersection — the measure, a flat {dimension: value} coordinates object, and the filter_context that produced the number. The coordinates are deliberately axis-independent: a cell is identified by which dimension holds which value, NOT by whether the field sat on rows or on columns, so the same figure never reads as two different figures. Default status=open. Use when MC says "what did I flag", "my Excel comments", "what needs looking at", "the cube comments". Read the anchor to know WHICH figure is meant, pull the underlying lines with get_comment_transactions, investigate with xero_search_journals / run_audit_check, then close it with set_cube_comment_status. Never touches Xero.',
     inputSchema: {
@@ -3507,6 +3542,86 @@ function cubeMentionBrief(mentions) {
   return parts.join(' ');
 }
 
+async function addComment(args = {}) {
+  const subject_type = String(args.subject_type || '').trim();
+  const subject_key = String(args.subject_key || '').trim();
+  if (!subject_type || !subject_key) {
+    throw new Error('subject_type and subject_key are required (bank_txn + the Investec transaction uuid, for example)');
+  }
+  if (subject_type === 'cube_cell') {
+    throw new Error('use add_cube_comment for a cube cell — it builds the anchor from coordinates');
+  }
+  const author = String(args.author || '').trim();
+  if (!author) {
+    throw new Error("author is required — the MCP authenticates with a shared credential, so it cannot tell who is writing. Pass e.g. 'claude:bank-recon'.");
+  }
+
+  const body = {
+    subject_type, subject_key,
+    subject_label: String(args.subject_label || '').trim(),
+    comment: args.comment === undefined || args.comment === null ? '' : String(args.comment),
+    author,
+    tags: Array.isArray(args.tags) ? args.tags.map(String) : [],
+    context: (args.context && typeof args.context === 'object') ? args.context : {},
+  };
+  if (args.value !== undefined && args.value !== null && Number.isFinite(Number(args.value))) {
+    body.value = Number(args.value);
+  }
+  if (args.status) body.status = String(args.status).trim();
+
+  const data = await apiRequest('/xero/data/comments/', { method: 'POST', body });
+  if (data && data.deleted !== undefined) {
+    return {
+      generated_at: new Date().toISOString(), retracted: true, deleted: data.deleted,
+      agent_brief: data.deleted
+        ? "Retracted your comment on that subject. Nobody else's was touched — comments are per author."
+        : 'You had no comment on that subject.',
+    };
+  }
+  return {
+    generated_at: new Date().toISOString(),
+    id: data?.id, subject_type: data?.subject_type, subject_key: data?.subject_key,
+    tags: data?.tags, status: data?.status, author: data?.author,
+    author_verified: data?.author_verified === true,
+    agent_brief: `Comment ${data?.id} saved as "${author}" on ${subject_type} ${subject_key}.`
+      + (data?.tags?.length ? ` Tagged ${data.tags.join(', ')}.` : '')
+      + ' MC sees it in the console comment queue. Re-posting the same subject as the same author edits it.',
+  };
+}
+
+async function listComments(args = {}) {
+  const params = new URLSearchParams();
+  params.set('status', String(args.status || 'open').trim() || 'open');
+  params.set('limit', String(clampNumber(args.limit, 500, 1, 5000)));
+  for (const k of ['subject_type', 'subject_key', 'author', 'tag', 'tags']) {
+    if (args[k]) params.set(k, String(args[k]).trim());
+  }
+  const data = await apiRequest(`/xero/data/comments/?${params}`);
+  const results = (data?.results || []).map((c) => ({
+    id: c.id,
+    subject_type: c.subject_type,
+    subject_key: c.subject_key,
+    subject: c.subject_label || null,
+    status: c.status,
+    tags: c.tags,
+    comment: c.comment,
+    author: c.author,
+    value: c.cell_value,
+    context: cubeCommentFilters(c),
+    updated_at: c.updated_at,
+  }));
+  const kinds = [...new Set(results.map((r) => r.subject_type))];
+  return {
+    generated_at: new Date().toISOString(),
+    count: results.length,
+    comments: results,
+    agent_brief: results.length
+      ? `${results.length} comment(s) across ${kinds.join(', ') || 'no'} subject(s). `
+        + 'Use set_cube_comment_status(id, "actioned") when one is dealt with — it works for every subject kind, not only cube cells.'
+      : 'Nothing matches — no work waiting under those filters.',
+  };
+}
+
 async function listCubeComments(args = {}) {
   const params = new URLSearchParams();
   params.set('status', String(args.status || 'open').trim() || 'open');
@@ -3699,6 +3814,8 @@ const toolHandlers = {
   save_cube_view: saveCubeView,
   delete_cube_view: deleteCubeView,
   add_cube_comment: addCubeComment,
+  add_comment: addComment,
+  list_comments: listComments,
   list_cube_comments: listCubeComments,
   set_cube_comment_status: setCubeCommentStatus,
   get_comment_transactions: getCommentTransactions,
