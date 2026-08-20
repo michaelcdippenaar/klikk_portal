@@ -1003,6 +1003,29 @@ const tools = [
     },
   },
   {
+    name: 'add_cube_comment',
+    description: "Write a comment onto a figure, so it appears in MC's Excel cube/PivotTable sheet exactly where a comment he typed himself would. Use this to hand a finding back to MC ANCHORED TO THE NUMBER it is about, instead of burying it in chat -- e.g. after an audit check or a drill, comment on the cell that is wrong. Identify the cell by `coordinates` ({dimension: value}), the same map list_cube_comments returns; the anchor is axis-independent, so a comment you write lands on that figure whichever way MC has dragged the fields. ALWAYS pass `author` naming yourself (e.g. 'claude:year-end-audit') -- the MCP signs in with a shared service credential that names the tool, not the writer. Re-posting the same coordinates as the same author EDITS your comment rather than adding a second; posting an empty comment retracts it. Writes only to app.cube_comments in our own Postgres -- it can never reach Xero. Do NOT use this to leave routine chatter on MC's sheets: one comment per real finding.",
+    inputSchema: {
+      type: 'object',
+      required: ['coordinates', 'comment', 'author'],
+      properties: {
+        coordinates: {
+          type: 'object',
+          description: 'The cell as {dimension: value}, e.g. {"account_class":"EXPENSE","account":"406 — Consulting - Software Design","fin_year":"FY2023"}. Copy the shape from list_cube_comments or get_comment_transactions rather than inventing dimension names.',
+        },
+        comment: { type: 'string', description: 'The note. Empty string retracts your comment on that cell.' },
+        author: { type: 'string', description: "Who is writing, e.g. 'claude:year-end-audit'. Required: the shared service credential cannot identify you." },
+        measure: { type: 'string', description: 'Measure the figure is (amount, debit, credit, tax, count). Default amount.', default: 'amount' },
+        filters: {
+          type: 'object',
+          description: 'The journal filter context that produced the number (tenant, date_from, date_to, journal_type, account, ...). Part of the anchor: the same coordinates under a different date window is a different figure. Copy filter_context from the comment or cube you are commenting on; omit only when the figure was unfiltered.',
+        },
+        cell_value: { type: 'number', description: 'The value you are commenting on, if known. Stored so a later drill can show whether the figure has moved since.' },
+        status: { type: 'string', description: 'open (default) | actioned | dismissed.' },
+      },
+    },
+  },
+  {
     name: 'list_cube_comments',
     description: 'Read-only: the comments MC has pinned to cells in Excel (app.cube_comments), newest first. This is the human->agent to-do queue: MC right-clicks a figure in a cube or PivotTable sheet, writes what is wrong or what he wants checked, and it lands here anchored to the exact intersection — the measure, a flat {dimension: value} coordinates object, and the filter_context that produced the number. The coordinates are deliberately axis-independent: a cell is identified by which dimension holds which value, NOT by whether the field sat on rows or on columns, so the same figure never reads as two different figures. Default status=open. Use when MC says "what did I flag", "my Excel comments", "what needs looking at", "the cube comments". Read the anchor to know WHICH figure is meant, pull the underlying lines with get_comment_transactions, investigate with xero_search_journals / run_audit_check, then close it with set_cube_comment_status. Never touches Xero.',
     inputSchema: {
@@ -2607,6 +2630,69 @@ function presentCubeComment(comment) {
 const CUBE_COMMENT_STATUSES = ['open', 'actioned', 'dismissed'];
 const CUBE_DRILL_FILTER_KEYS = ['tenant', 'date_from', 'date_to', 'account', 'contact', 'reference', 'description', 'amount', 'q', 'journal_type'];
 
+async function addCubeComment(args = {}) {
+  const coords = args.coordinates;
+  if (!coords || typeof coords !== 'object' || Array.isArray(coords) || !Object.keys(coords).length) {
+    throw new Error('coordinates is required: {dimension: value}, e.g. {"account":"406 — Consulting","fin_year":"FY2023"}');
+  }
+  const author = String(args.author || '').trim();
+  if (!author) {
+    throw new Error("author is required — the MCP authenticates with a shared service credential, so it cannot tell who is writing. Pass something like 'claude:year-end-audit'.");
+  }
+  const comment = args.comment === undefined || args.comment === null ? '' : String(args.comment);
+
+  // The stored anchor is axis-independent: cell_key is computed from the
+  // {dimension: value} map, not from which axis a value sat on. So sending
+  // every coordinate as a row dimension produces exactly the same key as the
+  // add-in would for the same figure -- an agent comment and MC's own comment
+  // on one cell are the same anchor, not two.
+  const dims = Object.keys(coords);
+  const body = {
+    measure: String(args.measure || 'amount'),
+    row_dims: dims,
+    row_path: dims.map((d) => String(coords[d])),
+    col_dims: [],
+    col_path: 'Total',
+    filters: (args.filters && typeof args.filters === 'object') ? args.filters : {},
+    comment,
+    author,
+  };
+  if (args.cell_value !== undefined && args.cell_value !== null && Number.isFinite(Number(args.cell_value))) {
+    body.cell_value = Number(args.cell_value);
+  }
+  if (args.status) body.status = String(args.status).trim();
+
+  const data = await apiRequest('/xero/data/journals/pivot/comments/', { method: 'POST', body });
+
+  if (data && data.deleted !== undefined) {
+    return {
+      generated_at: new Date().toISOString(),
+      retracted: true,
+      deleted: data.deleted,
+      coordinates: coords,
+      agent_brief: data.deleted
+        ? `Retracted your comment on that cell. Nobody else's comment was touched — comments are per author.`
+        : 'You had no comment on that cell, so nothing was retracted.',
+    };
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    id: data?.id,
+    status: data?.status,
+    author: data?.author,
+    author_verified: data?.author_verified === true,
+    coordinates: coords,
+    cell_value: data?.cell_value,
+    agent_brief: [
+      `Comment ${data?.id} saved as "${author}" on that figure.`,
+      'It shows up in MC\'s Excel sheet on the cell itself once he refreshes or reopens that sheet.',
+      'Re-posting the same coordinates as the same author edits this comment; an empty comment retracts it.',
+      data?.author_verified === true ? '' : 'Attribution is self-declared — the MCP uses a shared service credential.',
+    ].filter(Boolean).join(' '),
+  };
+}
+
 async function listCubeComments(args = {}) {
   const params = new URLSearchParams();
   params.set('status', String(args.status || 'open').trim() || 'open');
@@ -2773,6 +2859,7 @@ const toolHandlers = {
   pricelist_build_quote: pricelistBuildQuote,
   pricelist_set_price: pricelistSetPrice,
   pricelist_upsert_item: pricelistUpsertItem,
+  add_cube_comment: addCubeComment,
   list_cube_comments: listCubeComments,
   set_cube_comment_status: setCubeCommentStatus,
   get_comment_transactions: getCommentTransactions,
