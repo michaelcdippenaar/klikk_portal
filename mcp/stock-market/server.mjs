@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.7.0';
+const SERVER_VERSION = '0.8.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -19,7 +19,8 @@ const SERVER_INSTRUCTIONS = [
   'Equipment price list: pricelist_list_items / pricelist_get_price / pricelist_price_history read Klikk\'s event-gear rate card (ex VAT, ZAR); pricelist_build_quote prices a job without persisting anything; pricelist_set_price and pricelist_upsert_item mutate the local price list and require confirm=true. Never writes to Xero.',
   'Books knowledge base: the kb_* tools are the allocation doctrine for Klikk\'s Xero books — kb_search / kb_read_document serve the doctrine docs (processing rules, transaction flows, chart-of-accounts taxonomy), kb_lookup_supplier / kb_lookup_customer / kb_lookup_account / kb_list_tracking give expected codings with rule strength, and kb_list_events is the gig register: pass the transaction date (on=YYYY-MM-DD) and if it falls in an event window the spend is an EVENT cost, not personal. Consult these BEFORE proposing any transaction allocation or audit verdict. All read-only; never touches Xero.',
   'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Comments can carry TAGS relating them to a workstream -- tag what you write and pull your own queue back with list_cube_comments(tag=\"audit\") instead of reading the whole register -- and an @mention in the text emails that person, so always report an unresolved or failed mention rather than assuming they were told. Never writes to Xero.',
-  'WhatsApp slips (receipts): slips_list / slips_get read the Slippies register — the receipt images MC WhatsApps in, OCR\'d and matched against Xero journals. slips_list filters by supplier/date/status/category and returns whole-filter totals; slips_get drills one slip to its full OCR, line items, matched journal and review comments. Archived slips are hidden unless archived="all" or "true". Read-only; never touches Xero.',
+  'WhatsApp slips (receipts): slips_list / slips_get read the Slippies register — the receipt images MC WhatsApps in, OCR\'d and matched against Xero journals. slips_list filters by supplier/date/status/category and returns whole-filter totals; slips_get drills one slip to its full OCR, line items, matched journal and review comments; slips_file returns the actual receipt image/PDF so you can read it directly. Archived slips are hidden unless archived="all" or "true". Read-only; never touches Xero.',
+  'WhatsApp messages: whatsapp_list_chats / whatsapp_search_messages / whatsapp_message_context / whatsapp_get_attachment read MC\'s WhatsApp mirror (synced daily 06:00 SAST). Search by chat, text, sender or date; drill a hit to its surrounding conversation; fetch an attachment\'s actual file. This is personal correspondence — read it only to answer what MC asked, and never quote beyond what the task needs. Strictly read-only: there is deliberately NO send tool here.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -1490,6 +1491,72 @@ const tools = [
       },
     },
   },
+  {
+    name: 'slips_file',
+    description: 'WhatsApp slips: the actual receipt file for one slip. Images (jpg/png/webp) come back as viewable image content; PDFs come back as an embedded base64 resource (if your client cannot open it, slips_get carries the full OCR text of the same document). Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['sha256'],
+      properties: {
+        sha256: { type: 'string', description: 'Slip sha256 from slips_list.' },
+      },
+    },
+  },
+  {
+    name: 'whatsapp_list_chats',
+    description: "WhatsApp: list/search MC's chats (name, jid, last message time), most recently active first. Personal correspondence — read only what the task needs.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string', description: 'Chat name or jid fragment, e.g. Slippies or Tanja.' },
+        limit: { type: 'number', description: 'Max chats (1-200, default 50).', default: 50 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'whatsapp_search_messages',
+    description: 'WhatsApp: search/list messages across all chats or within one (chat_jid from whatsapp_list_chats). Filter by text, sender, date range, or media-only. Rows carry has_attachment — fetch the file with whatsapp_get_attachment, and surrounding conversation with whatsapp_message_context. Newest first. Personal correspondence — read only what the task needs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string', description: 'Message text fragment (case-insensitive).' },
+        chat_jid: { type: 'string', description: 'Restrict to one chat (jid from whatsapp_list_chats).' },
+        sender: { type: 'string', description: 'Sender fragment.' },
+        date_from: { type: 'string', description: 'Message date >= YYYY-MM-DD.' },
+        date_to: { type: 'string', description: 'Message date <= YYYY-MM-DD.' },
+        media_only: { type: 'boolean', description: 'Only messages carrying media.' },
+        limit: { type: 'number', description: 'Max messages (1-500, default 50).', default: 50 },
+        offset: { type: 'number', description: 'Pagination offset.', default: 0 },
+      },
+    },
+  },
+  {
+    name: 'whatsapp_message_context',
+    description: 'WhatsApp: one message with the surrounding conversation (N before and after, chronological). Use after whatsapp_search_messages to read a hit in context.',
+    inputSchema: {
+      type: 'object',
+      required: ['chat_jid', 'message_id'],
+      properties: {
+        chat_jid: { type: 'string', description: 'Chat jid the message belongs to.' },
+        message_id: { type: 'string', description: 'Message id from whatsapp_search_messages.' },
+        before: { type: 'number', description: 'Messages before (0-50, default 5).', default: 5 },
+        after: { type: 'number', description: 'Messages after (0-50, default 5).', default: 5 },
+      },
+    },
+  },
+  {
+    name: 'whatsapp_get_attachment',
+    description: 'WhatsApp: the actual file attached to one message (has_attachment=true in whatsapp_search_messages). Images come back viewable; PDFs and other types as an embedded base64 resource. Serves up to 8MB. Read-only.',
+    inputSchema: {
+      type: 'object',
+      required: ['chat_jid', 'message_id'],
+      properties: {
+        chat_jid: { type: 'string', description: 'Chat jid the message belongs to.' },
+        message_id: { type: 'string', description: 'Message id from whatsapp_search_messages.' },
+      },
+    },
+  },
 ];
 
 function send(message) {
@@ -1519,6 +1586,18 @@ function textResult(value, isError = false) {
     content: [{ type: 'text', text }],
     isError,
   };
+}
+
+function fileResult({ base64, mimeType, uri, note }) {
+  // Images ride the MCP image content type (clients render them inline);
+  // anything else (PDFs mostly) rides an embedded blob resource.
+  const content = [{ type: 'text', text: note || '' }];
+  if (String(mimeType || '').startsWith('image/')) {
+    content.push({ type: 'image', data: base64, mimeType });
+  } else {
+    content.push({ type: 'resource', resource: { uri: uri || 'klikk-file://unnamed', mimeType, blob: base64 } });
+  }
+  return { content, isError: false };
 }
 
 function clampNumber(value, fallback, min, max) {
@@ -3960,9 +4039,92 @@ async function slipsGet(args = {}) {
   };
 }
 
+const FILE_MAX_BYTES = 8 * 1024 * 1024;
+const MIME_BY_EXT = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  pdf: 'application/pdf',
+};
+
+function mimeForExt(ext) {
+  return MIME_BY_EXT[String(ext || '').toLowerCase()] || 'application/octet-stream';
+}
+
+async function slipsFile(args = {}) {
+  const sha256 = String(args.sha256 || '').trim();
+  if (!/^[0-9a-f]{64}$/i.test(sha256)) throw new Error('sha256 is required — a 64-char hex id from slips_list');
+  const detail = await apiRequest(`/audit/receipts/${encodeURIComponent(sha256)}/`);
+  if (!detail?.view_url) throw new Error('slip has no view_url — the register row may be missing its file');
+  const response = await fetch(detail.view_url);
+  if (!response.ok) throw new Error(`slip file fetch failed: HTTP ${response.status}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > FILE_MAX_BYTES) {
+    throw new Error(`slip file is ${bytes.length} bytes; this tool serves at most ${FILE_MAX_BYTES}. Use the OCR text from slips_get instead.`);
+  }
+  return {
+    __mcpFile: {
+      base64: bytes.toString('base64'),
+      mimeType: mimeForExt(detail.mime_ext),
+      uri: `klikk-slip://${sha256}`,
+      note: `Slip ${sha256.slice(0, 12)}… — ${detail.filename || 'unnamed'} (${detail.mime_ext || '?'}, ${bytes.length} bytes, slip_ts ${detail.slip_ts || 'unknown'}). Signed public link: ${detail.view_url}`,
+    },
+  };
+}
+
+async function whatsappListChats(args = {}) {
+  const params = kbParams(args, ['q']);
+  params.set('limit', String(clampNumber(args.limit, 50, 1, 200)));
+  params.set('offset', String(clampNumber(args.offset, 0, 0, 1_000_000)));
+  return apiRequest(`/api/whatsapp/chats/?${params}`);
+}
+
+async function whatsappSearchMessages(args = {}) {
+  const params = kbParams(args, ['q', 'chat_jid', 'sender', 'date_from', 'date_to', 'media_only']);
+  params.set('limit', String(clampNumber(args.limit, 50, 1, 500)));
+  params.set('offset', String(clampNumber(args.offset, 0, 0, 1_000_000)));
+  return apiRequest(`/api/whatsapp/messages/?${params}`);
+}
+
+async function whatsappMessageContext(args = {}) {
+  const chatJid = String(args.chat_jid || '').trim();
+  const messageId = String(args.message_id || '').trim();
+  if (!chatJid || !messageId) throw new Error('chat_jid and message_id are required (from whatsapp_search_messages)');
+  const params = new URLSearchParams({
+    chat_jid: chatJid,
+    message_id: messageId,
+    before: String(clampNumber(args.before, 5, 0, 50)),
+    after: String(clampNumber(args.after, 5, 0, 50)),
+  });
+  return apiRequest(`/api/whatsapp/context/?${params}`);
+}
+
+async function whatsappGetAttachment(args = {}) {
+  const chatJid = String(args.chat_jid || '').trim();
+  const messageId = String(args.message_id || '').trim();
+  if (!chatJid || !messageId) throw new Error('chat_jid and message_id are required (from whatsapp_search_messages)');
+  const params = new URLSearchParams({ chat_jid: chatJid, message_id: messageId });
+  const data = await apiRequest(`/api/whatsapp/attachment/?${params}`);
+  return {
+    __mcpFile: {
+      base64: data.base64,
+      mimeType: mimeForExt(data.mime_ext),
+      uri: `klikk-wa-attachment://${encodeURIComponent(messageId)}`,
+      note: `WhatsApp attachment ${data.filename || 'unnamed'} (${data.mime_ext || '?'}, ${data.byte_size} bytes) from message ${messageId}.`,
+    },
+  };
+}
+
 const toolHandlers = {
   slips_list: slipsList,
   slips_get: slipsGet,
+  slips_file: slipsFile,
+  whatsapp_list_chats: whatsappListChats,
+  whatsapp_search_messages: whatsappSearchMessages,
+  whatsapp_message_context: whatsappMessageContext,
+  whatsapp_get_attachment: whatsappGetAttachment,
   kb_list_documents: kbListDocuments,
   kb_read_document: kbReadDocument,
   kb_search: kbSearch,
@@ -4087,6 +4249,9 @@ async function handleRequest(request, respond = send) {
           return respond(jsonRpcResult(request.id, textResult(`Unknown tool: ${name}`, true)));
         }
         const result = await handler(args);
+        if (result && result.__mcpFile) {
+          return respond(jsonRpcResult(request.id, fileResult(result.__mcpFile)));
+        }
         return respond(jsonRpcResult(request.id, textResult(result)));
       }
       case 'ping':
