@@ -1108,3 +1108,109 @@ describe('AuditFindings — error, empty and loading states', () => {
     w.unmount();
   });
 });
+
+// ── 9. Row quick actions ────────────────────────────────────────────────────
+
+describe('AuditFindings — row quick actions', () => {
+  it('every row renders the action cell; OPEN shows Mark resolved, RESOLVED shows Reopen', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    const rows = bodyRows(w);
+    expect(rows[0].find('.af-actions').exists()).toBe(true);
+    // Row 0 = FY26-001 (OPEN)
+    expect(rows[0].find('button[title="Mark resolved"]').exists()).toBe(true);
+    expect(rows[0].find('button[title="Reopen"]').exists()).toBe(false);
+    // Row 2 = FY26-003 (RESOLVED)
+    expect(rows[2].find('button[title="Reopen"]').exists()).toBe(true);
+    expect(rows[2].find('button[title="Mark resolved"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('Mark resolved PATCHes { status: RESOLVED }, refetches, and does NOT open the detail dialog', async () => {
+    mocked.updateFinding.mockResolvedValue({ ...baseRows()[0], status: 'RESOLVED' });
+    const w = mountPage();
+    await flushPromises();
+    mocked.listFindings.mockClear();
+    mocked.findingsSummary.mockClear();
+
+    await bodyRows(w)[0].get('button[title="Mark resolved"]').trigger('click');
+    await flushPromises();
+
+    expect(mocked.updateFinding).toHaveBeenCalledWith(1, { status: 'RESOLVED' });
+    // The action cell stops propagation — the row-click detail open must not fire.
+    expect(mocked.getFinding).not.toHaveBeenCalled();
+    expect(dialogEl()).toBeNull();
+    // Status changes move summary buckets → both endpoints resync.
+    expect(mocked.listFindings).toHaveBeenCalled();
+    expect(mocked.findingsSummary).toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it('a failed quick action raises the action-error alert and leaves the row intact', async () => {
+    mocked.updateFinding.mockRejectedValue({ response: { status: 500, data: {} } });
+    const w = mountPage();
+    await flushPromises();
+
+    await bodyRows(w)[0].get('button[title="Mark resolved"]').trigger('click');
+    await flushPromises();
+
+    expect(w.text()).toContain('Updating the finding status failed');
+    expect(cellFor(w, bodyRows(w)[0], 'Status').text()).toContain('Open');
+    w.unmount();
+  });
+
+  it('Discuss opens the detail dialog on that finding', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    await bodyRows(w)[0].get('button[title="Discuss — add a comment"]').trigger('click');
+    await flushPromises();
+
+    expect(mocked.getFinding).toHaveBeenCalledWith(1);
+    expect(dialogEl()).not.toBeNull();
+    w.unmount();
+  });
+});
+
+// ── 10. Resizable columns ───────────────────────────────────────────────────
+
+describe('AuditFindings — resizable columns', () => {
+  const WIDTHS_KEY = 'klikk.audit-findings.col-widths';
+
+  afterEach(() => {
+    localStorage.removeItem(WIDTHS_KEY);
+  });
+
+  it('enables KTable resizing and renders drag handles in the header', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    expect(w.getComponent(KTable).props('resizable')).toBe(true);
+    expect(w.findAll('.ktable-th__resizer').length).toBeGreaterThan(0);
+    w.unmount();
+  });
+
+  it('restores persisted widths on mount and writes new widths back to localStorage', async () => {
+    localStorage.setItem(WIDTHS_KEY, JSON.stringify({ ref: 222 }));
+    const w = mountPage();
+    await flushPromises();
+
+    const widths = w.findAll('colgroup col').map((c) => (c.element as HTMLElement).style.width);
+    expect(widths).toContain('222px');
+
+    w.getComponent(KTable).vm.$emit('update:columnSizing', { ref: 300 });
+    await nextTick();
+    expect(JSON.parse(localStorage.getItem(WIDTHS_KEY)!)).toEqual({ ref: 300 });
+    w.unmount();
+  });
+
+  it('junk in the persisted widths key degrades to defaults instead of crashing', async () => {
+    localStorage.setItem(WIDTHS_KEY, '{not json');
+    const w = mountPage();
+    await flushPromises();
+
+    expect(bodyRows(w).length).toBeGreaterThan(0);
+    w.unmount();
+  });
+});
