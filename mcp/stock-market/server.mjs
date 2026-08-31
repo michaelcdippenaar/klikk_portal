@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import readline from 'node:readline';
+import crypto from 'node:crypto';
 import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.6.0';
+const SERVER_VERSION = '0.7.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -18,6 +19,7 @@ const SERVER_INSTRUCTIONS = [
   'Equipment price list: pricelist_list_items / pricelist_get_price / pricelist_price_history read Klikk\'s event-gear rate card (ex VAT, ZAR); pricelist_build_quote prices a job without persisting anything; pricelist_set_price and pricelist_upsert_item mutate the local price list and require confirm=true. Never writes to Xero.',
   'Books knowledge base: the kb_* tools are the allocation doctrine for Klikk\'s Xero books — kb_search / kb_read_document serve the doctrine docs (processing rules, transaction flows, chart-of-accounts taxonomy), kb_lookup_supplier / kb_lookup_customer / kb_lookup_account / kb_list_tracking give expected codings with rule strength, and kb_list_events is the gig register: pass the transaction date (on=YYYY-MM-DD) and if it falls in an event window the spend is an EVENT cost, not personal. Consult these BEFORE proposing any transaction allocation or audit verdict. All read-only; never touches Xero.',
   'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Comments can carry TAGS relating them to a workstream -- tag what you write and pull your own queue back with list_cube_comments(tag=\"audit\") instead of reading the whole register -- and an @mention in the text emails that person, so always report an unresolved or failed mention rather than assuming they were told. Never writes to Xero.',
+  'WhatsApp slips (receipts): slips_list / slips_get read the Slippies register — the receipt images MC WhatsApps in, OCR\'d and matched against Xero journals. slips_list filters by supplier/date/status/category and returns whole-filter totals; slips_get drills one slip to its full OCR, line items, matched journal and review comments. Archived slips are hidden unless archived="all" or "true". Read-only; never touches Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -39,6 +41,22 @@ const httpHost = process.env.KLIKK_MCP_HTTP_HOST || '127.0.0.1';
 const httpPort = Number(process.env.KLIKK_MCP_HTTP_PORT || 8787);
 const httpAuthToken = process.env.KLIKK_MCP_AUTH_TOKEN || '';
 const allowUnauthenticatedHttp = process.env.KLIKK_MCP_ALLOW_UNAUTHENTICATED_HTTP === 'true';
+
+// OAuth 2.1 layer for claude.ai / Cowork custom connectors. claude.ai's
+// connector dialog only speaks OAuth (dynamic client registration + PKCE) and
+// has no field for a static token, so alongside the static KLIKK_MCP_AUTH_TOKEN
+// this server can act as its own authorization server — same pattern as the
+// Hydrawise and vault33 connectors on this edge. All three env vars must be set
+// for the OAuth endpoints to exist; without them behaviour is unchanged.
+//   KLIKK_MCP_PUBLIC_URL      e.g. https://console.8-bit.space (no trailing /)
+//   KLIKK_MCP_OAUTH_PASSWORD  the one shared password gating /mcp/authorize
+//   KLIKK_MCP_JWT_SECRET      >=32 chars, signs issued access/refresh tokens
+const oauthPublicUrl = (process.env.KLIKK_MCP_PUBLIC_URL || '').replace(/\/+$/, '');
+const oauthPassword = process.env.KLIKK_MCP_OAUTH_PASSWORD || '';
+const oauthJwtSecret = process.env.KLIKK_MCP_JWT_SECRET || '';
+const oauthEnabled = Boolean(oauthPublicUrl && oauthPassword && oauthJwtSecret);
+const OAUTH_ACCESS_TTL = 3600 * 12; // 12h; claude.ai refreshes silently via the refresh token
+const OAUTH_REFRESH_TTL = 3600 * 24 * 90;
 
 const tools = [
   {
@@ -1433,6 +1451,42 @@ const tools = [
       properties: {
         on: { type: 'string', description: 'Date YYYY-MM-DD to screen against event windows.' },
         q: { type: 'string', description: 'Optional event-name filter, e.g. earthdance.' },
+      },
+    },
+  },
+  {
+    name: 'slips_list',
+    description: 'WhatsApp slips: list the Slippies receipt register (receipt images MC WhatsApps in, OCR\'d and matched to Xero journals) with filters, ordering, pagination, and whole-filter totals (count + sum over EVERYTHING matching, not just the page). Each row carries supplier, total, category, slip timestamp, Xero match status (status_group), matched journal fields (j_*), and a signed public view_url for the receipt image. Archived ("dealt with") slips are hidden unless archived is passed. Read-only; never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string', description: 'Full-text search over OCR text, filename and supplier.' },
+        status: { type: 'string', description: 'Status group filter, e.g. MATCHED | UNMATCHED (see status_group values in results).' },
+        synced: { type: 'boolean', description: 'Filter on synced-to-Xero flag.' },
+        fy: { type: 'string', description: 'Financial year filter, e.g. 2026.' },
+        date_from: { type: 'string', description: 'Slip date >= YYYY-MM-DD (local time).' },
+        date_to: { type: 'string', description: 'Slip date <= YYYY-MM-DD (local time).' },
+        to_process: { type: 'boolean', description: 'Only slips flagged to-process (true) or not flagged (false).' },
+        archived: { type: 'string', description: 'Three-way: omit/false = hide archived (default), true = only archived, all = both.' },
+        decision: { type: 'string', description: 'Review decision filter; UNDECIDED for slips with no decision yet.' },
+        category: { type: 'string', description: 'OCR category (exact, case-insensitive).' },
+        min_total: { type: 'number', description: 'Minimum slip total.' },
+        max_total: { type: 'number', description: 'Maximum slip total.' },
+        ordering: { type: 'string', description: 'One of slip_ts, -slip_ts (default), total, -total, supplier, -supplier, xero_status, -xero_status.' },
+        page: { type: 'number', description: 'Page number (1-based).', default: 1 },
+        page_size: { type: 'number', description: 'Rows per page.', default: 50 },
+        ids_only: { type: 'boolean', description: 'Return only matching sha256 ids — no rows, no pagination.' },
+      },
+    },
+  },
+  {
+    name: 'slips_get',
+    description: 'WhatsApp slips: one slip by sha256 — full OCR payload (supplier, totals, VAT, line items), the matched Xero journal fields, review state (to_process / decision / note / archived) and comments, plus the signed view_url for the receipt image. Use after slips_list. Read-only; never touches Xero.',
+    inputSchema: {
+      type: 'object',
+      required: ['sha256'],
+      properties: {
+        sha256: { type: 'string', description: 'Slip sha256 from slips_list.' },
       },
     },
   },
@@ -3873,7 +3927,42 @@ async function kbListEvents(args = {}) {
   return apiRequest(`/api/kb/events/?${params}`);
 }
 
+const SLIP_FILTER_KEYS = [
+  'q', 'status', 'synced', 'fy', 'date_from', 'date_to', 'to_process', 'archived',
+  'decision', 'category', 'min_total', 'max_total', 'ordering', 'ids_only',
+];
+
+async function slipsList(args = {}) {
+  const params = new URLSearchParams();
+  for (const key of SLIP_FILTER_KEYS) {
+    const value = args[key];
+    if (value === undefined || value === null || String(value).trim() === '') continue;
+    params.set(key, String(value).trim());
+  }
+  params.set('page', String(clampNumber(args.page, 1, 1, 100000)));
+  params.set('page_size', String(clampNumber(args.page_size, 50, 1, 200)));
+  const data = await apiRequest(`/audit/receipts/?${params}`);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    ...data,
+  };
+}
+
+async function slipsGet(args = {}) {
+  const sha256 = String(args.sha256 || '').trim();
+  if (!/^[0-9a-f]{64}$/i.test(sha256)) throw new Error('sha256 is required — a 64-char hex id from slips_list');
+  const data = await apiRequest(`/audit/receipts/${encodeURIComponent(sha256)}/`);
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    ...data,
+  };
+}
+
 const toolHandlers = {
+  slips_list: slipsList,
+  slips_get: slipsGet,
   kb_list_documents: kbListDocuments,
   kb_read_document: kbReadDocument,
   kb_search: kbSearch,
@@ -4036,13 +4125,294 @@ function startStdioTransport() {
   });
 }
 
+// ---- OAuth 2.1 (claude.ai / Cowork connector support) ----------------------
+
+function b64url(raw) {
+  return Buffer.from(raw).toString('base64url');
+}
+
+function timingSafeStringEqual(a, b) {
+  // Hash both sides so lengths match; sha256 collapses the length oracle.
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+function signJwt(payload) {
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body = b64url(JSON.stringify(payload));
+  const signature = crypto.createHmac('sha256', oauthJwtSecret).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifyJwt(token, expectedType) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) return null;
+  const expected = crypto.createHmac('sha256', oauthJwtSecret).update(`${parts[0]}.${parts[1]}`).digest('base64url');
+  if (!timingSafeStringEqual(parts[2], expected)) return null;
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+  if (payload.iss !== oauthPublicUrl) return null;
+  if (payload.aud !== `${oauthPublicUrl}/mcp`) return null;
+  if (payload.typ !== expectedType) return null;
+  if (!Number.isFinite(payload.exp) || payload.exp < Math.floor(Date.now() / 1000)) return null;
+  return payload;
+}
+
+function issueTokenPair() {
+  const now = Math.floor(Date.now() / 1000);
+  const base = { iss: oauthPublicUrl, aud: `${oauthPublicUrl}/mcp`, sub: 'owner', iat: now };
+  return {
+    access_token: signJwt({ ...base, typ: 'access', exp: now + OAUTH_ACCESS_TTL }),
+    refresh_token: signJwt({ ...base, typ: 'refresh', exp: now + OAUTH_REFRESH_TTL }),
+    token_type: 'Bearer',
+    expires_in: OAUTH_ACCESS_TTL,
+  };
+}
+
+// In-memory: a single-user connector simply re-authorizes after a restart.
+// Issued tokens are self-contained JWTs and survive restarts regardless.
+const oauthClients = new Map();
+const oauthCodes = new Map();
+
+// One shared password is the gate, so throttle guessing: per-IP plus a global
+// bucket so rotating source addresses does not bypass the per-IP limit.
+const loginFailures = { perIp: new Map(), global: [] };
+const LOGIN_MAX_PER_IP = 5;
+const LOGIN_MAX_GLOBAL = 30;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function pruneFailures(bucket, now) {
+  while (bucket.length && now - bucket[0] > LOGIN_WINDOW_MS) bucket.shift();
+}
+
+function loginRetryAfterSeconds(ip) {
+  const now = Date.now();
+  const ipBucket = loginFailures.perIp.get(ip) || [];
+  pruneFailures(ipBucket, now);
+  pruneFailures(loginFailures.global, now);
+  for (const [bucket, limit] of [[ipBucket, LOGIN_MAX_PER_IP], [loginFailures.global, LOGIN_MAX_GLOBAL]]) {
+    if (bucket.length >= limit) return Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (now - bucket[0])) / 1000));
+  }
+  return null;
+}
+
+function recordLoginFailure(ip) {
+  const now = Date.now();
+  const bucket = loginFailures.perIp.get(ip) || [];
+  bucket.push(now);
+  loginFailures.perIp.set(ip, bucket);
+  loginFailures.global.push(now);
+  if (loginFailures.perIp.size > 4096) {
+    for (const [key, value] of loginFailures.perIp) {
+      if (!value.length) loginFailures.perIp.delete(key);
+    }
+  }
+}
+
+function requestClientIp(req) {
+  // Caddy appends to X-Forwarded-For, so the last hop is the address it saw.
+  const forwarded = String(req.headers['x-forwarded-for'] || '');
+  if (forwarded) return forwarded.split(',').pop().trim();
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+const OAUTH_FORM = ({ err, stateBlob }) => `<!doctype html><html><head><meta charset=utf-8>
+<title>Klikk Financials MCP - sign in</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<style>body{font-family:system-ui;max-width:22rem;margin:18vh auto;padding:1rem;color:#15202a}
+h1{font-size:1.1rem}input{width:100%;padding:.6rem;margin:.4rem 0;border:1px solid #ccd;border-radius:6px;box-sizing:border-box}
+button{width:100%;padding:.6rem;border:0;border-radius:6px;background:#1f4e79;color:#fff;font-weight:600}
+.err{color:#9c3535;font-size:.9rem}
+.warn{background:#fff6e5;border:1px solid #e8d5a8;border-radius:6px;padding:.6rem;font-size:.85rem}</style>
+</head><body>
+<h1>Authorize Klikk Financials MCP</h1>
+<p>Sign in to connect the Klikk Financials database (Xero, Investec, slips, audit) to Claude.</p>
+<p class=warn>This grants read access to personal financial data, plus the documented local write tools (price list, comments, audit findings). It never writes to Xero.</p>
+${err}<form method=post><input type=password name=password placeholder=Password autofocus>
+<input type=hidden name=s value="${stateBlob}"><button>Authorize</button></form></body></html>`;
+
+function writeHtml(res, statusCode, html, extraHeaders = {}) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    ...extraHeaders,
+  });
+  res.end(html);
+}
+
+function parseFormBody(raw) {
+  const params = new URLSearchParams(raw || '');
+  return Object.fromEntries(params.entries());
+}
+
+function oauthProtectedResourceMetadata() {
+  return {
+    resource: `${oauthPublicUrl}/mcp`,
+    authorization_servers: [oauthPublicUrl],
+    bearer_methods_supported: ['header'],
+  };
+}
+
+function oauthAsMetadata() {
+  return {
+    issuer: oauthPublicUrl,
+    authorization_endpoint: `${oauthPublicUrl}/mcp/authorize`,
+    token_endpoint: `${oauthPublicUrl}/mcp/token`,
+    registration_endpoint: `${oauthPublicUrl}/mcp/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none'],
+  };
+}
+
+async function handleOauthRequest(req, res, url, corsHeaders) {
+  const { pathname } = url;
+
+  if (pathname === '/.well-known/oauth-protected-resource' || pathname === '/.well-known/oauth-protected-resource/mcp') {
+    writeJson(res, 200, oauthProtectedResourceMetadata(), corsHeaders);
+    return true;
+  }
+
+  if (pathname === '/.well-known/oauth-authorization-server' || pathname === '/.well-known/oauth-authorization-server/mcp') {
+    writeJson(res, 200, oauthAsMetadata(), corsHeaders);
+    return true;
+  }
+
+  if (pathname === '/mcp/register' && req.method === 'POST') {
+    let body = {};
+    try {
+      body = JSON.parse((await readBody(req)) || '{}');
+    } catch {
+      writeJson(res, 400, { error: 'invalid_client_metadata' }, corsHeaders);
+      return true;
+    }
+    const clientId = `c_${crypto.randomBytes(16).toString('base64url')}`;
+    oauthClients.set(clientId, { redirect_uris: body.redirect_uris || [], created: Date.now() });
+    writeJson(res, 201, {
+      client_id: clientId,
+      token_endpoint_auth_method: 'none',
+      redirect_uris: body.redirect_uris || [],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }, corsHeaders);
+    return true;
+  }
+
+  if (pathname === '/mcp/authorize' && req.method === 'GET') {
+    const stateBlob = b64url(JSON.stringify({
+      client_id: url.searchParams.get('client_id'),
+      redirect_uri: url.searchParams.get('redirect_uri'),
+      state: url.searchParams.get('state'),
+      code_challenge: url.searchParams.get('code_challenge'),
+      code_challenge_method: url.searchParams.get('code_challenge_method'),
+    }));
+    writeHtml(res, 200, OAUTH_FORM({ err: '', stateBlob }));
+    return true;
+  }
+
+  if (pathname === '/mcp/authorize' && req.method === 'POST') {
+    const ip = requestClientIp(req);
+    const wait = loginRetryAfterSeconds(ip);
+    if (wait !== null) {
+      writeHtml(res, 429, OAUTH_FORM({
+        err: `<p class=err>Too many failed attempts. Try again in ${Math.max(1, Math.ceil(wait / 60))} minute(s).</p>`,
+        stateBlob: '',
+      }), { 'Retry-After': String(wait) });
+      return true;
+    }
+
+    const form = parseFormBody(await readBody(req));
+    if (!timingSafeStringEqual(form.password || '', oauthPassword)) {
+      recordLoginFailure(ip);
+      writeHtml(res, 401, OAUTH_FORM({ err: '<p class=err>Wrong password.</p>', stateBlob: form.s || '' }));
+      return true;
+    }
+    loginFailures.perIp.delete(ip);
+
+    let state;
+    try {
+      state = JSON.parse(Buffer.from(String(form.s || ''), 'base64url').toString('utf8'));
+    } catch {
+      writeJson(res, 400, { error: 'invalid_request' }, corsHeaders);
+      return true;
+    }
+    if (!state?.redirect_uri || !state?.code_challenge) {
+      writeJson(res, 400, { error: 'invalid_request', error_description: 'redirect_uri and PKCE code_challenge are required' }, corsHeaders);
+      return true;
+    }
+
+    const code = crypto.randomBytes(24).toString('base64url');
+    oauthCodes.set(code, { ...state, exp: Date.now() + 5 * 60 * 1000 });
+    const sep = state.redirect_uri.includes('?') ? '&' : '?';
+    let redirect = `${state.redirect_uri}${sep}code=${encodeURIComponent(code)}`;
+    if (state.state) redirect += `&state=${encodeURIComponent(state.state)}`;
+    res.writeHead(302, { Location: redirect, 'Cache-Control': 'no-store' });
+    res.end();
+    return true;
+  }
+
+  if (pathname === '/mcp/token' && req.method === 'POST') {
+    const raw = await readBody(req);
+    const contentType = String(req.headers['content-type'] || '');
+    let form;
+    try {
+      form = contentType.includes('application/json') ? JSON.parse(raw || '{}') : parseFormBody(raw);
+    } catch {
+      writeJson(res, 400, { error: 'invalid_request' }, corsHeaders);
+      return true;
+    }
+
+    if (form.grant_type === 'refresh_token') {
+      const payload = verifyJwt(form.refresh_token, 'refresh');
+      if (!payload) {
+        writeJson(res, 400, { error: 'invalid_grant' }, corsHeaders);
+        return true;
+      }
+      writeJson(res, 200, issueTokenPair(), corsHeaders);
+      return true;
+    }
+
+    if (form.grant_type !== 'authorization_code') {
+      writeJson(res, 400, { error: 'unsupported_grant_type' }, corsHeaders);
+      return true;
+    }
+
+    const record = oauthCodes.get(String(form.code || ''));
+    oauthCodes.delete(String(form.code || ''));
+    if (!record || record.exp < Date.now()) {
+      writeJson(res, 400, { error: 'invalid_grant' }, corsHeaders);
+      return true;
+    }
+
+    const challenge = crypto.createHash('sha256').update(String(form.code_verifier || '')).digest('base64url');
+    if (!record.code_challenge || !timingSafeStringEqual(challenge, record.code_challenge)) {
+      writeJson(res, 400, { error: 'invalid_grant', error_description: 'PKCE verification failed' }, corsHeaders);
+      return true;
+    }
+
+    writeJson(res, 200, issueTokenPair(), corsHeaders);
+    return true;
+  }
+
+  return false;
+}
+
+// ---- inbound auth ----------------------------------------------------------
+
 function hasValidHttpAuth(req) {
   if (allowUnauthenticatedHttp) return true;
-  if (!httpAuthToken) return false;
   const authorization = req.headers.authorization || '';
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
   const headerToken = req.headers['x-mcp-token'];
-  return bearer === httpAuthToken || headerToken === httpAuthToken;
+  if (httpAuthToken && (bearer === httpAuthToken || headerToken === httpAuthToken)) return true;
+  if (oauthEnabled && bearer && verifyJwt(bearer, 'access')) return true;
+  return false;
 }
 
 function writeJson(res, statusCode, payload, extraHeaders = {}) {
@@ -4074,6 +4444,13 @@ function startHttpTransport() {
   if (!httpAuthToken && !allowUnauthenticatedHttp) {
     throw new Error('Refusing to start HTTP MCP without KLIKK_MCP_AUTH_TOKEN. Set KLIKK_MCP_ALLOW_UNAUTHENTICATED_HTTP=true only for local testing.');
   }
+  const oauthVars = [oauthPublicUrl, oauthPassword, oauthJwtSecret].filter(Boolean).length;
+  if (oauthVars > 0 && oauthVars < 3) {
+    throw new Error('OAuth is partially configured. Set all of KLIKK_MCP_PUBLIC_URL, KLIKK_MCP_OAUTH_PASSWORD and KLIKK_MCP_JWT_SECRET, or none.');
+  }
+  if (oauthEnabled && (oauthJwtSecret.length < 32 || oauthPassword.length < 12)) {
+    throw new Error('KLIKK_MCP_JWT_SECRET must be >=32 chars and KLIKK_MCP_OAUTH_PASSWORD >=12 — this gate fronts personal financial data.');
+  }
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -4096,7 +4473,26 @@ function startHttpTransport() {
         version: SERVER_VERSION,
         transport: 'http',
         api_base_url: apiBaseUrl,
+        oauth: oauthEnabled,
       }, corsHeaders);
+      return;
+    }
+
+    if (oauthEnabled) {
+      try {
+        if (await handleOauthRequest(req, res, url, corsHeaders)) return;
+      } catch (error) {
+        writeJson(res, 500, { error: `OAuth handler error: ${error.message}` }, corsHeaders);
+        return;
+      }
+    }
+
+    if (url.pathname === '/mcp' && (req.method === 'GET' || req.method === 'DELETE')) {
+      // Streamable HTTP optional features we do not implement: the standalone
+      // SSE stream (GET) and session teardown (DELETE). 405 tells a
+      // spec-compliant client to carry on with plain POSTs.
+      res.writeHead(405, { ...corsHeaders, Allow: 'POST' });
+      res.end();
       return;
     }
 
@@ -4106,9 +4502,12 @@ function startHttpTransport() {
     }
 
     if (!hasValidHttpAuth(req)) {
+      const challenge = oauthEnabled
+        ? `Bearer resource_metadata="${oauthPublicUrl}/.well-known/oauth-protected-resource/mcp"`
+        : 'Bearer';
       writeJson(res, 401, { error: 'Missing or invalid MCP bearer token.' }, {
         ...corsHeaders,
-        'WWW-Authenticate': 'Bearer',
+        'WWW-Authenticate': challenge,
       });
       return;
     }
