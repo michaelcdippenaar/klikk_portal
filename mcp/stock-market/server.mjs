@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { stdin as input, stdout as output } from 'node:process';
 
 const SERVER_NAME = 'klikk-financials';
-const SERVER_VERSION = '0.8.0';
+const SERVER_VERSION = '0.9.0';
 const PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
 const SERVER_INSTRUCTIONS = [
@@ -21,6 +21,7 @@ const SERVER_INSTRUCTIONS = [
   'Excel cube comments: MC pins notes to figures in his Excel cube/PivotTable sheets, and list_cube_comments is that human->agent to-do queue -- check it when MC says "what did I flag", "my Excel comments" or "what needs looking at"; get_comment_transactions drills one comment down to the journal lines that make its number up, and set_cube_comment_status closes it off. Comments can carry TAGS relating them to a workstream -- tag what you write and pull your own queue back with list_cube_comments(tag=\"audit\") instead of reading the whole register -- and an @mention in the text emails that person, so always report an unresolved or failed mention rather than assuming they were told. Never writes to Xero.',
   'WhatsApp slips (receipts): slips_list / slips_get read the Slippies register — the receipt images MC WhatsApps in, OCR\'d and matched against Xero journals. slips_list filters by supplier/date/status/category and returns whole-filter totals; slips_get drills one slip to its full OCR, line items, matched journal and review comments; slips_file returns the actual receipt image/PDF so you can read it directly. Archived slips are hidden unless archived="all" or "true". Read-only; never touches Xero.',
   'WhatsApp messages: whatsapp_list_chats / whatsapp_search_messages / whatsapp_message_context / whatsapp_get_attachment read MC\'s WhatsApp mirror (synced daily 06:00 SAST). Search by chat, text, sender or date; drill a hit to its surrounding conversation; fetch an attachment\'s actual file. This is personal correspondence — read it only to answer what MC asked, and never quote beyond what the task needs. Strictly read-only: there is deliberately NO send tool here.',
+  'THE ONE XERO WRITE: xero_create_draft_invoice creates a single DRAFT invoice (sits in Xero\'s Drafts queue until a human approves it there — it touches no ledger). Call it ONLY when MC has explicitly instructed that specific invoice in the current conversation, pass his instruction verbatim in `instruction`, and never call it speculatively, in bulk, or to "fix" the books. Every call is pre-logged to audit.xero_writes with a reversal hint. Contacts are never auto-created and account codes must exist in the chart. Everything else on this server remains read-only toward Xero.',
 ].join(' ');
 const DEFAULT_EXTRA_TYPES = [
   'dividends',
@@ -1542,6 +1543,43 @@ const tools = [
         message_id: { type: 'string', description: 'Message id from whatsapp_search_messages.' },
         before: { type: 'number', description: 'Messages before (0-50, default 5).', default: 5 },
         after: { type: 'number', description: 'Messages after (0-50, default 5).', default: 5 },
+      },
+    },
+  },
+  {
+    name: 'xero_create_draft_invoice',
+    description: 'THE ONE XERO WRITE. Creates a single DRAFT invoice (ACCREC sales invoice or ACCPAY bill) in Xero — it sits in the Drafts queue and touches NO ledger until a human approves it in Xero. Preconditions: MC has explicitly instructed this specific invoice in the current conversation (quote his words in `instruction` — the call is refused without it), the contact already exists (resolved against the mirror; never auto-created — on ambiguity you get candidates back), and every account_code exists in the chart (kb_lookup_account finds codes). Every call is pre-logged to audit.xero_writes with instructed_by, the instruction quote, and a reversal hint; report the returned write_log_id and invoice number to MC. One invoice per call, no bulk, never speculative, never to "fix" the books.',
+    inputSchema: {
+      type: 'object',
+      required: ['confirm', 'instruction', 'tenant_id', 'line_items'],
+      properties: {
+        confirm: { type: 'boolean', description: 'Must be literally true — acknowledges this writes a DRAFT invoice to Xero.' },
+        instruction: { type: 'string', description: "MC's authorising words for THIS invoice, quoted verbatim from the current conversation." },
+        tenant_id: { type: 'string', description: 'Xero tenant id (xero_list_tenants).' },
+        type: { type: 'string', description: 'ACCREC (sales invoice, default) or ACCPAY (bill).' },
+        contact_id: { type: 'string', description: 'Xero ContactID (preferred when known).' },
+        contact_name: { type: 'string', description: 'Exact contact name — must resolve to exactly one mirrored contact, otherwise candidates are returned.' },
+        date: { type: 'string', description: 'Invoice date YYYY-MM-DD (default today).' },
+        due_date: { type: 'string', description: 'Due date YYYY-MM-DD.' },
+        reference: { type: 'string', description: 'Reference text.' },
+        currency_code: { type: 'string', description: 'Default ZAR.' },
+        line_amount_types: { type: 'string', description: 'Exclusive (default, amounts ex VAT) | Inclusive | NoTax.' },
+        line_items: {
+          type: 'array',
+          description: 'Invoice lines (max 50). Each: {description, unit_amount, account_code, quantity?, tax_type?, tracking?: [{name, option}]}. Klikk doctrine: P&L lines need slot-1 Profit Center tracking (kb_list_tracking).',
+          items: {
+            type: 'object',
+            required: ['description', 'unit_amount', 'account_code'],
+            properties: {
+              description: { type: 'string' },
+              quantity: { type: 'number', default: 1 },
+              unit_amount: { type: 'number' },
+              account_code: { type: 'string' },
+              tax_type: { type: 'string' },
+              tracking: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, option: { type: 'string' } } } },
+            },
+          },
+        },
       },
     },
   },
@@ -4101,6 +4139,24 @@ async function whatsappMessageContext(args = {}) {
   return apiRequest(`/api/whatsapp/context/?${params}`);
 }
 
+async function xeroCreateDraftInvoice(args = {}) {
+  // Client-side guards duplicate the server's, so a refusal costs no network
+  // call and the error names exactly what is missing.
+  if (args.confirm !== true) {
+    throw new Error('Refused: confirm must be literally true. This tool writes a DRAFT invoice to Xero — only call it on MC\'s explicit instruction.');
+  }
+  if (!String(args.instruction || '').trim()) {
+    throw new Error('Refused: instruction is required — quote MC\'s authorising words for this specific invoice, verbatim.');
+  }
+  const data = await apiRequest('/xero/data/invoices/create-draft/', { method: 'POST', body: args });
+  return {
+    generated_at: new Date().toISOString(),
+    api_base_url: apiBaseUrl,
+    ...data,
+    agent_brief: `DRAFT invoice ${data.invoice_number || data.invoice_id} created in ${data.tenant_name} for ${data.contact?.name} — total ${data.total} ${data.currency_code}, logged as audit.xero_writes id ${data.write_log_id}. It affects no ledger until a human approves it in Xero's Drafts queue; deleting it there fully reverses this. Report the invoice number and log id to MC.`,
+  };
+}
+
 async function whatsappGetAttachment(args = {}) {
   const chatJid = String(args.chat_jid || '').trim();
   const messageId = String(args.message_id || '').trim();
@@ -4125,6 +4181,7 @@ const toolHandlers = {
   whatsapp_search_messages: whatsappSearchMessages,
   whatsapp_message_context: whatsappMessageContext,
   whatsapp_get_attachment: whatsappGetAttachment,
+  xero_create_draft_invoice: xeroCreateDraftInvoice,
   kb_list_documents: kbListDocuments,
   kb_read_document: kbReadDocument,
   kb_search: kbSearch,
