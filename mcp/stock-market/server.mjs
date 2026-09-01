@@ -4148,7 +4148,17 @@ async function xeroCreateDraftInvoice(args = {}) {
   if (!String(args.instruction || '').trim()) {
     throw new Error('Refused: instruction is required — quote MC\'s authorising words for this specific invoice, verbatim.');
   }
-  const data = await apiRequest('/xero/data/invoices/create-draft/', { method: 'POST', body: args });
+  let data;
+  try {
+    data = await apiRequest('/xero/data/invoices/create-draft/', { method: 'POST', body: args });
+  } catch (error) {
+    // Surface the validation detail — the problems list and contact candidates
+    // are exactly what the caller needs to correct the call.
+    if (error.payload && typeof error.payload === 'object') {
+      throw new Error(`Draft invoice refused (${error.status}): ${JSON.stringify(error.payload)}`);
+    }
+    throw error;
+  }
   return {
     generated_at: new Date().toISOString(),
     api_base_url: apiBaseUrl,
