@@ -6,31 +6,31 @@ const routes = [
   {
     path: '/login',
     name: 'login',
-    component: () => import('pages/Login.vue'),
+    component: () => import('@/pages/Login.vue'),
   },
   {
     path: '/app',
-    component: () => import('layouts/MainLayout.vue'),
+    component: () => import('@/layouts/MainLayout.vue'),
     meta: { requiresAuth: true },
     children: [
       {
         path: '',
         name: 'portal',
-        component: () => import('pages/Dashboard.vue'),
+        component: () => import('@/pages/Dashboard.vue'),
       },
       {
         path: 'ai-agent',
         name: 'ai-agent',
-        component: () => import('pages/AiAgent.vue'),
+        component: () => import('@/pages/AiAgent.vue'),
       },
       {
         path: 'reporting',
         name: 'reporting',
-        component: () => import('pages/Reporting.vue'),
+        component: () => import('@/pages/Reporting.vue'),
       },
       {
         path: 'pipeline',
-        component: () => import('layouts/PipelineLayout.vue'),
+        component: () => import('@/layouts/PipelineLayout.vue'),
         children: [
           {
             path: '',
@@ -40,17 +40,17 @@ const routes = [
           {
             path: 'processes',
             name: 'processes',
-            component: () => import('pages/Processes.vue'),
+            component: () => import('@/pages/Processes.vue'),
           },
           {
             path: 'data',
             name: 'data',
-            component: () => import('pages/DataViewer.vue'),
+            component: () => import('@/pages/DataViewer.vue'),
           },
           {
             path: 'compare',
             name: 'compare',
-            component: () => import('pages/Comparison.vue'),
+            component: () => import('@/pages/Comparison.vue'),
           },
           {
             // Moved to Setup -> Xero (/app/setup/credentials?tab=xero).
@@ -64,78 +64,78 @@ const routes = [
           {
             path: 'investec/holdings',
             name: 'investec-holdings',
-            component: () => import('pages/InvestecHoldings.vue'),
+            component: () => import('@/pages/InvestecHoldings.vue'),
           },
           {
             path: 'investec/transactions',
             name: 'investec-transactions',
-            component: () => import('pages/InvestecTransactions.vue'),
+            component: () => import('@/pages/InvestecTransactions.vue'),
           },
           {
             path: 'investec/share-codes',
             name: 'investec-share-codes',
-            component: () => import('pages/InvestecShareCodes.vue'),
+            component: () => import('@/pages/InvestecShareCodes.vue'),
           },
           {
             path: 'investec/account',
             name: 'investec-account',
-            component: () => import('pages/InvestecAccount.vue'),
+            component: () => import('@/pages/InvestecAccount.vue'),
           },
           {
             path: 'financial-investments',
             name: 'financial-investments',
-            component: () => import('pages/FinancialInvestments.vue'),
+            component: () => import('@/pages/FinancialInvestments.vue'),
           },
           {
             path: 'dividend-forecast',
             name: 'dividend-forecast',
-            component: () => import('pages/DividendForecast.vue'),
+            component: () => import('@/pages/DividendForecast.vue'),
           },
           {
             path: 'financial-investments/strategy',
             name: 'financial-investments-strategy',
-            component: () => import('pages/FinancialInvestmentStrategy.vue'),
+            component: () => import('@/pages/FinancialInvestmentStrategy.vue'),
           },
           {
             path: 'planning-analytics',
             name: 'planning-analytics',
-            component: () => import('pages/PlanningAnalytics.vue'),
+            component: () => import('@/pages/PlanningAnalytics.vue'),
           },
           {
             path: 'audit/procedures',
             name: 'audit-procedures',
-            component: () => import('pages/AuditProcedures.vue'),
+            component: () => import('@/pages/AuditProcedures.vue'),
           },
           {
             path: 'audit/findings',
             name: 'audit-findings',
-            component: () => import('pages/AuditFindings.vue'),
+            component: () => import('@/pages/AuditFindings.vue'),
           },
           {
             path: 'audit/receipts',
             name: 'audit-receipts',
-            component: () => import('pages/AuditReceipts.vue'),
+            component: () => import('@/pages/AuditReceipts.vue'),
           },
           {
             path: 'audit/receipts-v2',
             name: 'audit-receipts-v2',
-            component: () => import('pages/AuditReceiptsV2.vue'),
+            component: () => import('@/pages/AuditReceiptsV2.vue'),
           },
           {
             path: 'audit/comments',
             name: 'audit-comments',
-            component: () => import('pages/AuditComments.vue'),
+            component: () => import('@/pages/AuditComments.vue'),
           },
           {
             path: 'pricelist',
             name: 'pricelist',
-            component: () => import('pages/Pricelist.vue'),
+            component: () => import('@/pages/Pricelist.vue'),
           },
         ],
       },
       {
         path: 'setup',
-        component: () => import('layouts/SetupLayout.vue'),
+        component: () => import('@/layouts/SetupLayout.vue'),
         children: [
           {
             path: '',
@@ -145,7 +145,7 @@ const routes = [
           {
             path: 'credentials',
             name: 'credentials',
-            component: () => import('pages/Credentials.vue'),
+            component: () => import('@/pages/Credentials.vue'),
           },
           {
             // Xero connect/authorize lives as a tab on the Credentials page.
@@ -159,12 +159,12 @@ const routes = [
           {
             path: 'ai-agent',
             name: 'ai-agent-setup',
-            component: () => import('pages/AiAgentSetup.vue'),
+            component: () => import('@/pages/AiAgentSetup.vue'),
           },
           {
             path: 'monitor',
             name: 'agent-monitor',
-            component: () => import('pages/AgentMonitor.vue'),
+            component: () => import('@/pages/AgentMonitor.vue'),
           },
         ],
       },
@@ -175,7 +175,7 @@ const routes = [
   {
     path: '/_klikk-preview',
     name: 'klikk-preview',
-    component: () => import('pages/KlikkPreview.vue'),
+    component: () => import('@/pages/KlikkPreview.vue'),
   },
   {
     // Xero OAuth callback landing URL. The backend redirects the browser here
@@ -189,7 +189,7 @@ const routes = [
   },
   {
     path: '/:catchAll(.*)*',
-    component: () => import('pages/Error404.vue'),
+    component: () => import('@/pages/Error404.vue'),
   },
 ];
 

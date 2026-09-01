@@ -253,12 +253,20 @@ watch(userMenuOpen, async (open) => {
 
 const userEmail = computed(() => authStore.user?.email || authStore.user?.username || 'User');
 
-const navItems = [
+const ALL_NAV_ITEMS = [
   { name: 'portal',   label: 'Home',       to: { name: 'portal' } },
   { name: 'pipeline', label: 'Operations', to: { name: 'pipeline' } },
   { name: 'reporting', label: 'Reporting', to: { name: 'reporting' } },
   { name: 'setup',    label: 'Setup',      to: { name: 'setup' } },
 ];
+
+// Auditors only get the audit pages — a single entry pointing straight at
+// the receipts register (the backend 403s everything else for them anyway).
+const navItems = computed(() =>
+  authStore.isAuditor
+    ? [{ name: 'pipeline', label: 'Audit', to: { name: 'audit-receipts' } }]
+    : ALL_NAV_ITEMS,
+);
 
 function isActive(item) {
   if (item.name === 'portal') {
@@ -438,6 +446,9 @@ function buildProcessCommands() {
 }
 
 function refreshAllCommands() {
+  // Auditors: no tenant/process/nav commands — every one of them targets a
+  // surface the backend 403s for that role.
+  if (authStore.isAuditor) return;
   register([
     ...buildStaticCommands(),
     ...buildTenantCommands(),
@@ -446,9 +457,11 @@ function refreshAllCommands() {
 }
 
 onMounted(() => {
-  dataStore.loadTenants().catch(err => {
-    console.warn('Failed to load tenants:', err);
-  });
+  if (!authStore.isAuditor) {
+    dataStore.loadTenants().catch(err => {
+      console.warn('Failed to load tenants:', err);
+    });
+  }
   refreshAllCommands();
 });
 

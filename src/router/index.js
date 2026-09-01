@@ -8,6 +8,11 @@ const router = createRouter({
   routes,
 });
 
+// Routes an auditor account may open. Everything else redirects to the
+// receipts register. UI-shaping only — the backend middleware is the real
+// gate (auditors get 403 outside read-only /audit/).
+const AUDITOR_ROUTES = new Set(['login', 'audit-receipts', 'audit-findings']);
+
 // Navigation guard for protected routes
 router.beforeEach((to, from, next) => {
   try {
@@ -19,7 +24,12 @@ router.beforeEach((to, from, next) => {
     }
 
     if (to.path === '/login' && authStore.isAuthenticated) {
-      next({ path: '/app' });
+      next(authStore.isAuditor ? { name: 'audit-receipts' } : { path: '/app' });
+      return;
+    }
+
+    if (authStore.isAuditor && to.name && !AUDITOR_ROUTES.has(to.name)) {
+      next({ name: 'audit-receipts' });
       return;
     }
 

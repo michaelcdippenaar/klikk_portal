@@ -53,6 +53,12 @@ vi.mock('../../api/receipts', () => ({
 
 const routerReplace = vi.fn();
 const routeQuery: Record<string, unknown> = {};
+
+// The page reads the auth store for auditor UI-gating; controllable stub
+// (vi.hoisted so the hoisted vi.mock factory can see it).
+const mockAuth = vi.hoisted(() => ({ isAuditor: false, user: { role: 'standard' } }));
+vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ replace: routerReplace }),
@@ -612,6 +618,38 @@ describe('AuditReceipts archive — modal save must not send decision', () => {
       expect(Object.prototype.hasOwnProperty.call(call[1], 'decision')).toBe(false);
     }
     expect(warnings).toEqual([]);
+    w.unmount();
+  });
+});
+
+// ── Auditor mode (read-only role) ───────────────────────────────────────────
+
+describe('AuditReceipts — auditor mode', () => {
+  beforeEach(() => {
+    mockAuth.isAuditor = true;
+    mockAuth.user = { role: 'auditor' };
+  });
+
+  afterEach(() => {
+    mockAuth.isAuditor = false;
+    mockAuth.user = { role: 'standard' };
+  });
+
+  it('renders no checkboxes, no Archive buttons, disabled to-process toggles; View intact', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    expect(w.findAll('tbody input.ktable-checkbox').length).toBe(0);
+    const buttons = w.findAll('tbody button');
+    expect(buttons.some((b) => b.text() === 'Archive' || b.text() === 'Restore')).toBe(false);
+    expect(buttons.some((b) => b.text() === 'View')).toBe(true);
+    // Every to-process toggle is disabled (KToggle renders a Reka switch).
+    const toggles = w.findAll('tbody .ktoggle-track');
+    expect(toggles.length).toBeGreaterThan(0);
+    for (const t of toggles) {
+      expect(t.classes()).toContain('ktoggle-track--disabled');
+    }
+    expect(w.find('.ar-bulk-bar').exists()).toBe(false);
     w.unmount();
   });
 });

@@ -57,6 +57,12 @@ vi.mock('../../api/findings', () => ({
 
 const routerReplace = vi.fn();
 const routeQuery: Record<string, unknown> = {};
+
+// The page reads the auth store for auditor UI-gating; controllable stub
+// (vi.hoisted so the hoisted vi.mock factory can see it).
+const mockAuth = vi.hoisted(() => ({ isAuditor: false, user: { role: 'standard' } }));
+vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ replace: routerReplace }),
@@ -1211,6 +1217,50 @@ describe('AuditFindings — resizable columns', () => {
     await flushPromises();
 
     expect(bodyRows(w).length).toBeGreaterThan(0);
+    w.unmount();
+  });
+});
+
+// ── 11. Auditor mode (read-only role) ───────────────────────────────────────
+
+describe('AuditFindings — auditor mode', () => {
+  beforeEach(() => {
+    mockAuth.isAuditor = true;
+    mockAuth.user = { role: 'auditor' };
+  });
+
+  afterEach(() => {
+    mockAuth.isAuditor = false;
+    mockAuth.user = { role: 'standard' };
+  });
+
+  it('renders no selection checkboxes, no quick-action column, and no bulk bar', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    expect(rowCheckboxes(w).length).toBe(0);
+    expect(w.find('thead input.ktable-checkbox').exists()).toBe(false);
+    expect(w.find('.af-actions').exists()).toBe(false);
+    expect(w.find('.af-bulk-bar').exists()).toBe(false);
+    // Read surface intact: rows and export buttons still render.
+    expect(bodyRows(w).length).toBeGreaterThan(0);
+    expect(w.findAll('button').some((b) => b.text() === 'Export CSV')).toBe(true);
+    w.unmount();
+  });
+
+  it('detail dialog shows no Update section and no comment form, but comments stay readable', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const dialog = dialogEl();
+    expect(dialog).not.toBeNull();
+    expect(dialog!.textContent).not.toContain('Save changes');
+    expect(dialog!.querySelector('.af-comment-form')).toBeNull();
+    // Comments from the envelope still render read-only.
+    expect(dialog!.textContent).toContain('Bookkeeper notified');
     w.unmount();
   });
 });

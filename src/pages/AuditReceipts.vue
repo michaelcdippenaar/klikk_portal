@@ -124,7 +124,7 @@
     </div>
 
     <!-- Bulk action bar — only while a selection exists -->
-    <div v-if="selection.hasSelection.value" class="ar-bulk-bar mb-3">
+    <div v-if="!isAuditor && selection.hasSelection.value" class="ar-bulk-bar mb-3">
       <strong class="ar-bulk-bar__count">{{ selection.count.value }} selected</strong>
 
       <button
@@ -181,7 +181,7 @@
         :data="rows"
         :loading="loading"
         dense
-        selectable
+        :selectable="!isAuditor"
         :selectedRowIds="selection.selected.value"
         pagination="server"
         :pageSize="filters.page_size"
@@ -226,14 +226,16 @@
           <span class="ar-inline-control" @click.stop>
             <KToggle
               :modelValue="!!row.review?.to_process"
-              :disabled="isSaving(row.sha256)"
+              :disabled="isSaving(row.sha256) || isAuditor"
               @update:modelValue="(v) => setToProcess(row, v)"
             />
           </span>
         </template>
 
         <template #cell-comment_count="{ value, row }">
+          <span v-if="isAuditor" :class="Number(value) ? '' : 'text-muted'">{{ Number(value) || 0 }}</span>
           <ReceiptCommentCell
+            v-else
             :sha256="row.sha256"
             :count="Number(value) || 0"
             @added="onInlineComment"
@@ -244,6 +246,7 @@
           <span class="ar-actions" @click.stop>
             <button class="btn btn-ghost btn-xs" @click="openDetail(row)">View</button>
             <button
+              v-if="!isAuditor"
               class="btn btn-ghost btn-xs"
               :disabled="isSaving(row.sha256)"
               :title="row.review?.archived ? 'Put this receipt back in the working list' : 'Take this receipt out of the working list (nothing is deleted)'"
@@ -343,10 +346,11 @@
               <KToggle
                 label="To process"
                 :modelValue="!!detail.review?.to_process"
-                :disabled="isSaving(detail.sha256)"
+                :disabled="isSaving(detail.sha256) || isAuditor"
                 @update:modelValue="(v) => setToProcess(detail, v)"
               />
-              <label class="ar-field">
+              <p v-if="isAuditor" class="ar-sub">{{ detail.review?.note || 'No review note.' }}</p>
+              <label v-else class="ar-field">
                 <span class="ar-field__label">Note</span>
                 <textarea
                   v-model="noteDraft"
@@ -374,7 +378,7 @@
               </li>
             </ul>
             <p v-else-if="!detailLoading" class="ar-sub">No comments yet.</p>
-            <form class="ar-comment-form" @submit.prevent="addComment">
+            <form v-if="!isAuditor" class="ar-comment-form" @submit.prevent="addComment">
               <textarea
                 ref="commentInputRef"
                 v-model="commentDraft"
@@ -404,20 +408,22 @@
             Last saved {{ formatDateTime(detail.review.updated_at) }}<template v-if="detail.review.updated_by"> by {{ detail.review.updated_by }}</template>
           </template>
         </span>
-        <button
-          class="btn btn-ghost btn-sm"
-          :disabled="isSaving(detail.sha256)"
-          @click="setArchived(detail, !detail.review?.archived)"
-        >
-          {{ detail.review?.archived ? 'Restore' : 'Archive' }}
-        </button>
-        <button
-          class="btn btn-primary btn-sm"
-          :disabled="!reviewDirty || isSaving(detail.sha256)"
-          @click="saveReview"
-        >
-          {{ isSaving(detail.sha256) ? 'Saving…' : 'Save review' }}
-        </button>
+        <template v-if="!isAuditor">
+          <button
+            class="btn btn-ghost btn-sm"
+            :disabled="isSaving(detail.sha256)"
+            @click="setArchived(detail, !detail.review?.archived)"
+          >
+            {{ detail.review?.archived ? 'Restore' : 'Archive' }}
+          </button>
+          <button
+            class="btn btn-primary btn-sm"
+            :disabled="!reviewDirty || isSaving(detail.sha256)"
+            @click="saveReview"
+          >
+            {{ isSaving(detail.sha256) ? 'Saving…' : 'Save review' }}
+          </button>
+        </template>
       </template>
     </KDialog>
 
@@ -501,10 +507,14 @@ import StatusPill from '../components/klikk/StatusPill.vue';
 import ReceiptCommentCell from '../components/receipts/ReceiptCommentCell.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
+import { useAuthStore } from '../stores/auth';
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const authStore = useAuthStore();
+/** UI-shaping only — the backend middleware enforces read-only for auditors. */
+const isAuditor = computed(() => authStore.isAuditor);
 
 // ── List state ──────────────────────────────────────────────────────────────
 const filters = reactive(hydrateFromQuery(route.query));

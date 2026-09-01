@@ -48,6 +48,12 @@ vi.mock('../../api/receipts', () => ({
 
 const routerReplace = vi.fn();
 const routeQuery: Record<string, unknown> = {};
+
+// The page reads the auth store for auditor UI-gating; controllable stub
+// (vi.hoisted so the hoisted vi.mock factory can see it).
+const mockAuth = vi.hoisted(() => ({ isAuditor: false, user: { role: 'standard' } }));
+vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ replace: routerReplace }),

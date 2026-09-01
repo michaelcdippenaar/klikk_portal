@@ -150,7 +150,7 @@
     </div>
 
     <!-- Bulk action bar — only while a selection exists -->
-    <div v-if="selection.hasSelection.value" class="af-bulk-bar mb-3">
+    <div v-if="!isAuditor && selection.hasSelection.value" class="af-bulk-bar mb-3">
       <strong class="af-bulk-bar__count">{{ selection.count.value }} selected</strong>
       <span v-if="overBulkCap" class="af-bulk-bar__cap">
         Bulk actions are limited to {{ BULK_MAX }} findings per action — narrow the selection.
@@ -204,7 +204,7 @@
         :data="rows"
         :loading="loading"
         dense
-        selectable
+        :selectable="!isAuditor"
         resizable
         :columnSizing="colWidths"
         :selectedRowIds="selection.selected.value"
@@ -404,7 +404,7 @@
 
         <!-- Right: edit + comments -->
         <div class="af-detail__side">
-          <section class="af-section">
+          <section v-if="!isAuditor" class="af-section">
             <h3 class="af-section__heading">Update</h3>
             <div class="af-edit">
               <KSelect
@@ -463,7 +463,7 @@
               </li>
             </ul>
             <p v-else-if="!detailLoading" class="af-sub">No comments yet.</p>
-            <form class="af-comment-form" @submit.prevent="addComment">
+            <form v-if="!isAuditor" class="af-comment-form" @submit.prevent="addComment">
               <textarea
                 ref="commentBoxRef"
                 v-model="commentDraft"
@@ -602,10 +602,14 @@ import FindingCubeView from '../components/findings/FindingCubeView.vue';
 import FindingLinks from '../components/findings/FindingLinks.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
+import { useAuthStore } from '../stores/auth';
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const authStore = useAuthStore();
+/** UI-shaping only — the backend middleware enforces read-only for auditors. */
+const isAuditor = computed(() => authStore.isAuditor);
 
 // ── Vocabulary (frozen contract) ─────────────────────────────────────────────
 
@@ -816,7 +820,7 @@ const actionError = ref(null);
 const actionErrorSeq = ref(0);
 const exporting = ref(null);
 
-const columns = [
+const ALL_COLUMNS = [
   { accessorKey: 'ref', header: 'Ref', enableSorting: true, meta: { width: '96px' } },
   { accessorKey: 'title', header: 'Title', enableSorting: true },
   { accessorKey: 'severity', header: 'Severity', enableSorting: true, meta: { width: '110px' } },
@@ -830,6 +834,11 @@ const columns = [
   // Display-only quick-action column — no accessorKey, rendered via #cell-actions.
   { id: 'actions', header: '', enableSorting: false, enableResizing: false, meta: { align: 'right', width: '108px' } },
 ];
+
+// Auditors get no quick-action column (their role is read-only server-side).
+const columns = computed(() =>
+  isAuditor.value ? ALL_COLUMNS.filter((c) => c.id !== 'actions') : ALL_COLUMNS,
+);
 
 // ── Column widths (drag-to-resize, persisted per browser) ────────────────────
 

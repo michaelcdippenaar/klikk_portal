@@ -32,6 +32,12 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshTokenValue = ref(localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) || null);
 
   const isAuthenticated = computed(() => !!token.value);
+  /**
+   * External-auditor account (User.role === 'auditor'). The backend hard-gates
+   * these to read-only /audit/ access; this flag only shapes the UI to match
+   * (nav, guards, hidden write controls) — it is NOT the security boundary.
+   */
+  const isAuditor = computed(() => user.value?.role === 'auditor');
 
   // Load user from localStorage on init
   const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
@@ -101,6 +107,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     refreshTokenValue,
     isAuthenticated,
+    isAuditor,
     login,
     refreshToken,
     logout,

@@ -216,17 +216,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue';
+import { ref, reactive, watch, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import AppDrawer from '../components/shell/AppDrawer.vue';
+import { useAuthStore } from '../stores/auth';
 
 const route = useRoute();
+const authStore = useAuthStore();
 
 const NAV_PERSIST_KEY = 'klikk:portal:nav';
 const NAV_COLLAPSED_KEY = 'klikk:portal:side-menu-collapsed';
 
 // Nav group definitions — lucide field replaces q-icon name (Material → Lucide)
-const navGroups = [
+const ALL_NAV_GROUPS = [
   {
     key: 'xero',
     label: 'Xero',
@@ -282,6 +284,16 @@ const navGroups = [
   },
 ];
 
+// Auditors see only the audit group, trimmed to the two pages their role can
+// open (the backend hard-gates the rest; this keeps the drawer honest).
+const AUDITOR_ROUTE_NAMES = new Set(['audit-receipts', 'audit-findings']);
+const navGroups = computed(() => {
+  if (!authStore.isAuditor) return ALL_NAV_GROUPS;
+  return ALL_NAV_GROUPS
+    .filter((g) => g.key === 'audit')
+    .map((g) => ({ ...g, items: g.items.filter((i) => AUDITOR_ROUTE_NAMES.has(i.name)) }));
+});
+
 // Load persisted expansion state; default to Xero expanded only.
 function loadExpanded() {
   try {
@@ -335,7 +347,7 @@ watch(
   () => route.name,
   (routeName) => {
     if (!routeName) return;
-    for (const group of navGroups) {
+    for (const group of navGroups.value) {
       if (group.items.some(item => item.name === routeName)) {
         if (!expandedGroups[group.key]) {
           expandedGroups[group.key] = true;
