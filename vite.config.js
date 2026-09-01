@@ -22,6 +22,15 @@ export default defineConfig({
   server: {
     port: 9000,
     open: true,
+    proxy: process.env.KLIKK_BACKEND_ORIGIN
+      ? {
+          '/backend': {
+            target: process.env.KLIKK_BACKEND_ORIGIN,
+            changeOrigin: true,
+            secure: true,
+          },
+        }
+      : undefined,
   },
 
   build: {

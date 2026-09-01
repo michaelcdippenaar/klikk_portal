@@ -188,8 +188,14 @@
           <button class="btn btn-ghost btn-sm" type="button">Configure</button>
         </div>
 
+        <PerformanceKpiReport
+          v-if="activeReport.id === 'performance-kpis'"
+          :kpis="performanceKpis"
+          :variance-table="performanceVarianceTable"
+        />
+
         <SectionCard
-          v-if="activeReport.id === 'bank-costs'"
+          v-else-if="activeReport.id === 'bank-costs'"
           title="Bank cost by account"
           description="Investec FeesAndInterest transactions grouped by account and fee line item."
         >
@@ -467,18 +473,23 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
 import CostCutReport from '../components/reporting/CostCutReport.vue';
 import PivotExplorer from '../components/reporting/PivotExplorer.vue';
+import PerformanceKpiReport from '../components/reporting/PerformanceKpiReport.vue';
+import { useReportingKpiStore } from '../stores/reportingKpis';
 import {
   getInvestecBankAccounts,
   getInvestecBankCostReport,
 } from '../api/endpoints';
 
 const selectedReportId = ref('bank-costs');
+const reportingKpiStore = useReportingKpiStore();
+const { performanceKpis, performanceVarianceTable } = storeToRefs(reportingKpiStore);
 const route = useRoute();
 const router = useRouter();
 const reportingMenuCollapsed = ref(false);
@@ -519,6 +530,12 @@ const reportCards = [
 // Only implemented reports live here; new ones are added as they are built.
 const reportGroups = [
   {
+    label: 'Management',
+    items: [
+      { id: 'performance-kpis', title: 'Performance KPIs', source: 'Xero actuals + Planning Analytics targets', body: 'Management KPIs with actual, target, variance and review state for the selected period.' },
+    ],
+  },
+  {
     label: 'Cost & Sustainability',
     items: [
       { id: 'cost-cut', title: 'Cost-Cut Finder', source: 'Planning Analytics (TM1)', body: 'Recurring-cash controllable cost by account, this year vs prior, with editable targets and RAG.' },
@@ -549,7 +566,7 @@ const activeReport = computed(() =>
 
 const coreReports = computed(() =>
   allReports.value.filter((report) =>
-    ['cost-cut', 'tm1-explorer', 'bank-costs'].includes(report.id)
+    ['performance-kpis', 'cost-cut', 'tm1-explorer', 'bank-costs'].includes(report.id)
   )
 );
 
@@ -613,7 +630,7 @@ function toggleReportGroup(label) {
 }
 
 function reportIcon(report) {
-  if (['management-pack', 'dashboard-pack', 'tm1-explorer'].includes(report.id)) return 'layout-dashboard';
+  if (['performance-kpis', 'management-pack', 'dashboard-pack', 'tm1-explorer'].includes(report.id)) return 'layout-dashboard';
   if (['profit-loss', 'balance-sheet', 'trial-balance', 'cash-flow'].includes(report.id)) return 'bar-chart-2';
   if (['bank-reconciliation', 'bank-transactions', 'bank-costs'].includes(report.id)) return 'landmark';
   if (['cost-cut'].includes(report.id)) return 'trending-up';

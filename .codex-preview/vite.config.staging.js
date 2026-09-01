@@ -1,0 +1,50 @@
+import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+import { fileURLToPath, URL } from 'node:url';
+
+export default defineConfig({
+  plugins: [vue()],
+
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      src: fileURLToPath(new URL('./src', import.meta.url)),
+      pages: fileURLToPath(new URL('./src/pages', import.meta.url)),
+      layouts: fileURLToPath(new URL('./src/layouts', import.meta.url)),
+      boot: fileURLToPath(new URL('./src/boot', import.meta.url)),
+      components: fileURLToPath(new URL('./src/components', import.meta.url)),
+      stores: fileURLToPath(new URL('./src/stores', import.meta.url)),
+      assets: fileURLToPath(new URL('./src/assets', import.meta.url)),
+    },
+  },
+
+  server: {
+    host: '0.0.0.0',
+    port: 4173,
+    open: false,
+    allowedHosts: ['auditors.8-bit.space'],
+    proxy: process.env.KLIKK_BACKEND_ORIGIN
+      ? {
+          '/backend': {
+            target: process.env.KLIKK_BACKEND_ORIGIN,
+            changeOrigin: true,
+            secure: true,
+          },
+        }
+      : undefined,
+  },
+
+  build: {
+    outDir: 'dist',
+    target: ['es2019', 'edge88', 'firefox78', 'chrome87', 'safari13.1'],
+  },
+
+  css: {
+    preprocessorOptions: {
+      sass: {
+        silenceDeprecations: ['legacy-js-api'],
+      },
+    },
+  },
+});
+

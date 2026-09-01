@@ -1,0 +1,26 @@
+FROM node:20-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl git gosu openssh-server \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/klikk-deps
+COPY package.json package-lock.json ./
+RUN npm ci \
+  && sha256sum package-lock.json | cut -d ' ' -f 1 > package-lock.sha256
+
+COPY docker/development/sshd_config /etc/ssh/sshd_config
+COPY docker/development/entrypoint.sh /usr/local/bin/klikk-development-entrypoint
+
+RUN chmod 0755 /usr/local/bin/klikk-development-entrypoint \
+  && mkdir -p /run/sshd /var/lib/klikk-sshd /workspace \
+  && passwd -d node \
+  && chown node:node /workspace
+
+WORKDIR /workspace
+EXPOSE 22 4173
+
+ENTRYPOINT ["/usr/local/bin/klikk-development-entrypoint"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "4173", "--strictPort"]

@@ -170,6 +170,19 @@ const routes = [
       },
     ],
   },
+  // DEV/REVIEW — authenticated shell and Close Overview without an auth wall.
+  // Not linked in product navigation; used for local visual QA and annotation.
+  {
+    path: '/_close-overview-preview',
+    component: () => import('layouts/MainLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'close-overview-preview',
+        component: () => import('pages/Dashboard.vue'),
+      },
+    ],
+  },
   // DEV ONLY — Klikk design language primitive preview. Not linked in app nav.
   // Accessible at http://localhost:9000/_klikk-preview during development.
   {

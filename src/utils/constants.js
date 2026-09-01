@@ -135,4 +135,5 @@ export const STORAGE_KEYS = {
   REFRESH_TOKEN: 'refresh_token',
   USER: 'user',
   SELECTED_TENANT: 'selected_tenant',
+  OVERVIEW_FINANCIAL_YEAR: 'overview_financial_year',
 };

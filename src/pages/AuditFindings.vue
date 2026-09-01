@@ -205,6 +205,8 @@
         :loading="loading"
         dense
         selectable
+        resizable
+        :columnSizing="colWidths"
         :selectedRowIds="selection.selected.value"
         :sortBy="sortBy"
         pagination="server"
@@ -212,6 +214,7 @@
         :pageSizeOptions="PAGE_SIZE_OPTIONS"
         :serverTotal="totals.count"
         :serverPage="filters.page - 1"
+        @update:columnSizing="onColWidths"
         @update:selectedRowIds="selection.set"
         @update:sortBy="onSortBy"
         @update:serverPage="onServerPage"
@@ -256,6 +259,63 @@
 
         <template #cell-comment_count="{ value }">
           <span :class="value ? '' : 'text-muted'">{{ value || 0 }}</span>
+        </template>
+
+        <template #cell-actions="{ row }">
+          <!-- @click.stop: none of these may trigger the row's open-detail click -->
+          <div class="af-actions" @click.stop>
+            <button
+              v-if="row.status !== 'RESOLVED'"
+              class="af-action-btn af-action-btn--resolve"
+              :disabled="rowBusyId !== null"
+              title="Mark resolved"
+              @click="setRowStatus(row, 'RESOLVED')"
+            >
+              <!-- Lucide check -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <button
+              v-else
+              class="af-action-btn"
+              :disabled="rowBusyId !== null"
+              title="Reopen"
+              @click="setRowStatus(row, 'OPEN')"
+            >
+              <!-- Lucide rotate-ccw -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button
+              class="af-action-btn"
+              title="Discuss — add a comment"
+              @click="discussRow(row)"
+            >
+              <!-- Lucide message-circle -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            </button>
+            <KMenu
+              align="end"
+              :modelValue="actionMenuRowId === row.id"
+              @update:modelValue="(v) => (actionMenuRowId = v ? row.id : null)"
+            >
+              <template #trigger>
+                <button class="af-action-btn" :disabled="rowBusyId !== null" title="More actions">
+                  <!-- Lucide more-horizontal -->
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                </button>
+              </template>
+              <KMenuItem
+                v-for="opt in STATUS_OPTIONS"
+                :key="opt.value"
+                :disabled="rowBusyId !== null || row.status === opt.value"
+                @select="setRowStatus(row, opt.value)"
+              >
+                Set {{ opt.label.toLowerCase() }}
+              </KMenuItem>
+              <KMenuSeparator />
+              <KMenuItem @select="discussRow(row)">Discuss…</KMenuItem>
+              <KMenuItem @select="openDetail(row)">Open detail</KMenuItem>
+            </KMenu>
+          </div>
         </template>
       </KTable>
     </SectionCard>
@@ -405,6 +465,7 @@
             <p v-else-if="!detailLoading" class="af-sub">No comments yet.</p>
             <form class="af-comment-form" @submit.prevent="addComment">
               <textarea
+                ref="commentBoxRef"
                 v-model="commentDraft"
                 class="af-textarea"
                 rows="2"
@@ -503,7 +564,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   listFindings,
@@ -528,6 +589,7 @@ import KDialog from '../components/klikk/KDialog.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KMenu from '../components/klikk/KMenu.vue';
 import KMenuItem from '../components/klikk/KMenuItem.vue';
+import KMenuSeparator from '../components/klikk/KMenuSeparator.vue';
 import KMultiSelect from '../components/klikk/KMultiSelect.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
@@ -765,7 +827,33 @@ const columns = [
   { accessorKey: 'due_date', header: 'Due', enableSorting: true, meta: { width: '104px' } },
   { accessorKey: 'source', header: 'Source', enableSorting: false, meta: { width: '170px' } },
   { accessorKey: 'comment_count', header: 'Comments', enableSorting: false, meta: { align: 'center', width: '90px' } },
+  // Display-only quick-action column — no accessorKey, rendered via #cell-actions.
+  { id: 'actions', header: '', enableSorting: false, enableResizing: false, meta: { align: 'right', width: '108px' } },
 ];
+
+// ── Column widths (drag-to-resize, persisted per browser) ────────────────────
+
+const COL_WIDTHS_KEY = 'klikk.audit-findings.col-widths';
+
+function loadColWidths() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) || 'null');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const colWidths = ref(loadColWidths());
+
+function onColWidths(next) {
+  colWidths.value = next && typeof next === 'object' ? next : {};
+  try {
+    localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidths.value));
+  } catch {
+    // Private browsing / quota — widths just won't survive a reload.
+  }
+}
 
 const countLabel = computed(() => {
   if (loading.value && !rows.value.length) return 'Loading findings…';
@@ -993,6 +1081,40 @@ async function submitBulkComment() {
   }
 }
 
+// ── Per-row quick actions ────────────────────────────────────────────────────
+
+/** Finding id with a PATCH in flight — all quick-action buttons disable while set. */
+const rowBusyId = ref(null);
+/** Finding id whose ⋯ menu is open (one menu at a time). */
+const actionMenuRowId = ref(null);
+
+async function setRowStatus(row, status) {
+  if (!row || row.id == null || row.status === status || rowBusyId.value !== null) return;
+  rowBusyId.value = row.id;
+  actionError.value = null;
+  try {
+    const updated = await updateFinding(row.id, { status });
+    applyFindingLocally(updated);
+    toast.success(`${row.ref || 'Finding'} → ${vocabLabel(status)}`);
+    // Status changes move the summary buckets, and with a status filter active
+    // the row may rightly drop out of the table — resync server truth.
+    await refreshAll();
+  } catch (err) {
+    raiseActionError(describeError(err, 'Updating the finding status failed'));
+    console.error(err);
+  } finally {
+    rowBusyId.value = null;
+  }
+}
+
+/** Open the detail dialog straight into the comment box. */
+function discussRow(row) {
+  openDetail(row);
+  nextTick(() => {
+    requestAnimationFrame(() => commentBoxRef.value?.focus());
+  });
+}
+
 // ── Detail dialog ────────────────────────────────────────────────────────────
 
 const detailOpen = ref(false);
@@ -1017,6 +1139,7 @@ const amountDraft = ref('');
 const editSaving = ref(false);
 const commentDraft = ref('');
 const commentSaving = ref(false);
+const commentBoxRef = ref(null);
 
 const detailTitle = computed(() => (detail.value ? `${detail.value.ref} — ${detail.value.title}` : ''));
 const detailDescriptionLine = computed(() => {
@@ -1294,6 +1417,47 @@ async function exportAs(format) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Row quick actions ──────────────────────────────────────────────────── */
+.af-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.af-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kdl-text-muted);
+  cursor: pointer;
+}
+
+.af-action-btn:hover:not(:disabled) {
+  background: var(--kdl-hover-bg);
+  color: var(--kdl-text-primary);
+}
+
+.af-action-btn:focus-visible {
+  outline: 2px solid var(--kdl-accent);
+  outline-offset: -1px;
+}
+
+.af-action-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.af-action-btn--resolve:hover:not(:disabled) {
+  color: var(--kdl-success);
 }
 
 .af-sub {

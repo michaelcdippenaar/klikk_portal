@@ -219,68 +219,14 @@
 import { ref, reactive, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import AppDrawer from '../components/shell/AppDrawer.vue';
+import { OPERATION_NAV_GROUPS } from '../app/navigation';
 
 const route = useRoute();
 
 const NAV_PERSIST_KEY = 'klikk:portal:nav';
 const NAV_COLLAPSED_KEY = 'klikk:portal:side-menu-collapsed';
 
-// Nav group definitions — lucide field replaces q-icon name (Material → Lucide)
-const navGroups = [
-  {
-    key: 'xero',
-    label: 'Xero',
-    items: [
-      { name: 'processes',    label: 'Processes',       lucide: 'play-circle' },
-      { name: 'data',         label: 'Data Viewer',     lucide: 'table' },
-      { name: 'compare',      label: 'Comparison',      lucide: 'git-compare' },
-    ],
-  },
-  {
-    key: 'investec',
-    label: 'Investec',
-    items: [
-      { name: 'investec-holdings',     label: 'Share holdings',     lucide: 'pie-chart' },
-      { name: 'investec-transactions', label: 'Share transactions', lucide: 'list' },
-      { name: 'investec-share-codes',  label: 'Share codes',        lucide: 'tag' },
-      { name: 'investec-account',      label: 'Account',            lucide: 'landmark' },
-    ],
-  },
-  {
-    key: 'investments',
-    label: 'Financial Investments',
-    items: [
-      { name: 'financial-investments-strategy', label: 'Dashboard',         lucide: 'layout-dashboard' },
-      { name: 'financial-investments',          label: 'Stocks',            lucide: 'trending-up' },
-      { name: 'dividend-forecast',              label: 'Dividend Forecast', lucide: 'dollar-sign' },
-    ],
-  },
-  {
-    key: 'pa',
-    label: 'Planning Analytics',
-    items: [
-      { name: 'planning-analytics', label: 'Pipeline', lucide: 'bar-chart-2' },
-    ],
-  },
-  {
-    key: 'audit',
-    label: 'Audit',
-    items: [
-      { name: 'audit-procedures', label: 'Audit Procedures', lucide: 'clipboard-check' },
-      { name: 'audit-findings',   label: 'Findings',         lucide: 'search-check' },
-      { name: 'audit-receipts',   label: 'Receipts',         lucide: 'receipt' },
-      { name: 'audit-receipts-v2', label: 'Receipts V2',     lucide: 'receipt' },
-      { name: 'audit-comments',  label: 'Cell Comments',    lucide: 'message-square' },
-    ],
-  },
-  {
-    key: 'pricing',
-    label: 'Pricing',
-    items: [
-      { name: 'pricelist', label: 'Price List', lucide: 'tag' },
-    ],
-  },
-];
+const navGroups = OPERATION_NAV_GROUPS;
 
 // Load persisted expansion state; default to Xero expanded only.
 function loadExpanded() {

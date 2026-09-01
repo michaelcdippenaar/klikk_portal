@@ -25,6 +25,7 @@
     --kdl-font-size-small: 13px;
     --kdl-font-size-body: 14px;
     --kdl-font-size-section: 16px;
+    --kdl-font-size-title: 22px;
     --kdl-line-height-tight: 1.2;
     --kdl-line-height-body: 1.45;
 
@@ -44,6 +45,7 @@
     --kdl-focus-ring-width: 2px;
     --kdl-control-sm: 32px;
     --kdl-control-md: 40px;
+    --app-header-height: 44px;
 
     /* Z-index stacking scale — Reka portal primitives
      * All portal-rendered content uses these tokens via portals.css so that

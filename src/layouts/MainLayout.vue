@@ -1,11 +1,11 @@
 <template>
-  <AppShell>
+  <AppShell class="kdl-main-layout" :class="{ 'kdl-main-layout--overview': isOverviewRoute }">
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <template #header>
-      <AppHeader>
+      <AppHeader :class="{ 'app-header--overview': isOverviewRoute }">
         <!-- Logo / lockup -->
-        <span class="kdl-brand-wrapper" role="img" aria-label="Klikk Financials">
-          <KLockup size="md" />
+        <span class="kdl-brand-wrapper" role="img" :aria-label="isOverviewRoute ? 'Klikk' : 'Klikk Financials'">
+          <KLockup size="md" :show-financials="!isOverviewRoute" />
         </span>
 
         <!-- Primary nav — left-adjacent to logo -->
@@ -16,55 +16,36 @@
             :to="item.to"
             class="kdl-nav__item"
             :class="{ 'kdl-nav__item--active': isActive(item) }"
+            @click.capture="guardDemoNavigation"
           >
-            <!-- Lucide icons inlined — home / refresh-cw / settings -->
-            <svg
-              v-if="item.name === 'portal'"
-              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              class="kdl-nav__icon" aria-hidden="true"
-            >
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
-            </svg>
-            <svg
-              v-else-if="item.name === 'pipeline'"
-              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              class="kdl-nav__icon" aria-hidden="true"
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-            <svg
-              v-else-if="item.name === 'reporting'"
-              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              class="kdl-nav__icon" aria-hidden="true"
-            >
-              <path d="M3 3v18h18" />
-              <path d="m19 9-5 5-4-4-3 3" />
-            </svg>
-            <svg
-              v-else-if="item.name === 'setup'"
-              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-              class="kdl-nav__icon" aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
             {{ item.label }}
+            <svg
+              v-if="item.hasMenu"
+              xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+              aria-hidden="true"
+            ><polyline points="6 9 12 15 18 9" /></svg>
           </router-link>
         </nav>
 
         <!-- Flex spacer -->
         <div class="kdl-spacer" aria-hidden="true" />
+
+        <div class="kdl-context-controls" aria-label="Financial context">
+          <TenantSelector fallback-label="Select entity" />
+          <SourceFreshnessPopover
+            v-if="isOverviewRoute"
+            :sources="sources"
+            :coverage="selectedCoverage"
+            @open-source="openOverviewSource"
+            @view-all="viewSourceConnections"
+          />
+          <span v-else class="kdl-updated" aria-label="Sources updated 10 minutes ago">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Updated 10 min ago
+          </span>
+        </div>
 
         <!-- Theme toggle -->
         <button
@@ -99,10 +80,10 @@
         </button>
 
         <!-- User trigger -->
-        <div
+        <button
           ref="userTriggerRef"
+          type="button"
           class="kdl-user-trigger"
-          role="button"
           :aria-label="`User menu — ${userEmail}`"
           :aria-expanded="userMenuOpen"
           @click="userMenuOpen = !userMenuOpen"
@@ -127,7 +108,7 @@
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
-        </div>
+        </button>
 
         <!-- User dropdown — native, teleported to body -->
         <teleport to="body">
@@ -208,23 +189,32 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useDataStore } from '../stores/data';
 import { useProcessStore } from '../stores/processes';
+import { useOverviewStore } from '../stores/overview';
 import { useTheme } from '../composables/useTheme';
 import { useCommandPalette } from '../composables/useCommandPalette';
+import { useToast } from '../composables/useToast';
+import { PRIMARY_NAV_ITEMS, createNavigationCommands } from '../app/navigation';
 import KLockup from '../components/klikk/KLockup.vue';
 import KCommandPalette from '../components/klikk/KCommandPalette.vue';
+import TenantSelector from '../components/TenantSelector.vue';
 import AppShell from '../components/shell/AppShell.vue';
 import AppHeader from '../components/shell/AppHeader.vue';
+import SourceFreshnessPopover from '../components/close-overview/SourceFreshnessPopover.vue';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const dataStore = useDataStore();
 const processStore = useProcessStore();
+const overviewStore = useOverviewStore();
+const { sources, selectedCoverage } = storeToRefs(overviewStore);
 const { isDark, toggleTheme } = useTheme();
+const toast = useToast();
 
 // Install the global ⌘K listener once at the app shell level.
 const { open: openPalette, register, unregister } = useCommandPalette({ installGlobalListener: true });
@@ -252,105 +242,58 @@ watch(userMenuOpen, async (open) => {
 });
 
 const userEmail = computed(() => authStore.user?.email || authStore.user?.username || 'User');
+const isOverviewRoute = computed(() => ['portal', 'close-overview-preview'].includes(String(route.name || '')));
+const isPreviewRoute = computed(() => route.name === 'close-overview-preview');
 
-const navItems = [
-  { name: 'portal',   label: 'Home',       to: { name: 'portal' } },
-  { name: 'pipeline', label: 'Operations', to: { name: 'pipeline' } },
-  { name: 'reporting', label: 'Reporting', to: { name: 'reporting' } },
-  { name: 'setup',    label: 'Setup',      to: { name: 'setup' } },
-];
+function notifyDemoReadOnly() {
+  toast.info('Demo data is read-only. No production action or workspace was opened.', { title: 'Demo data' });
+}
+
+function guardDemoNavigation(event) {
+  if (!dataStore.isDemo) return;
+  event.preventDefault();
+  notifyDemoReadOnly();
+}
+
+function openOverviewSource(source) {
+  if (dataStore.isDemo) {
+    notifyDemoReadOnly();
+    return;
+  }
+  if (source?.routeName && router.hasRoute(source.routeName)) {
+    router.push({ name: source.routeName, query: source.query || undefined });
+  }
+}
+
+function viewSourceConnections() {
+  if (dataStore.isDemo) {
+    notifyDemoReadOnly();
+    return;
+  }
+  if (router.hasRoute('credentials')) router.push({ name: 'credentials' });
+}
+
+const navItems = PRIMARY_NAV_ITEMS;
 
 function isActive(item) {
-  if (item.name === 'portal') {
-    return route.name === 'portal';
-  }
-  return route.path.startsWith('/app/' + item.name);
+  return item.activeNames?.includes(String(route.name || '')) || route.name === item.name;
 }
 
 // ── Command palette — global command registration ───────────────────────────
 
 function buildStaticCommands() {
+  const navigationCommands = createNavigationCommands(router).map((command) => ({
+    ...command,
+    perform: () => {
+      if (dataStore.isDemo) {
+        notifyDemoReadOnly();
+        return;
+      }
+      return command.perform();
+    },
+  }));
   const cmds = [
-    {
-      id: 'nav-dashboard',
-      label: 'Go to Dashboard',
-      category: 'Navigate',
-      icon: 'home',
-      keywords: ['home', 'portal', 'overview'],
-      perform: () => router.push({ name: 'portal' }),
-    },
-    {
-      id: 'nav-processes',
-      label: 'Go to Processes',
-      category: 'Navigate',
-      icon: 'refresh-cw',
-      keywords: ['pipeline', 'run', 'operations'],
-      perform: () => router.push({ name: 'processes' }),
-    },
-    {
-      id: 'nav-data',
-      label: 'Go to Data Viewer',
-      category: 'Navigate',
-      icon: 'database',
-      keywords: ['data', 'table', 'viewer', 'transactions'],
-      perform: () => router.push({ name: 'data' }),
-    },
-    {
-      id: 'nav-compare',
-      label: 'Go to Comparison',
-      category: 'Navigate',
-      icon: 'bar-chart-2',
-      keywords: ['compare', 'comparison', 'reports'],
-      perform: () => router.push({ name: 'compare' }),
-    },
-    {
-      id: 'nav-reporting',
-      label: 'Go to Reporting',
-      category: 'Navigate',
-      icon: 'line-chart',
-      keywords: ['reporting', 'reports', 'dashboard', 'business reports'],
-      perform: () => router.push({ name: 'reporting' }),
-    },
-    {
-      id: 'nav-setup',
-      label: 'Go to Setup',
-      category: 'Navigate',
-      icon: 'settings',
-      keywords: ['credentials', 'config', 'xero'],
-      perform: () => router.push({ name: 'setup' }),
-    },
-    {
-      id: 'nav-investec-holdings',
-      label: 'Investec — Share Holdings',
-      category: 'Navigate',
-      icon: 'trending-up',
-      keywords: ['investec', 'holdings', 'shares'],
-      perform: () => router.push({ name: 'investec-holdings' }),
-    },
-    {
-      id: 'nav-investec-transactions',
-      label: 'Investec — Share Transactions',
-      category: 'Navigate',
-      icon: 'layers',
-      keywords: ['investec', 'transactions', 'trades'],
-      perform: () => router.push({ name: 'investec-transactions' }),
-    },
-    {
-      id: 'nav-investec-share-codes',
-      label: 'Investec — Share Codes',
-      category: 'Navigate',
-      icon: 'git-branch',
-      keywords: ['investec', 'codes', 'tickers', 'symbols'],
-      perform: () => router.push({ name: 'investec-share-codes' }),
-    },
-    {
-      id: 'nav-investec-account',
-      label: 'Investec — Account',
-      category: 'Navigate',
-      icon: 'users',
-      keywords: ['investec', 'account', 'balance'],
-      perform: () => router.push({ name: 'investec-account' }),
-    },
+    ...navigationCommands,
     {
       id: 'theme-toggle',
       label: 'Toggle Theme',
@@ -372,33 +315,22 @@ function buildStaticCommands() {
     },
   ];
 
-  if (router.hasRoute('ai-agent')) {
-    cmds.splice(5, 0, {
-      id: 'nav-ai-agent',
-      label: 'Go to AI Agent',
-      category: 'Navigate',
-      icon: 'bot',
-      keywords: ['ai', 'agent', 'assistant', 'llm'],
-      perform: () => router.push({ name: 'ai-agent' }),
-    });
-  }
-
   return cmds;
 }
 
 function buildTenantCommands() {
   return dataStore.tenants.map((t) => ({
-    id: `tenant-switch-${t.tenant_id}`,
-    label: `Switch tenant: ${t.tenant_name}`,
+    id: `tenant-switch-${t.id || t.tenant_id}`,
+    label: `Switch entity: ${t.name || t.tenant_name}`,
     category: 'Tenant',
     icon: 'users',
-    keywords: ['tenant', 'switch', 'organisation', t.tenant_name.toLowerCase()],
-    perform: () => dataStore.setSelectedTenant(t.tenant_id),
+    keywords: ['entity', 'tenant', 'switch', 'organisation', (t.name || t.tenant_name).toLowerCase()],
+    perform: () => dataStore.setSelectedTenant(t.id || t.tenant_id),
   }));
 }
 
 function buildProcessCommands() {
-  if (!dataStore.selectedTenant) return [];
+  if (!dataStore.selectedTenant || dataStore.isDemo) return [];
   const tenantId = dataStore.selectedTenant;
 
   return [
@@ -438,6 +370,7 @@ function buildProcessCommands() {
 }
 
 function refreshAllCommands() {
+  unregister(['process-metadata', 'process-data', 'process-journals', 'process-trail-balance']);
   register([
     ...buildStaticCommands(),
     ...buildTenantCommands(),
@@ -445,11 +378,14 @@ function refreshAllCommands() {
   ]);
 }
 
-onMounted(() => {
-  dataStore.loadTenants().catch(err => {
-    console.warn('Failed to load tenants:', err);
-  });
+async function loadEntityContextForRoute(previewEnabled) {
+  if (!previewEnabled) dataStore.clearDemoContext();
+  await dataStore.loadTenants({ allowDemoFallback: previewEnabled });
   refreshAllCommands();
+}
+
+onMounted(() => {
+  loadEntityContextForRoute(isPreviewRoute.value);
 });
 
 onUnmounted(() => {
@@ -461,10 +397,12 @@ onUnmounted(() => {
 });
 
 watch(
-  [() => dataStore.tenants, () => dataStore.selectedTenant],
+  [() => dataStore.tenants, () => dataStore.selectedTenant, () => dataStore.isDemo],
   () => refreshAllCommands(),
   { deep: true }
 );
+
+watch(isPreviewRoute, (previewEnabled) => loadEntityContextForRoute(previewEnabled));
 
 function handleLogout() {
   userMenuOpen.value = false;
@@ -474,11 +412,15 @@ function handleLogout() {
 </script>
 
 <style scoped>
+.kdl-main-layout {
+  --app-header-height: var(--kdl-close-header-height);
+}
+
 /* ── Brand lockup ─────────────────────────────────────── */
 .kdl-brand-wrapper {
   display: flex;
   align-items: center;
-  margin-right: 16px;
+  margin-right: var(--kdl-space-6);
   flex-shrink: 0;
   color: var(--kdl-text-primary);
 }
@@ -492,17 +434,19 @@ function handleLogout() {
 .kdl-nav {
   display: flex;
   align-items: center;
-  gap: 2px;
+  align-self: stretch;
+  gap: var(--kdl-space-2);
 }
 
 .kdl-nav__item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 5px;
-  font-size: 12px;
-  font-weight: 500;
+  gap: var(--kdl-space-1);
+  padding: 0 var(--kdl-space-2);
+  border-radius: 0;
+  font-size: var(--kdl-font-size-section);
+  font-weight: var(--kdl-font-weight-medium);
   color: var(--kdl-text-secondary);
   text-decoration: none;
   transition: background var(--duration-short) var(--ease-standard),
@@ -516,18 +460,56 @@ function handleLogout() {
 }
 
 .kdl-nav__item--active {
-  background: color-mix(in srgb, var(--kdl-accent) 12%, transparent);
-  color: var(--kdl-accent);
-  font-weight: 600;
+  background: transparent;
+  color: var(--kdl-brand-navy);
+  font-weight: var(--kdl-font-weight-semibold);
+}
+
+.kdl-nav__item--active::after {
+  position: absolute;
+  right: var(--kdl-space-2);
+  bottom: 0;
+  left: var(--kdl-space-2);
+  height: var(--kdl-size-nav-indicator);
+  background: var(--kdl-brand-navy);
+  content: '';
 }
 
 .kdl-nav__item--active:hover {
-  background: color-mix(in srgb, var(--kdl-accent) 18%, transparent);
-  color: var(--kdl-accent);
+  background: var(--kdl-hover-bg);
+  color: var(--kdl-brand-navy);
 }
 
 .kdl-nav__icon {
   flex-shrink: 0;
+}
+
+.kdl-context-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--kdl-space-3);
+}
+
+.kdl-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kdl-space-2);
+  color: var(--kdl-text-muted);
+  font-size: var(--kdl-font-size-caption);
+  white-space: nowrap;
+}
+
+.kdl-main-layout--overview .kdl-icon-btn {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .kdl-nav__item:nth-child(n+5) { display: none; }
+  .kdl-updated { display: none; }
+}
+
+@media (max-width: 860px) {
+  .kdl-nav { display: none; }
 }
 
 /* ── Icon button (theme toggle) ───────────────────────── */
@@ -558,7 +540,10 @@ function handleLogout() {
   align-items: center;
   gap: 2px;
   padding: 3px 6px;
+  border: 0;
   border-radius: 5px;
+  background: transparent;
+  font: inherit;
   cursor: pointer;
   color: var(--kdl-text-secondary);
   transition: background var(--duration-short) var(--ease-standard),

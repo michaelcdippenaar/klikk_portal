@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { useDataStore } from './data';
 import {
   updateMetadata,
   updateData,
@@ -30,6 +31,11 @@ export const useProcessStore = defineStore('processes', () => {
   }
 
   async function runProcess(processType, params) {
+    const dataStore = useDataStore();
+    if (dataStore.isDemo || params?.tenantId === 'demo-klikk-pty-ltd') {
+      return { success: false, error: 'Demo data is read-only. No production process was started.' };
+    }
+
     const processId = `${processType}_${Date.now()}`;
     activeProcesses.value.set(processId, { type: processType, status: 'running' });
 

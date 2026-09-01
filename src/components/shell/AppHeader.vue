@@ -7,7 +7,7 @@
 </template>
 
 <script setup>
-// AppHeader — sticky 44px header bar.
+// AppHeader — sticky token-driven header bar.
 // KDL tokens only. No Quasar primitives.
 </script>
 
@@ -16,10 +16,10 @@
   position: sticky;
   top: 0;
   z-index: 200;
-  height: 44px;
+  height: var(--app-header-height);
   flex-shrink: 0;
-  background: var(--kdl-card-bg);
-  border-bottom: 1px solid var(--kdl-border-subtle);
+  background: var(--app-header-background, var(--kdl-card-bg));
+  border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
   box-shadow: var(--shadow-soft);
 }
 
@@ -27,7 +27,11 @@
   display: flex;
   align-items: center;
   height: 100%;
-  padding: 0 16px;
-  gap: 2px;
+  padding: 0 var(--kdl-space-8);
+  gap: var(--kdl-space-2);
+}
+
+@media (max-width: 767px) {
+  .app-header__inner { padding-inline: var(--kdl-space-4); }
 }
 </style>

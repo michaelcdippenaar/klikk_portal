@@ -16,6 +16,13 @@
   USAGE (selectable):
     <KTable :columns="cols" :data="rows" selectable v-model:selectedRowIds="sel" />
 
+  USAGE (resizable columns):
+    <KTable :columns="cols" :data="rows" resizable v-model:columnSizing="widths" />
+    Drag the handle at a header's right edge; double-click it to reset that
+    column. Initial widths still come from meta.width. Persist `widths`
+    (ColumnSizingState, { colId: px }) yourself if they should survive reloads.
+    Per-column opt-out: enableResizing: false on the column def.
+
   USAGE (server-side pagination):
     <KTable
       :columns="cols" :data="rows"
@@ -165,7 +172,7 @@
       <table
         class="ktable"
         :class="{ 'ktable--loading': loading }"
-        :style="virtual ? tableWidthStyle : undefined"
+        :style="tableSizingStyle"
       >
         <!-- ── <colgroup> — drives column widths for both thead and virtual tbody ── -->
         <colgroup>
@@ -261,6 +268,20 @@
               >
                 <slot :name="`filter-${header.column.id}`" :column="header.column" />
               </div>
+
+              <!-- Drag-to-resize handle (dblclick resets the column) -->
+              <div
+                v-if="resizable && header.column.getCanResize()"
+                class="ktable-th__resizer"
+                :class="{ 'ktable-th__resizer--active': header.column.getIsResizing() }"
+                role="separator"
+                aria-orientation="vertical"
+                :aria-label="`Resize ${header.column.columnDef.header || header.column.id} column`"
+                @mousedown.stop.prevent="header.getResizeHandler()($event)"
+                @touchstart.stop="header.getResizeHandler()($event)"
+                @click.stop
+                @dblclick.stop="resetColumnSize(header.column)"
+              />
             </th>
           </tr>
         </thead>
@@ -470,6 +491,15 @@ const props = defineProps({
   onRowClick: { type: Function, default: null },
   /** Show the column visibility toggle button. */
   showVisibilityMenu: { type: Boolean, default: false },
+  /**
+   * Enable drag-to-resize column widths (opt-in). Initial widths still come
+   * from meta.width; a per-column `enableResizing: false` opts a column out.
+   * Double-click a handle to reset that column. Pair with v-model:columnSizing
+   * to persist widths.
+   */
+  resizable: { type: Boolean, default: false },
+  /** v-model:columnSizing — TanStack ColumnSizingState { [colId]: px }. */
+  columnSizing: { type: Object, default: null },
 });
 
 // ── Emits ────────────────────────────────────────────────────────────────────
@@ -481,6 +511,7 @@ const emit = defineEmits([
   'update:sortBy',
   'update:visibleColumns',
   'update:filters',
+  'update:columnSizing',
   'row-click',
 ]);
 
@@ -490,6 +521,7 @@ const sorting = ref(props.sortBy ?? []);
 const columnFilters = ref(props.filters ?? []);
 const columnVisibility = ref(props.visibleColumns ?? {});
 const rowSelection = ref(buildSelectionState(props.selectedRowIds));
+const columnSizingState = ref(props.columnSizing ?? {});
 const visMenuOpen = ref(false);
 const scrollContainerRef = ref(null);
 
@@ -516,17 +548,35 @@ function selectionToSet(state) {
 
 // ── Column definitions (inject selection column) ──────────────────────────────
 
+/** '96px' → 96; anything else (%, em, missing) → null. */
+function parsePxWidth(w) {
+  if (typeof w !== 'string' || !w.endsWith('px')) return null;
+  const n = Number.parseFloat(w);
+  return Number.isFinite(n) ? n : null;
+}
+
 const resolvedColumns = computed(() => {
-  if (!props.selectable) return props.columns;
+  let cols = props.columns;
+  if (props.resizable) {
+    // Seed TanStack's `size` from meta.width so the drag start position matches
+    // what is rendered (otherwise the first drag jumps from the 150px default).
+    cols = cols.map((c) => ({
+      ...c,
+      size: c.size ?? parsePxWidth(c.meta?.width) ?? undefined,
+      minSize: c.minSize ?? 48,
+    }));
+  }
+  if (!props.selectable) return cols;
   const selectCol = {
     id: '__select__',
     header: '',
     cell: '',
     enableSorting: false,
     enableColumnFilter: false,
+    enableResizing: false,
     meta: { width: '40px' },
   };
-  return [selectCol, ...props.columns];
+  return [selectCol, ...cols];
 });
 
 // ── Server page count ─────────────────────────────────────────────────────────
@@ -552,6 +602,7 @@ const table = useVueTable({
     get columnFilters() { return columnFilters.value; },
     get columnVisibility() { return columnVisibility.value; },
     get rowSelection() { return rowSelection.value; },
+    get columnSizing() { return columnSizingState.value; },
     // Server-mode pagination is controlled externally via props.serverPage.
     // Client-mode pagination is managed by TanStack internally — DO NOT force
     // state.pagination in client mode (returning `undefined` for pageIndex
@@ -573,6 +624,13 @@ const table = useVueTable({
   manualPagination: props.pagination === 'server',
   pageCount: props.pagination === 'server' ? serverPageCount.value : undefined,
   manualSorting: props.pagination === 'server',
+  enableColumnResizing: props.resizable,
+  columnResizeMode: 'onChange',
+  onColumnSizingChange: (updater) => {
+    const next = typeof updater === 'function' ? updater(columnSizingState.value) : updater;
+    columnSizingState.value = next;
+    emit('update:columnSizing', next);
+  },
   onSortingChange: (updater) => {
     const next = typeof updater === 'function' ? updater(sorting.value) : updater;
     sorting.value = next;
@@ -602,6 +660,7 @@ watch(() => props.sortBy, (v) => { if (v) sorting.value = v; });
 watch(() => props.filters, (v) => { if (v) columnFilters.value = v; });
 watch(() => props.visibleColumns, (v) => { if (v) columnVisibility.value = v; });
 watch(() => props.selectedRowIds, (v) => { rowSelection.value = buildSelectionState(v); });
+watch(() => props.columnSizing, (v) => { if (v) columnSizingState.value = v; });
 
 // ── Active rows (for virtual scroll index mapping) ────────────────────────────
 
@@ -663,6 +722,11 @@ function handleRowClick(row) {
 // body rows are in normal flow (non-virtual) or absolutely positioned (virtual).
 
 function colWidth(column) {
+  // A user-dragged width always wins (resizable mode only).
+  if (props.resizable) {
+    const resized = columnSizingState.value?.[column.id];
+    if (Number.isFinite(resized)) return { width: `${resized}px` };
+  }
   const meta = column.columnDef.meta;
   if (meta?.width) return { width: meta.width };
   const size = column.getSize?.();
@@ -701,6 +765,30 @@ const tableWidthStyle = computed(() => {
     ? { width: `${width}px`, minWidth: `${width}px` }
     : undefined;
 });
+
+/**
+ * Table element sizing.
+ * - virtual: hard px width so absolutely-positioned rows line up (unchanged).
+ * - resizable: width = sum of column widths but never narrower than the
+ *   container, so dragged widths apply 1:1 (with horizontal scroll once the
+ *   sum exceeds the container) instead of being redistributed by
+ *   table-layout: fixed at width: 100%.
+ * - default: plain width: 100% via the stylesheet (no inline style).
+ */
+const tableSizingStyle = computed(() => {
+  if (props.virtual) return tableWidthStyle.value;
+  if (props.resizable) {
+    const w = tableWidthStyle.value?.width;
+    return w ? { width: w, minWidth: '100%' } : undefined;
+  }
+  return undefined;
+});
+
+// ── Column resize reset ───────────────────────────────────────────────────────
+
+function resetColumnSize(column) {
+  column.resetSize();
+}
 
 // ── Aria sort ─────────────────────────────────────────────────────────────────
 
@@ -868,6 +956,7 @@ onUnmounted(() => {
 }
 
 .ktable-th {
+  position: relative;
   padding: 10px 16px;
   text-align: left;
   font-size: 11px;
@@ -925,6 +1014,39 @@ onUnmounted(() => {
 
 .ktable-th__filter {
   margin-top: 6px;
+}
+
+/* ── Column resize handle ────────────────────────────────────────────────── */
+.ktable-th__resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 3;
+}
+
+/* Thin visual line, thickened + accented on hover / while dragging. */
+.ktable-th__resizer::after {
+  content: '';
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  right: 0;
+  width: 1px;
+  background: var(--kdl-border-subtle);
+  transition: background 120ms var(--ease-standard), width 120ms var(--ease-standard);
+}
+
+.ktable-th__resizer:hover::after,
+.ktable-th__resizer--active::after {
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--kdl-accent);
 }
 
 /* ── <tbody> ─────────────────────────────────────────────────────────────── */

@@ -43,6 +43,7 @@
       >klikk</text>
       <!-- "financials" — 10px / 500 / 60% opacity -->
       <text
+        v-if="showFinancials"
         x="73"
         y="16"
         font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
@@ -72,6 +73,7 @@
       >klikk</text>
       <!-- "financials" — 13px / 500 / 60% opacity -->
       <text
+        v-if="showFinancials"
         x="87"
         y="19"
         font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
@@ -101,6 +103,7 @@
       >klikk</text>
       <!-- "financials" — 18px / 500 / 60% opacity -->
       <text
+        v-if="showFinancials"
         x="132"
         y="30"
         font-family="'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif"
@@ -129,15 +132,24 @@ const props = defineProps({
     default: 'md',
     validator: (v) => ['sm', 'md', 'lg'].includes(v),
   },
+  showFinancials: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 // viewBox dimensions match the original inline SVGs per size tier.
 // md uses 196×24 (from MainLayout). lg uses 240×36 (from Login).
 // sm is proportionally derived.
 const viewBox = computed(() => {
-  if (props.size === 'sm') return '0 0 165 20';
-  if (props.size === 'lg') return '0 0 240 36';
-  return '0 0 196 24';
+  if (props.showFinancials) {
+    if (props.size === 'sm') return '0 0 165 20';
+    if (props.size === 'lg') return '0 0 240 36';
+    return '0 0 196 24';
+  }
+  if (props.size === 'sm') return '0 0 70 20';
+  if (props.size === 'lg') return '0 0 112 36';
+  return '0 0 78 24';
 });
 </script>
 

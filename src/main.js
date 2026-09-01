@@ -7,6 +7,8 @@ import { initTheme } from './composables/useTheme.js';
 
 // CSS — klikk.css owns Tailwind base/components/utilities layers
 import './css/klikk.css';
+import './css/close-overview.css';
+import './css/overview-workspace.css';
 // portals.css: global z-index for Reka-portalled nodes (must follow klikk.css for token access)
 import './css/portals.css';
 // cost-behaviour.css: categorical chart hues (KDL has no categorical palette — gap noted in file)
