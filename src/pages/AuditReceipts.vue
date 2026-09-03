@@ -238,6 +238,7 @@
           <ReceiptCommentCell
             :sha256="row.sha256"
             :count="Number(value) || 0"
+            :currentUser="currentUser"
             @added="onInlineComment"
           />
         </template>
@@ -368,37 +369,19 @@
               Comments
               <span class="ar-section__note">{{ (detail.comments || []).length }}</span>
             </h3>
-            <ul v-if="detail.comments && detail.comments.length" class="ar-comments">
-              <li v-for="c in detail.comments" :key="c.id" class="ar-comment">
-                <div class="ar-comment__meta">
-                  <span class="ar-comment__author">{{ c.author || 'Unknown' }}</span>
-                  <span class="ar-sub">{{ formatDateTime(c.created_at) }}</span>
-                </div>
-                <p class="ar-comment__text">{{ c.text }}</p>
-              </li>
-            </ul>
-            <p v-else-if="!detailLoading" class="ar-sub">No comments yet.</p>
-            <!-- Visible to auditors as well — archive/save/toggles above are not. -->
-            <form class="ar-comment-form" @submit.prevent="addComment">
-              <textarea
-                ref="commentInputRef"
-                v-model="commentDraft"
-                class="ar-textarea"
-                rows="2"
-                placeholder="Add a comment…"
-                :disabled="commentSaving"
+            <!-- Same thread component as the row cell, so a reply reads the
+                 same in both places. Visible to auditors as well — the
+                 archive/save/toggle controls above are not. -->
+            <div class="ar-comment-form">
+              <CommentThread
+                ref="commentThreadRef"
+                :comments="detail.comments || []"
+                :saving="commentSaving"
+                :loading="detailLoading"
+                :currentUser="currentUser"
+                @post="addComment"
               />
-              <div class="ar-review__actions">
-                <span />
-                <button
-                  type="submit"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="!commentDraft.trim() || commentSaving"
-                >
-                  {{ commentSaving ? 'Posting…' : 'Add comment' }}
-                </button>
-              </div>
-            </form>
+            </div>
           </section>
         </div>
       </div>
@@ -506,6 +489,7 @@ import KTable from '../components/klikk/KTable.vue';
 import KToggle from '../components/klikk/KToggle.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import ReceiptCommentCell from '../components/receipts/ReceiptCommentCell.vue';
+import CommentThread from '../components/comments/CommentThread.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
 import { useAuthStore } from '../stores/auth';
@@ -516,6 +500,8 @@ const toast = useToast();
 const authStore = useAuthStore();
 /** UI-shaping only — the backend middleware enforces read-only for auditors. */
 const isAuditor = computed(() => authStore.isAuditor);
+// Used only to mark your own comments "(you)" in a thread.
+const currentUser = computed(() => authStore.user?.username || '');
 
 // ── List state ──────────────────────────────────────────────────────────────
 const filters = reactive(hydrateFromQuery(route.query));
@@ -821,9 +807,10 @@ const detailOpen = ref(false);
 const detail = ref(null);
 const detailLoading = ref(false);
 const noteDraft = ref('');
-const commentDraft = ref('');
 const commentSaving = ref(false);
-const commentInputRef = ref(null);
+// The thread component owns the draft; this ref only exists so "Discuss"-style
+// entry points can focus its composer.
+const commentThreadRef = ref(null);
 
 const detailTitle = computed(() => {
   if (!detail.value) return '';
@@ -851,7 +838,6 @@ async function openDetail(row, { focusComment = false } = {}) {
   if (!row || !row.sha256) return;
   detail.value = { ...row };
   syncDraftsFromDetail();
-  commentDraft.value = '';
   detailOpen.value = true;
   detailLoading.value = true;
   try {
@@ -868,7 +854,7 @@ async function openDetail(row, { focusComment = false } = {}) {
   }
   if (focusComment) {
     await nextTick();
-    commentInputRef.value?.focus?.();
+    commentThreadRef.value?.focus?.();
   }
 }
 
@@ -881,15 +867,19 @@ async function saveReview() {
   syncDraftsFromDetail();
 }
 
-async function addComment() {
+async function addComment({ text, parentId = null } = {}) {
   if (!detail.value) return;
-  const text = commentDraft.value.trim();
-  if (!text) return;
+  const body = String(text || '').trim();
+  if (!body) return;
   const sha = detail.value.sha256;
   commentSaving.value = true;
   actionError.value = null;
   try {
-    const created = await postReceiptComment(sha, text);
+    // A top-level post keeps the original two-argument call, so the request is
+    // byte-identical to what shipped before threading.
+    const created = parentId == null
+      ? await postReceiptComment(sha, body)
+      : await postReceiptComment(sha, body, { parentId });
     if (detail.value && detail.value.sha256 === sha) {
       const comments = [...(detail.value.comments || []), created];
       detail.value = { ...detail.value, comments, comment_count: comments.length };
@@ -897,7 +887,8 @@ async function addComment() {
     rows.value = rows.value.map((r) =>
       r.sha256 === sha ? { ...r, comment_count: (Number(r.comment_count) || 0) + 1 } : r,
     );
-    commentDraft.value = '';
+    // Only on success — a failed post keeps the draft so it can be retried.
+    commentThreadRef.value?.clearDraft?.();
   } catch (err) {
     raiseActionError('Posting the comment failed.');
     console.error(err);

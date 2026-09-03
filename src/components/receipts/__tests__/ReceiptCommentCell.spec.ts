@@ -21,7 +21,7 @@
  *     bumps the prop to the same value
  *   - whitespace-only / empty drafts cannot submit (disabled button, no call)
  *   - a failed thread fetch degrades to input-only: posting still works
- *   - a failed post surfaces inline-comment-error, keeps the draft, does not
+ *   - a failed post surfaces comment-error, keeps the draft, does not
  *     bump the count — and a retry can still succeed
  *   - clicks inside the cell do NOT bubble to a parent row-click handler
  *     (the row click opens the detail modal; commenting must not)
@@ -94,13 +94,14 @@ function q<T extends Element = HTMLElement>(sel: string): T | null {
 }
 
 function panelOpen(): boolean {
-  return q('[data-test="inline-comment-input"]') !== null;
+  return q('[data-test="comment-input"]') !== null;
 }
 
+/** One entry per rendered comment — <article>, not <li>: replies are nested
+ *  lists, so an li-based query would count parents twice. */
 function threadTexts(): string[] {
-  return [...document.body.querySelectorAll('[data-test="inline-comment-thread"] li')].map(
-    (li) => li.textContent || '',
-  );
+  return [...document.body.querySelectorAll('[data-test="comment"], [data-test="comment-reply"]')]
+    .map((el) => el.textContent || '');
 }
 
 async function openPopover(w: ReturnType<typeof mount>) {
@@ -116,7 +117,7 @@ async function closePopover(w: ReturnType<typeof mount>) {
 }
 
 async function typeDraft(text: string) {
-  const input = q<HTMLInputElement>('[data-test="inline-comment-input"]')!;
+  const input = q<HTMLTextAreaElement>('[data-test="comment-input"]')!;
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true }));
   await nextTick();
@@ -124,13 +125,13 @@ async function typeDraft(text: string) {
 
 /** Submit the one-line form the way the user does — Enter fires form submit. */
 async function submitForm() {
-  const form = q<HTMLInputElement>('[data-test="inline-comment-input"]')!.closest('form')!;
+  const form = q<HTMLTextAreaElement>('[data-test="comment-input"]')!.closest('form')!;
   form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   await flushPromises();
 }
 
 function submitBtn(): HTMLButtonElement {
-  return q<HTMLButtonElement>('[data-test="inline-comment-submit"]')!;
+  return q<HTMLButtonElement>('[data-test="comment-submit"]')!;
 }
 
 beforeEach(() => {
@@ -208,7 +209,7 @@ describe('ReceiptCommentCell — lazy thread fetch', () => {
     const w = mountCell({ count: 0 });
     await openPopover(w);
     expect(q('.kp-content')!.textContent).toContain('No comments yet.');
-    expect(q('[data-test="inline-comment-thread"]')).toBeNull();
+    expect(q('[data-test="comment-thread"]')).toBeNull();
     w.unmount();
   });
 
@@ -216,7 +217,7 @@ describe('ReceiptCommentCell — lazy thread fetch', () => {
     mocked.getReceipt.mockResolvedValue(receiptResponse([], { comments: { weird: true } }));
     const w = mountCell({ count: 1 });
     await openPopover(w);
-    expect(q('[data-test="inline-comment-thread"]')).toBeNull();
+    expect(q('[data-test="comment-thread"]')).toBeNull();
     expect(panelOpen()).toBe(true);
     expect(warnings).toEqual([]);
     w.unmount();
@@ -240,7 +241,7 @@ describe('ReceiptCommentCell — posting a comment', () => {
     expect(mocked.postReceiptComment).toHaveBeenCalledWith(SHA, 'Ask for the credit note');
 
     // Input cleared; comment appended to the visible thread.
-    expect(q<HTMLInputElement>('[data-test="inline-comment-input"]')!.value).toBe('');
+    expect(q<HTMLTextAreaElement>('[data-test="comment-input"]')!.value).toBe('');
     const items = threadTexts();
     expect(items.length).toBe(3);
     expect(items[2]).toContain('Ask for the credit note');
@@ -311,9 +312,9 @@ describe('ReceiptCommentCell — failure paths', () => {
     await openPopover(w);
 
     // No thread, no error banner — just the writable input.
-    expect(q('[data-test="inline-comment-thread"]')).toBeNull();
-    expect(q('[data-test="inline-comment-error"]')).toBeNull();
-    const input = q<HTMLInputElement>('[data-test="inline-comment-input"]')!;
+    expect(q('[data-test="comment-thread"]')).toBeNull();
+    expect(q('[data-test="comment-error"]')).toBeNull();
+    const input = q<HTMLTextAreaElement>('[data-test="comment-input"]')!;
     expect(input.disabled).toBe(false);
 
     await typeDraft('still works');
@@ -327,7 +328,7 @@ describe('ReceiptCommentCell — failure paths', () => {
     w.unmount();
   });
 
-  it('postReceiptComment rejecting surfaces inline-comment-error, keeps the draft, and does NOT bump the count — retry succeeds', async () => {
+  it('postReceiptComment rejecting surfaces comment-error, keeps the draft, and does NOT bump the count — retry succeeds', async () => {
     mocked.postReceiptComment.mockRejectedValueOnce(new Error('500'));
     const w = mountCell({ count: 2 });
 
@@ -335,11 +336,11 @@ describe('ReceiptCommentCell — failure paths', () => {
     await typeDraft('important context');
     await submitForm();
 
-    const err = q('[data-test="inline-comment-error"]');
+    const err = q('[data-test="comment-error"]');
     expect(err).not.toBeNull();
     expect(err!.textContent).toContain('Could not post');
     // Draft preserved for retry; nothing appended; count NOT bumped; no event.
-    expect(q<HTMLInputElement>('[data-test="inline-comment-input"]')!.value).toBe('important context');
+    expect(q<HTMLTextAreaElement>('[data-test="comment-input"]')!.value).toBe('important context');
     expect(threadTexts().length).toBe(2);
     expect(w.get('[data-test="inline-comment-count"]').text()).toBe('2');
     expect(w.emitted('added')).toBeFalsy();
@@ -347,7 +348,7 @@ describe('ReceiptCommentCell — failure paths', () => {
     // Retry with the same draft now succeeds and clears the error.
     mocked.postReceiptComment.mockResolvedValue({ id: 60, text: 'important context', author: 'mc', created_at: null });
     await submitForm();
-    expect(q('[data-test="inline-comment-error"]')).toBeNull();
+    expect(q('[data-test="comment-error"]')).toBeNull();
     expect(threadTexts().length).toBe(3);
     expect(w.get('[data-test="inline-comment-count"]').text()).toBe('3');
     expect(w.emitted('added')!.length).toBe(1);
@@ -387,5 +388,143 @@ describe('ReceiptCommentCell — click containment', () => {
     expect(rowClick).not.toHaveBeenCalled();
     expect(warnings).toEqual([]);
     host.unmount();
+  });
+});
+
+// ── Threading (parent_id) ───────────────────────────────────────────────────
+
+const THREADED = [
+  { id: 11, parent_id: null, text: 'Chase the VAT invoice', author: 'mc', created_at: '2026-08-10T08:15:00Z' },
+  { id: 12, parent_id: 11, text: 'Supplier says it is coming', author: 'anine', created_at: '2026-08-10T09:00:00Z' },
+  { id: 13, parent_id: null, text: 'Separate question about the total', author: 'auditor@x.co', created_at: '2026-08-11T09:00:00Z' },
+];
+
+describe('ReceiptCommentCell — threading', () => {
+  it('renders replies nested under their parent, not as top-level comments', async () => {
+    mocked.getReceipt.mockResolvedValue(receiptResponse(THREADED));
+    const w = mountCell({ count: 3 });
+    await openPopover(w);
+
+    const roots = [...document.body.querySelectorAll('[data-test="comment"]')];
+    const replies = [...document.body.querySelectorAll('[data-test="comment-reply"]')];
+    expect(roots.map((el) => el.textContent)).toEqual([
+      expect.stringContaining('Chase the VAT invoice'),
+      expect.stringContaining('Separate question about the total'),
+    ]);
+    expect(replies.map((el) => el.textContent)).toEqual([
+      expect.stringContaining('Supplier says it is coming'),
+    ]);
+    // The reply lives INSIDE its parent's <li>, which is what indents it.
+    expect(roots[0].closest('li')!.contains(replies[0])).toBe(true);
+    expect(roots[1].closest('li')!.contains(replies[0])).toBe(false);
+    // Every comment names its author.
+    expect(replies[0].textContent).toContain('anine');
+    expect(warnings).toEqual([]);
+    w.unmount();
+  });
+
+  it('a new top-level comment posts WITHOUT a parent id', async () => {
+    mocked.getReceipt.mockResolvedValue(receiptResponse(THREADED));
+    mocked.postReceiptComment.mockResolvedValue({
+      id: 14, parent_id: null, text: 'new top level', author: 'mc', created_at: '2026-08-12T09:00:00Z',
+    });
+    const w = mountCell({ count: 3 });
+    await openPopover(w);
+    await typeDraft('new top level');
+    await submitForm();
+
+    expect(mocked.postReceiptComment).toHaveBeenCalledWith(SHA, 'new top level');
+    expect(mocked.postReceiptComment.mock.calls[0].length).toBe(2);
+    w.unmount();
+  });
+
+  it('Reply opens a composer bound to that comment and posts with its parent id', async () => {
+    mocked.getReceipt.mockResolvedValue(receiptResponse(THREADED));
+    mocked.postReceiptComment.mockResolvedValue({
+      id: 15, parent_id: 11, text: 'chasing again', author: 'mc', created_at: '2026-08-12T09:00:00Z',
+    });
+    const w = mountCell({ count: 3 });
+    await openPopover(w);
+
+    // No reply composer until asked for.
+    expect(q('[data-test="comment-reply-input-11"]')).toBeNull();
+    q<HTMLButtonElement>('[data-test="comment-reply-11"]')!.click();
+    await nextTick();
+
+    const replyInput = q<HTMLTextAreaElement>('[data-test="comment-reply-input-11"]')!;
+    expect(replyInput).not.toBeNull();
+    replyInput.value = '  chasing again  ';
+    replyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    replyInput.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(mocked.postReceiptComment).toHaveBeenCalledWith(SHA, 'chasing again', { parentId: 11 });
+    // The reply lands under its parent and the count bumps.
+    const replies = [...document.body.querySelectorAll('[data-test="comment-reply"]')];
+    expect(replies.map((el) => el.textContent)).toEqual([
+      expect.stringContaining('Supplier says it is coming'),
+      expect.stringContaining('chasing again'),
+    ]);
+    expect(w.get('[data-test="inline-comment-count"]').text()).toBe('4');
+    expect(warnings).toEqual([]);
+    w.unmount();
+  });
+
+  it('replying to a reply targets the ROOT, so the client never asks for a third level', async () => {
+    mocked.getReceipt.mockResolvedValue(receiptResponse(THREADED));
+    mocked.postReceiptComment.mockResolvedValue({
+      id: 16, parent_id: 11, text: 'noted', author: 'mc', created_at: '2026-08-12T10:00:00Z',
+    });
+    const w = mountCell({ count: 3 });
+    await openPopover(w);
+
+    // The Reply button ON THE REPLY (id 12) opens the composer for root 11.
+    q<HTMLButtonElement>('[data-test="comment-reply-12"]')!.click();
+    await nextTick();
+    const replyInput = q<HTMLTextAreaElement>('[data-test="comment-reply-input-11"]')!;
+    expect(replyInput).not.toBeNull();
+    replyInput.value = 'noted';
+    replyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    replyInput.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(mocked.postReceiptComment).toHaveBeenCalledWith(SHA, 'noted', { parentId: 11 });
+    w.unmount();
+  });
+
+  it('a failed reply keeps the reply draft for retry', async () => {
+    mocked.getReceipt.mockResolvedValue(receiptResponse(THREADED));
+    mocked.postReceiptComment.mockRejectedValue(new Error('boom'));
+    const w = mountCell({ count: 3 });
+    await openPopover(w);
+
+    q<HTMLButtonElement>('[data-test="comment-reply-11"]')!.click();
+    await nextTick();
+    const replyInput = q<HTMLTextAreaElement>('[data-test="comment-reply-input-11"]')!;
+    replyInput.value = 'expensive to retype';
+    replyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    replyInput.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(q('[data-test="comment-error"]')).not.toBeNull();
+    expect(q<HTMLTextAreaElement>('[data-test="comment-reply-input-11"]')!.value)
+      .toBe('expensive to retype');
+    expect(w.get('[data-test="inline-comment-count"]').text()).toBe('3');
+    w.unmount();
+  });
+
+  it('an orphan reply (parent not in the list) still renders rather than vanishing', async () => {
+    mocked.getReceipt.mockResolvedValue(receiptResponse([
+      { id: 20, parent_id: 999, text: 'orphaned but real', author: 'mc', created_at: '2026-08-10T08:15:00Z' },
+    ]));
+    const w = mountCell({ count: 1 });
+    await openPopover(w);
+
+    expect(threadTexts().join(' ')).toContain('orphaned but real');
+    expect(warnings).toEqual([]);
+    w.unmount();
   });
 });

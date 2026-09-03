@@ -103,10 +103,22 @@ export async function patchReceiptReview(sha256, body) {
 }
 
 /**
- * Add a comment. body: { text } → 201 created comment { id, text, author, created_at }
+ * Add a comment, optionally as a reply.
+ *
+ * body: { text, parent_id? } → 201 { id, parent_id, author, text, created_at }
+ *
+ * `parentId` must be a comment on the SAME receipt or the server 400s — it will
+ * not silently file the reply as a top-level comment. Replying to a reply is
+ * accepted and re-parented onto the root server-side, so threads stay one level
+ * deep. `parent_id` is omitted entirely (not sent as null) for a new top-level
+ * comment, keeping the request identical to what pre-threading clients send.
+ *
+ * `author` is stamped from the authenticated user server-side and is never sent
+ * from here — that is what makes the thread an audit trail.
  */
-export async function postReceiptComment(sha256, text) {
-  const response = await apiClient.post(`${BASE}${encodeURIComponent(sha256)}/comments/`, { text });
+export async function postReceiptComment(sha256, text, { parentId = null } = {}) {
+  const body = parentId == null ? { text } : { text, parent_id: parentId };
+  const response = await apiClient.post(`${BASE}${encodeURIComponent(sha256)}/comments/`, body);
   return response.data;
 }
 

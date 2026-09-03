@@ -555,7 +555,7 @@ describe('AuditReceipts archive — inline comment while a bulk selection is act
     await flushPromises();
     expect(modalEl()).toBeNull();
 
-    const input = document.body.querySelector<HTMLInputElement>('[data-test="inline-comment-input"]')!;
+    const input = document.body.querySelector<HTMLTextAreaElement>('[data-test="comment-input"]')!;
     expect(input).not.toBeNull();
     input.value = '  triage note ';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -676,7 +676,7 @@ describe('AuditReceipts — auditor mode', () => {
     await flushPromises();
     expect(modalEl()).toBeNull();
 
-    const input = document.body.querySelector<HTMLInputElement>('[data-test="inline-comment-input"]')!;
+    const input = document.body.querySelector<HTMLTextAreaElement>('[data-test="comment-input"]')!;
     expect(input).not.toBeNull();
     input.value = 'Please supply the tax invoice.';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -709,15 +709,12 @@ describe('AuditReceipts — auditor mode', () => {
     expect(labels).not.toContain('Archive');
     expect(labels).not.toContain('Restore');
 
-    const ta = modal!.querySelector<HTMLTextAreaElement>('textarea.ar-textarea')!;
+    const ta = modal!.querySelector<HTMLTextAreaElement>('[data-test="comment-input"]')!;
     expect(ta).not.toBeNull();
     ta.value = 'Queried with the bookkeeper.';
     ta.dispatchEvent(new Event('input', { bubbles: true }));
     await nextTick();
-    const submit = Array.from(modal!.querySelectorAll<HTMLButtonElement>('button'))
-      .find((b) => b.textContent?.trim() === 'Add comment')!;
-    expect(submit).toBeTruthy();
-    submit.click();
+    modal!.querySelector<HTMLButtonElement>('[data-test="comment-submit"]')!.click();
     await flushPromises();
 
     expect(mocked.postReceiptComment).toHaveBeenCalledWith(P1_SHAS[0], 'Queried with the bookkeeper.');
