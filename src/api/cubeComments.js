@@ -178,3 +178,34 @@ export async function postCubeCommentReply(id, text, { parentId = null } = {}) {
   );
   return response.data;
 }
+
+/**
+ * Hand ONE comment to a seat. Addressed BY ID.
+ *
+ * POST /xero/data/journals/pivot/comments/<id>/assign/  {assignee}
+ *   200 → the full comment row, plus `reassigned: true|false`
+ *   400 → unknown or INACTIVE handle; the message names the problem
+ *   404 → no such comment
+ *   403 → auditor role (everything under /xero/data/ is shut to them)
+ *
+ * Deliberately NOT the upsert doors, which also accept `assignee`. Those
+ * conflict on (subject_type, subject_key, author_key) and stamp the REQUESTER
+ * as author, so re-posting somebody else's row does not reassign it — it
+ * inserts a second row carrying their text under the caller's name. Every
+ * author in the live register is a name no console account holds, so that door
+ * would fork every row it touched. This one re-derives nothing, recomputes no
+ * anchor, and never writes `author_key`.
+ *
+ * `handle` is a SEAT ('bookkeeper'), never a person. '' unassigns.
+ *
+ * The 400 is the server refusing a handle it will not accept — an inactive
+ * seat is "assigning to a role nobody holds". That message is worth showing
+ * verbatim; callers must not swallow it.
+ */
+export async function setCommentAssignee(id, handle) {
+  const response = await apiClient.post(
+    `/xero/data/journals/pivot/comments/${encodeURIComponent(id)}/assign/`,
+    { assignee: handle || '' },
+  );
+  return response.data;
+}

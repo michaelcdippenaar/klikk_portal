@@ -40,6 +40,7 @@ vi.mock('../../api/cubeComments', async (importOriginal) => {
     postCubeCommentReply: vi.fn(),
     setCubeCommentStatus: vi.fn(),
     setCommentDecision: vi.fn(),
+    setCommentAssignee: vi.fn(),
     drillCubeComment: vi.fn(),
   };
 });
@@ -106,6 +107,7 @@ const mocked = api as unknown as {
   getComments: ReturnType<typeof vi.fn>;
   getAuditCubeComments: ReturnType<typeof vi.fn>;
   setCommentDecision: ReturnType<typeof vi.fn>;
+  setCommentAssignee: ReturnType<typeof vi.fn>;
 };
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -170,7 +172,23 @@ beforeEach(() => {
   mockAuth.user = { username: 'mc', email: 'mc@tremly.com', role: 'standard' };
   peopleCalls.fn.mockResolvedValue({ count: DIRECTORY.length, results: DIRECTORY });
   mocked.getAuditCubeComments.mockImplementation(async () => ({ results: register() }));
+  // The endpoint echoes the stored row back, which is what the page trusts —
+  // not the value it optimistically sent.
+  mocked.setCommentAssignee.mockImplementation(async (id: number, handle: string) => ({
+    id, assignee_role: handle, reassigned: true,
+  }));
 });
+
+/** An axios-shaped rejection carrying the server's 400 body. */
+function refusal(message: string) {
+  return Object.assign(new Error('Request failed with status code 400'), {
+    response: { status: 400, data: { error: message } },
+  });
+}
+
+function picker(w: ReturnType<typeof mount>, id: number) {
+  return w.find(`[data-test="cc-assign-${id}"]`);
+}
 
 afterEach(() => { document.body.innerHTML = ''; });
 
@@ -181,8 +199,18 @@ describe('AuditComments — the verdict selector is not rendered', () => {
     const w = await mounted();
     expect(w.findAll('article.cc')).toHaveLength(3);
     expect(w.find('.cc__verdict select').exists()).toBe(false);
-    // Not merely absent from that wrapper — absent from the card entirely.
-    expect(w.findAll('article.cc select')).toHaveLength(0);
+    // The ONLY <select> on a card is the assignee picker. Naming it that way
+    // rather than counting to zero keeps this honest as the page grows: a
+    // verdict control reintroduced anywhere on the row fails here.
+    const selects = w.findAll('article.cc select');
+    expect(selects).toHaveLength(3);
+    expect(selects.every((el) => (el.attributes('data-test') || '').startsWith('cc-assign-')))
+      .toBe(true);
+    // And no card offers a decision as a choice.
+    const values = selects.flatMap((el) => el.findAll('option').map((o) => o.attributes('value')));
+    for (const decision of ['business_expense', 'personal', 'duplicate', 'needs_info', 'no_action']) {
+      expect(values).not.toContain(decision);
+    }
     w.unmount();
   });
 
@@ -223,30 +251,42 @@ describe('AuditComments — the verdict selector is not rendered', () => {
 // ── Showing who a comment is with ───────────────────────────────────────────
 
 describe('AuditComments — assignment is shown as a person, stored as a seat', () => {
-  it('prints the person holding the seat, never the raw handle', async () => {
+  it('the picker holds the stored HANDLE and shows the person', async () => {
     const w = await mounted();
-    const chip = w.find('[data-test="cc-assignee-41"]');
-    expect(chip.exists()).toBe(true);
-    expect(chip.text()).toContain('Anzelle Vermaak');
-    expect(chip.text()).not.toContain('bookkeeper');
-    // The handle is still recoverable — it is what was actually stored.
-    expect(chip.attributes('title')).toBe('Assigned to the bookkeeper seat');
+    const sel = picker(w, 41);
+    expect((sel.element as HTMLSelectElement).value).toBe('bookkeeper');
+    const chosen = sel.findAll('option').find(
+      (o) => o.attributes('value') === 'bookkeeper')!;
+    expect(chosen.text()).toBe('Anzelle Vermaak');
     w.unmount();
   });
 
-  it('shows nothing at all on an unassigned row', async () => {
+  it('an unassigned row sits on the unassign option, not on a blank', async () => {
     const w = await mounted();
-    expect(w.find('[data-test="cc-assignee-42"]').exists()).toBe(false);
+    expect((picker(w, 42).element as HTMLSelectElement).value).toBe('');
+    expect(picker(w, 42).findAll('option')[0].text()).toBe('Unassigned');
     w.unmount();
   });
 
-  it('says so, in words, when the seat has been stood down', async () => {
+  it('offers ACTIVE seats only — an inactive one is never a target', async () => {
     const w = await mounted();
-    const chip = w.find('[data-test="cc-assignee-43"]');
-    expect(chip.text()).toContain('Jordyn Wolhuter');
-    expect(chip.text()).toContain('no longer active');
-    // Colour is not the only carrier, but it is applied.
-    expect(chip.classes()).toContain('cc__assignee--stale');
+    // Row 42 holds no stood-down seat, so its picker is the plain shared list.
+    const values = picker(w, 42).findAll('option').map((o) => o.attributes('value'));
+    expect(values).toEqual(['', 'auditor', 'bookkeeper', 'mc']);
+    expect(values).not.toContain('jordyn');
+    w.unmount();
+  });
+
+  it('shows a stood-down seat on the row that holds it, DISABLED', async () => {
+    const w = await mounted();
+    const sel = picker(w, 43);
+    // The select must not render blank over a real assignment…
+    expect((sel.element as HTMLSelectElement).value).toBe('jordyn');
+    const stale = sel.findAll('option').find((o) => o.attributes('value') === 'jordyn')!;
+    expect(stale.text()).toContain('Jordyn Wolhuter');
+    expect(stale.text()).toContain('no longer active');
+    // …and it can be moved OFF that seat but never onto it.
+    expect(stale.attributes('disabled')).toBeDefined();
     w.unmount();
   });
 
@@ -255,10 +295,11 @@ describe('AuditComments — assignment is shown as a person, stored as a seat', 
       results: [{ ...WITH_SEAT, assignee_role: 'ghost' }],
     });
     const w = await mounted();
-    const chip = w.find('[data-test="cc-assignee-41"]');
-    expect(chip.text()).toContain('ghost');
+    const ghost = picker(w, 41).findAll('option').find(
+      (o) => o.attributes('value') === 'ghost')!;
+    expect(ghost.text()).toBe('ghost');
     // Unknown is NOT the same claim as stood-down, and must not be dressed as it.
-    expect(chip.text()).not.toContain('no longer active');
+    expect(ghost.text()).not.toContain('no longer active');
     w.unmount();
   });
 
@@ -266,9 +307,10 @@ describe('AuditComments — assignment is shown as a person, stored as a seat', 
     peopleCalls.fn.mockRejectedValue(new Error('network'));
     const w = await mounted();
     expect(w.findAll('article.cc')).toHaveLength(3);
-    expect(w.find('[data-test="cc-assignee-41"]').text()).toContain('bookkeeper');
-    // A directory failure is not a register failure and must not be shown as one.
-    expect(w.find('.k-alert').exists()).toBe(false);
+    // No seats to offer, but the stored assignment is still shown and the
+    // unassign is still reachable — a directory outage must not trap a point.
+    const values = picker(w, 41).findAll('option').map((o) => o.attributes('value'));
+    expect(values).toEqual(['', 'bookkeeper']);
     w.unmount();
   });
 });
@@ -307,11 +349,8 @@ describe('AuditComments — the "Assigned to" filter', () => {
     w.unmount();
   });
 
-  it('"assigned to me" resolves MY seat by EMAIL, the way the server resolves it', async () => {
+  it('"assigned to me" resolves MY seat by EMAIL, the way the server does', async () => {
     const w = await mounted();
-    // The account's username is 'mc' and so is the handle, which would let a
-    // guess-by-username implementation pass by accident. Drive it from an
-    // account whose username does NOT match any handle.
     expect(optionValues(w)).toContain('__me__');
     await assigneeSelect(w).setValue('__me__');
     await flushPromises();
@@ -320,11 +359,13 @@ describe('AuditComments — the "Assigned to" filter', () => {
   });
 
   it('matches on email, not on username', async () => {
+    // The account's username is normally 'mc' and so is the handle, which
+    // would let a guess-by-username implementation pass by accident. Drive it
+    // from an account whose username matches no handle at all.
     mockAuth.user = { username: 'michael', email: 'mc@tremly.com', role: 'standard' };
     const w = await mounted();
     await assigneeSelect(w).setValue('__me__');
     await flushPromises();
-    // 'michael' is not a handle; the email is what identifies the seat.
     expect(lastQuery()).toMatchObject({ assignee: 'mc' });
     w.unmount();
   });
@@ -333,7 +374,7 @@ describe('AuditComments — the "Assigned to" filter', () => {
     mockAuth.user = { username: 'anzelle', email: 'nobody@nowhere.test', role: 'standard' };
     const w = await mounted();
     // Offering a filter that can only ever match nothing is worse than not
-    // offering it — the server says the same thing about assigning to 'me'.
+    // offering it — the server says the same about assigning to 'me'.
     expect(optionValues(w)).not.toContain('__me__');
     w.unmount();
   });
@@ -359,32 +400,238 @@ describe('AuditComments — the "Assigned to" filter', () => {
     expect(w.findAll('article.cc')).toHaveLength(3);
     w.unmount();
   });
+});
 
-  it('an auditor can read assignment too — it is not a write control', async () => {
-    mockAuth.isAuditor = true;
-    mockAuth.user = { username: 'george', email: 'george@moore.co.za', role: 'auditor' };
+// ── Assigning one ───────────────────────────────────────────────────────────
+
+describe('AuditComments — the per-row picker writes by id', () => {
+  it('sends the comment id and the HANDLE, never a person or a comment body', async () => {
     const w = await mounted();
-    expect(w.find('[data-test="cc-assignee-41"]').text()).toContain('Anzelle Vermaak');
-    expect(assigneeSelect(w).exists()).toBe(true);
+    await picker(w, 42).setValue('bookkeeper');
+    await flushPromises();
+
+    expect(mocked.setCommentAssignee).toHaveBeenCalledTimes(1);
+    expect(mocked.setCommentAssignee).toHaveBeenCalledWith(42, 'bookkeeper');
+    // The upsert doors are never opened — that is the whole point of by-id.
+    expect(mocked.getComments).not.toHaveBeenCalled();
+    expect(mocked.setCommentDecision).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it('unassigns with an empty string rather than a magic token', async () => {
+    const w = await mounted();
+    await picker(w, 41).setValue('');
+    await flushPromises();
+    expect(mocked.setCommentAssignee).toHaveBeenCalledWith(41, '');
+    w.unmount();
+  });
+
+  it('trusts the row the server echoes back, not what it sent', async () => {
+    mocked.setCommentAssignee.mockResolvedValueOnce({
+      id: 42, assignee_role: 'auditor', reassigned: true,
+    });
+    const w = await mounted();
+    await picker(w, 42).setValue('bookkeeper');
+    await flushPromises();
+    expect((picker(w, 42).element as HTMLSelectElement).value).toBe('auditor');
+    w.unmount();
+  });
+
+  it('does not call the server when the seat has not changed', async () => {
+    const w = await mounted();
+    await picker(w, 41).setValue('bookkeeper');
+    await flushPromises();
+    // A no-op would write a trail row for a change of hands that never
+    // happened, which is what resets the ageing clock the log exists for.
+    expect(mocked.setCommentAssignee).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it('surfaces the SERVER\'s 400 verbatim and puts the control back', async () => {
+    mocked.setCommentAssignee.mockRejectedValueOnce(
+      refusal("handle 'jordyn' is not active — assigning to a role nobody holds is the same as assigning to nobody"));
+    const w = await mounted();
+    await picker(w, 42).setValue('bookkeeper');
+    await flushPromises();
+
+    // The message names the problem; a generic "could not assign" would not.
+    expect(w.text()).toContain("handle 'jordyn' is not active");
+    // A native <select> has already moved by the time the handler runs, and
+    // the row did not change — so nothing re-renders and the control would
+    // otherwise sit showing a seat the server refused.
+    expect((picker(w, 42).element as HTMLSelectElement).value).toBe('');
+    w.unmount();
+  });
+
+  it('drops a row that no longer matches the assignee filter', async () => {
+    const w = await mounted();
+    await assigneeSelect(w).setValue('bookkeeper');
+    await flushPromises();
+    expect(w.findAll('article.cc')).toHaveLength(3); // server-filtered fixture
+
+    await picker(w, 41).setValue('auditor');
+    await flushPromises();
+    // Leaving a row captioned "with the auditor" in a list filtered to the
+    // bookkeeper is a list that lies.
+    expect(w.find('[data-test="cc-assign-41"]').exists()).toBe(false);
     w.unmount();
   });
 });
 
-// ── Nothing here writes ─────────────────────────────────────────────────────
+// ── Assigning many ──────────────────────────────────────────────────────────
 
-describe('AuditComments — assignment is read-only until there is a by-id endpoint', () => {
-  it('offers no control that would POST an assignment', async () => {
+describe('AuditComments — bulk assign', () => {
+  async function selectRows(w: ReturnType<typeof mount>, ids: number[]) {
+    for (const id of ids) await w.find(`[data-test="cc-pick-${id}"]`).setValue(true);
+    await flushPromises();
+  }
+
+  it('shows no bar until something is selected', async () => {
     const w = await mounted();
-    // No per-row picker. Assignment can only be written today through the
-    // upserts keyed on the REQUESTER's author_key, which would fork every row
-    // in this register (its authors are 'MC (To Review)', 'anine', agents —
-    // none of them a console username) instead of routing it.
-    expect(w.findAll('article.cc select')).toHaveLength(0);
-    expect(w.findAll('article.cc input')).toHaveLength(0);
-    const labels = w.findAll('article.cc button').map((b) => b.text().toLowerCase());
-    expect(labels.some((t) => t.includes('assign'))).toBe(false);
-    // And no bulk bar, for the same reason.
-    expect(w.text().toLowerCase()).not.toContain('assign selected');
+    expect(w.find('[data-test="cc-bulk"]').exists()).toBe(false);
+    await selectRows(w, [41]);
+    expect(w.find('[data-test="cc-bulk"]').text()).toContain('1 selected');
+    w.unmount();
+  });
+
+  it('select-all ticks every row SHOWN, and unticks them again', async () => {
+    const w = await mounted();
+    await w.find('[data-test="cc-select-all"]').setValue(true);
+    await flushPromises();
+    expect(w.find('[data-test="cc-bulk"]').text()).toContain('3 selected');
+    await w.find('[data-test="cc-select-all"]').setValue(false);
+    await flushPromises();
+    expect(w.find('[data-test="cc-bulk"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('issues ONE call per comment and reports what landed', async () => {
+    const w = await mounted();
+    await selectRows(w, [41, 42, 43]);
+    await w.find('[data-test="cc-bulk-handle"]').setValue('auditor');
+    await w.find('[data-test="cc-bulk-apply"]').trigger('click');
+    await flushPromises();
+
+    expect(mocked.setCommentAssignee.mock.calls).toEqual([
+      [41, 'auditor'], [42, 'auditor'], [43, 'auditor'],
+    ]);
+    const result = w.find('[data-test="cc-bulk-result"]');
+    expect(result.text()).toContain('3 of 3');
+    expect(result.text()).toContain('George du Preez');
+    expect(w.findAll('[data-test="cc-bulk-failure"]')).toHaveLength(0);
+    // Everything landed, so nothing is left selected.
+    expect(w.find('[data-test="cc-bulk"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('reports a PARTIAL failure honestly, naming each row and the reason', async () => {
+    mocked.setCommentAssignee
+      .mockImplementationOnce(async (id: number, handle: string) => ({ id, assignee_role: handle }))
+      .mockRejectedValueOnce(refusal('no such comment'))
+      .mockRejectedValueOnce(refusal("handle 'ghost' is not active"));
+
+    const w = await mounted();
+    await selectRows(w, [41, 42, 43]);
+    await w.find('[data-test="cc-bulk-handle"]').setValue('auditor');
+    await w.find('[data-test="cc-bulk-apply"]').trigger('click');
+    await flushPromises();
+
+    const result = w.find('[data-test="cc-bulk-result"]');
+    // NOT "3 assigned". The register would disagree the moment it reloaded.
+    expect(result.text()).toContain('1 of 3');
+    expect(result.text()).toContain('2 refused');
+
+    const failures = w.findAll('[data-test="cc-bulk-failure"]');
+    expect(failures).toHaveLength(2);
+    expect(failures[0].text()).toContain('Investec · 2026-08-04 · R259.00');
+    expect(failures[0].text()).toContain('no such comment');
+    expect(failures[1].text()).toContain('Fuel · Jul 2026');
+    expect(failures[1].text()).toContain("handle 'ghost' is not active");
+
+    // The two that failed stay ticked so the retry is the same button again.
+    expect(w.find('[data-test="cc-bulk"]').text()).toContain('2 selected');
+    expect(w.find('[data-test="cc-pick-41"]').attributes('checked')).toBeUndefined();
+    w.unmount();
+  });
+
+  it('a whole-batch failure reports zero, not silence', async () => {
+    mocked.setCommentAssignee.mockRejectedValue(refusal('nope'));
+    const w = await mounted();
+    await selectRows(w, [41, 42]);
+    await w.find('[data-test="cc-bulk-apply"]').trigger('click');
+    await flushPromises();
+    expect(w.find('[data-test="cc-bulk-result"]').text()).toContain('0 of 2');
+    expect(w.findAll('[data-test="cc-bulk-failure"]')).toHaveLength(2);
+    w.unmount();
+  });
+
+  it('bulk-unassigns with the empty handle', async () => {
+    const w = await mounted();
+    await selectRows(w, [41]);
+    await w.find('[data-test="cc-bulk-apply"]').trigger('click');
+    await flushPromises();
+    expect(mocked.setCommentAssignee).toHaveBeenCalledWith(41, '');
+    expect(w.find('[data-test="cc-bulk-result"]').text()).toContain('unassigned');
+    w.unmount();
+  });
+
+  it('never offers an inactive seat as a bulk target', async () => {
+    const w = await mounted();
+    await selectRows(w, [41]);
+    const values = w.find('[data-test="cc-bulk-handle"]').findAll('option')
+      .map((o) => o.attributes('value'));
+    expect(values).toEqual(['', 'auditor', 'bookkeeper', 'mc']);
+    w.unmount();
+  });
+
+  it('drops the selection when the filter changes', async () => {
+    const w = await mounted();
+    await selectRows(w, [41, 42]);
+    expect(w.find('[data-test="cc-bulk"]').exists()).toBe(true);
+    await w.find('[data-test="filter-status"]').setValue('all');
+    await flushPromises();
+    // "Assign the 12 I ticked" must not act on rows the reader can no longer
+    // see — the selection was made against what was on screen.
+    expect(w.find('[data-test="cc-bulk"]').exists()).toBe(false);
+    w.unmount();
+  });
+});
+
+// ── The auditor gate ────────────────────────────────────────────────────────
+
+describe('AuditComments — an auditor reads assignment and cannot write it', () => {
+  beforeEach(() => {
+    mockAuth.isAuditor = true;
+    mockAuth.user = { username: 'george', email: 'george@moore.co.za', role: 'auditor' };
+  });
+
+  it('shows the chip instead of the picker, and offers no bulk affordance', async () => {
+    const w = await mounted();
+    // The assign endpoint sits under /xero/data/, which 403s for this role, so
+    // a picker could only ever fail. Reading who holds a point is their job.
+    expect(w.find('[data-test="cc-assignee-41"]').text()).toContain('Anzelle Vermaak');
+    expect(w.find('[data-test="cc-assign-41"]').exists()).toBe(false);
+    expect(w.find('[data-test="cc-pick-41"]').exists()).toBe(false);
+    expect(w.find('[data-test="cc-select-all"]').exists()).toBe(false);
+    expect(w.find('[data-test="cc-bulk"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('still says when a seat has been stood down', async () => {
+    const w = await mounted();
+    const chip = w.find('[data-test="cc-assignee-43"]');
+    expect(chip.text()).toContain('Jordyn Wolhuter');
+    expect(chip.text()).toContain('no longer active');
+    expect(chip.classes()).toContain('cc__assignee--stale');
+    w.unmount();
+  });
+
+  it('can still read and drive the "Assigned to" filter', async () => {
+    const w = await mounted();
+    expect(assigneeSelect(w).exists()).toBe(true);
+    await assigneeSelect(w).setValue('bookkeeper');
+    await flushPromises();
+    expect(lastQuery()).toMatchObject({ assignee: 'bookkeeper' });
     w.unmount();
   });
 });

@@ -64,6 +64,7 @@ vi.mock('../../api/cubeComments', async (importOriginal) => {
     postCubeCommentReply: vi.fn(),
     setCubeCommentStatus: vi.fn(),
     setCommentDecision: vi.fn(),
+    setCommentAssignee: vi.fn(),
     drillCubeComment: vi.fn(),
   };
 });
@@ -99,7 +100,10 @@ vi.mock('../../stores/auth', () => ({
 import * as api from '../../api/cubeComments';
 import AuditComments from '../AuditComments.vue';
 
-const mocked = api as unknown as { getAuditCubeComments: ReturnType<typeof vi.fn> };
+const mocked = api as unknown as {
+  getAuditCubeComments: ReturnType<typeof vi.fn>;
+  setCommentAssignee: ReturnType<typeof vi.fn>;
+};
 
 // ~10 KB of anchor per comment, matching production's 1.4 MB across 113 rows.
 const YEARS = Array.from({ length: 12 }, (_, i) => String(2015 + i));
@@ -141,6 +145,9 @@ beforeEach(() => {
   parseCalls.n = 0;
   seatReads.n = 0;
   mocked.getAuditCubeComments.mockResolvedValue({ results: register() });
+  mocked.setCommentAssignee.mockImplementation(async (id: number, handle: string) => ({
+    id, assignee_role: handle, reassigned: true,
+  }));
 });
 afterEach(() => { w?.unmount(); w = null; document.body.innerHTML = ''; });
 
@@ -243,14 +250,19 @@ describe('AuditComments — assignment at register scale', () => {
     const page = await mountPage();
 
     // ── what it says ──
-    const chips = page.findAll('[data-test^="cc-assignee-"]');
-    expect(chips).toHaveLength(ASSIGNED_ROWS);
-    const texts = chips.map((c) => c.text());
-    // The PERSON is shown; the handle is what the title carries.
-    expect(texts.filter((t) => t.includes('Anzelle Vermaak')).length).toBeGreaterThan(0);
-    expect(texts.every((t) => !t.includes('bookkeeper'))).toBe(true);
+    // Every row carries a picker whose value IS the stored handle, and every
+    // assigned row shows the PERSON behind it.
+    const held = page.findAll('[data-test^="cc-assign-"]')
+      .map((p) => (p.element as HTMLSelectElement).value);
+    expect(held).toHaveLength(REGISTER_SIZE);
+    expect(held.filter(Boolean)).toHaveLength(ASSIGNED_ROWS);
+    const labelled = page.findAll('[data-test^="cc-assign-"]').map((p) => {
+      const v = (p.element as HTMLSelectElement).value;
+      return p.findAll('option').find((o) => o.attributes('value') === v)!.text();
+    });
+    expect(labelled.filter((t) => t === 'Anzelle Vermaak').length).toBeGreaterThan(0);
     // A stood-down seat says so in words, not by colour alone.
-    expect(texts.filter((t) => t.includes('Jordyn Wolhuter'))
+    expect(labelled.filter((t) => t.includes('Jordyn Wolhuter'))
       .every((t) => t.includes('no longer active'))).toBe(true);
 
     // ── what it offers ──
@@ -259,15 +271,50 @@ describe('AuditComments — assignment at register scale', () => {
     }).assigneeOptions;
     expect(options.map((o) => o.value)).not.toContain('jordyn');
     expect(options.map((o) => o.label).join(' ')).not.toContain('Jordyn');
+    // The pickers offer active seats only, on every one of the 113 rows —
+    // sampling row 1 is what let the last aggregate defect through.
+    const pickers = page.findAll('[data-test^="cc-assign-"]');
+    expect(pickers).toHaveLength(REGISTER_SIZE);
+    const offered = new Set(pickers.flatMap(
+      (p) => p.findAll('option').map((o) => o.attributes('value'))));
+    // 'jordyn' appears ONLY as the disabled current value on the rows that
+    // already hold it — never as a target on a row that does not.
+    const onUnheld = page.findAll('[data-test^="cc-assign-"]').filter(
+      (p) => (p.element as HTMLSelectElement).value !== 'jordyn');
+    expect(onUnheld.every((p) => !p.findAll('option')
+      .some((o) => o.attributes('value') === 'jordyn'))).toBe(true);
+    expect(offered.has('bookkeeper')).toBe(true);
+
+    // ── what the pickers ALLOCATE ──
+    // Every row whose seat the picker already offers must share ONE options
+    // array by reference. 113 rows each holding their own copy of the same
+    // four options is per-row allocation on the render path — the exact shape
+    // of the defect this file exists for. Only the stood-down rows differ,
+    // because they carry an extra disabled option naming the seat they hold.
+    const entries = [...(page.vm as unknown as {
+      assignments: Map<number, { options: unknown }>;
+    }).assignments.values()];
+    expect(entries).toHaveLength(REGISTER_SIZE);
+    const distinctArrays = new Set(entries.map((e) => e.options));
+    // EXACTLY two: the shared base list, and the one variant carrying the
+    // stood-down seat as a disabled option. Not 113, and not one per stale
+    // ROW either — the 37 rows holding 'jordyn' share a single array, because
+    // resolution is memoised per handle rather than per row.
+    expect(distinctArrays.size).toBe(2);
+    // The whole entry is shared too, not just its options.
+    expect(new Set(entries).size).toBe(3); // unassigned, bookkeeper, jordyn
 
     // ── what it cost ──
-    // Two reads per ASSIGNED row (the name, and whether the seat is still
-    // held), plus a small constant for the four-seat directory the filter is
-    // built from. The number that matters is the coefficient: bounded by the
-    // rows that carry a seat, and — see the next test — not paid again on the
-    // next render. A template-side `labelFor()` would pay all of it on every
-    // keystroke and every 5-second feed poll.
-    expect(seatReads.n).toBeLessThanOrEqual(ASSIGNED_ROWS * 2 + 16);
+    // Bounded by DISTINCT SEATS, not by rows. There are four seats and a
+    // hundred and thirteen rows, and resolution is memoised per handle, so
+    // drawing the whole register reads the directory a couple of dozen times
+    // — not two hundred, and not two hundred again on the next render.
+    //
+    // This number is the one that matters. When the resolution was inlined
+    // per row it was ~166 here and 21,321 across a bulk run: O(n²) in the size
+    // of the register, the same shape as the anchor defect this file exists
+    // for, reintroduced by the assignment feature and caught here.
+    expect(seatReads.n).toBeLessThanOrEqual(32);
     // Guard the guard: a fixture with no assignments would pass everything
     // above while measuring nothing.
     expect(ASSIGNED_ROWS).toBeGreaterThan(60);
@@ -305,6 +352,48 @@ describe('AuditComments — assignment at register scale', () => {
     // And sitting still.
     await new Promise((r) => setTimeout(r, 400));
     expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBe(0);
+  });
+
+  it('selecting and bulk-assigning the whole register re-reads nothing per render', async () => {
+    const page = await mountPage();
+    const vm = page.vm as unknown as {
+      selectedCount: number;
+      bulkHandle: string;
+      toggleSelectAll: () => void;
+      assignSelected: () => Promise<void>;
+    };
+
+    // Ticking all 113 boxes is a render of every row. Selection membership is
+    // a Set lookup, not a list scan, and it touches neither the anchors nor
+    // the directory — if either of those is read here, the bulk bar has put
+    // the register's size back on the render path.
+    parseCalls.n = 0;
+    seatReads.n = 0;
+    vm.toggleSelectAll();
+    await flushPromises();
+    expect(vm.selectedCount).toBe(REGISTER_SIZE);
+    expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBe(0);
+
+    // The run itself: one call per comment, and the anchors are never touched.
+    //
+    // 113 rows change, so the register's assignment map is invalidated 113
+    // times — and this is the assertion that made the design what it is. With
+    // resolution inlined, each invalidation re-resolved all 113 rows: 21,321
+    // directory reads for one bulk assign. Memoising per HANDLE instead of per
+    // row makes the run cost a handful, because the register holds four seats
+    // however many comments point at them.
+    vm.bulkHandle = 'auditor';
+    await vm.assignSelected();
+    await flushPromises();
+    expect(mocked.setCommentAssignee).toHaveBeenCalledTimes(REGISTER_SIZE);
+    expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBeLessThanOrEqual(32);
+
+    // And having settled, it is quiet again.
+    seatReads.n = 0;
+    await new Promise((r) => setTimeout(r, 400));
     expect(seatReads.n).toBe(0);
   });
 });

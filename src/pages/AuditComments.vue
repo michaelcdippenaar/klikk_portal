@@ -67,6 +67,56 @@
       />
     </FilterBar>
 
+    <!-- Bulk assign. Reviewing the register means spotting a run of points
+         that all belong to the same person, and re-picking a seat forty times
+         is not what that moment needs. Hidden for an auditor: the assign
+         endpoint sits under /xero/data/, which 403s for that role, so the
+         control would only ever produce an error. -->
+    <div v-if="!isAuditor && selectedCount" class="cc-bulk" data-test="cc-bulk">
+      <span><strong>{{ selectedCount }}</strong> selected</span>
+      <label class="cc-bulk__field">
+        <span>Assign to</span>
+        <select v-model="bulkHandle" :disabled="bulkBusy" data-test="cc-bulk-handle">
+          <option v-for="o in assignOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+        </select>
+      </label>
+      <button
+        class="btn btn-ghost btn-sm"
+        :disabled="bulkBusy"
+        data-test="cc-bulk-apply"
+        @click="assignSelected"
+      >{{ bulkBusy ? `Assigning… ${bulkDone}/${selectedCount}` : 'Assign' }}</button>
+      <button class="btn btn-ghost btn-sm" :disabled="bulkBusy" @click="clearSelection">Clear</button>
+    </div>
+
+    <!-- What a bulk run ACTUALLY did. One call per comment, so a run can
+         partly succeed, and reporting "42 assigned" when nine were refused
+         would be a lie the register would then quietly disagree with. Each
+         failure is named, with the server's own words for why. -->
+    <div
+      v-if="bulkResult"
+      class="cc-bulk-result"
+      :class="{ 'cc-bulk-result--bad': bulkResult.failed.length }"
+      data-test="cc-bulk-result"
+      role="status"
+    >
+      <p class="cc-bulk-result__head">
+        {{ bulkResult.assigned }} of {{ bulkResult.attempted }}
+        {{ bulkResult.handle ? `assigned to ${bulkResult.handleLabel}` : 'unassigned' }}<template
+          v-if="bulkResult.failed.length"
+        >, {{ bulkResult.failed.length }} refused</template>.
+      </p>
+      <ul v-if="bulkResult.failed.length" class="cc-bulk-result__list">
+        <li v-for="f in bulkResult.failed" :key="f.id" data-test="cc-bulk-failure">
+          <strong>{{ f.label }}</strong> — {{ f.error }}
+        </li>
+      </ul>
+      <p v-if="bulkResult.failed.length" class="cc-bulk-result__note">
+        The ones that failed are still selected, so a retry is one click.
+      </p>
+      <button class="btn btn-ghost btn-sm" @click="bulkResult = null" aria-label="Dismiss">&times;</button>
+    </div>
+
     <SectionCard>
       <KSpinner v-if="loading && !rows.length" size="sm" tone="accent" />
       <EmptyState
@@ -74,10 +124,32 @@
         title="Nothing here"
         :body="emptyBody"
       />
-      <div v-else class="cc-list">
+      <template v-else>
+      <div v-if="!isAuditor" class="cc-selectall">
+        <label>
+          <input
+            type="checkbox"
+            :checked="allShownSelected"
+            data-test="cc-select-all"
+            @change="toggleSelectAll"
+          />
+          Select all {{ rows.length }} shown
+        </label>
+      </div>
+
+      <div class="cc-list">
         <article v-for="row in rows" :key="row.id" class="cc">
           <header class="cc__head">
             <div class="cc__who">
+              <input
+                v-if="!isAuditor"
+                type="checkbox"
+                class="cc__pick"
+                :checked="selected.has(row.id)"
+                :aria-label="`Select for bulk assign: ${rowLabel(row)}`"
+                :data-test="`cc-pick-${row.id}`"
+                @change="toggleSelected(row)"
+              />
               <KBadge :tone="row.status === 'open' ? 'warning' : 'neutral'">
                 {{ row.status }}
               </KBadge>
@@ -86,21 +158,6 @@
               </KBadge>
               <strong class="cc__author">{{ row.author || 'unattributed' }}</strong>
               <span class="cc__when">{{ formatWhen(row.updated_at) }}</span>
-              <!-- Whose queue this is in. The stored value is a SEAT, so the
-                   name shown is whoever holds it today; a seat that has since
-                   been stood down says so rather than reading as a live
-                   assignment. Only rendered when there IS one — a hundred
-                   "Unassigned" chips would be a hundred pieces of noise. -->
-              <span
-                v-if="assignmentOf(row)"
-                class="cc__assignee"
-                :class="{ 'cc__assignee--stale': assignmentOf(row).stale }"
-                :data-test="`cc-assignee-${row.id}`"
-                :title="`Assigned to the ${assignmentOf(row).handle} seat`"
-              >
-                <span class="cc__assignee-tag">to</span>{{ assignmentOf(row).label
-                }}<span v-if="assignmentOf(row).stale"> — no longer active</span>
-              </span>
             </div>
             <div class="cc__actions">
               <!-- The thread affordance sits FIRST and outside the auditor
@@ -139,6 +196,46 @@
 
           <p v-if="row.subject_label" class="cc__subject">{{ row.subject_label }}</p>
           <p class="cc__text">{{ row.comment }}</p>
+
+          <!-- Whose queue this is in.
+               A WRITER gets the picker; its value IS the stored handle, so
+               there is no second control mirroring the same fact. Options are
+               one shared array — active seats plus "Unassigned" — built once
+               per load, never per row.
+               A stood-down seat is offered as a DISABLED option on the rows
+               that already hold it, and nowhere else: the select must not show
+               a blank where a real assignment exists, and the server refuses
+               an inactive handle anyway ("assigning to a role nobody holds is
+               the same as assigning to nobody").
+               An AUDITOR gets the chip. Everything under /xero/data/ is 403
+               for that role, so a picker there could only ever fail — but
+               reading who holds a point is a reviewer's whole job. -->
+          <div class="cc__assign">
+            <template v-if="!isAuditor">
+              <label :for="`asg-${row.id}`">Assigned to</label>
+              <select
+                :id="`asg-${row.id}`"
+                class="cc__assign-select"
+                :value="assignmentOf(row).handle"
+                :disabled="busyId === row.id || bulkBusy"
+                :data-test="`cc-assign-${row.id}`"
+                @change="onAssignChange(row, $event)"
+              >
+                <option v-for="o in assignmentOf(row).options" :key="o.value"
+                        :value="o.value" :disabled="o.disabled">{{ o.label }}</option>
+              </select>
+            </template>
+            <span
+              v-else-if="assignmentOf(row).handle"
+              class="cc__assignee"
+              :class="{ 'cc__assignee--stale': assignmentOf(row).stale }"
+              :data-test="`cc-assignee-${row.id}`"
+              :title="`Assigned to the ${assignmentOf(row).handle} seat`"
+            >
+              <span class="cc__assignee-tag">to</span>{{ assignmentOf(row).label
+              }}<span v-if="assignmentOf(row).stale"> — no longer active</span>
+            </span>
+          </div>
 
           <!-- The verdict SELECTOR is gone. It POSTed to /xero/data/comments/,
                which is the wrong door in both directions: that endpoint 400s
@@ -257,6 +354,7 @@
           </section>
         </article>
       </div>
+      </template>
     </SectionCard>
   </AppPage>
 </template>
@@ -269,6 +367,7 @@ import {
   postCubeCommentReply,
   DECISIONS,
   setCubeCommentStatus,
+  setCommentAssignee,
   drillCubeComment,
   commentCoordinates,
   normaliseFilters,
@@ -334,22 +433,21 @@ const NO_AUTHOR = '__no_author__';
 // people directory rather than a rewrite of every point ever sent to her. The
 // console therefore shows the display name and works in the handle throughout.
 //
-// READ ONLY, for now, and deliberately. There is no by-id assign endpoint:
-// `assignee` is only accepted by the two UPSERT posts
-// (/xero/data/journals/pivot/comments/ and /xero/data/comments/), both keyed
-// ON CONFLICT (subject_type, subject_key, author_key) — and `author_key` is
-// stamped server-side to the REQUESTER, never taken from the payload. So
-// assigning a comment somebody else wrote does not update it; it inserts a
-// second row carrying their text under your name. That is the identical
-// mechanism the verdict selector was removed for, and the register's authors
-// are 'MC (To Review)', 'MC', 'codex:…' and 'claude:…' — none of which is a
-// console username, so it would fork every row it touched, not a few.
+// Written through POST .../comments/<id>/assign/ — BY ID, and only by id.
 //
-// What is needed is one endpoint mirroring the one that already exists for
-// status: POST .../comments/<id>/assign/ {assignee}, updating BY ID. Until it
-// lands, this page shows assignment and filters on it, and offers no control
-// that would write it. A picker whose outcome is a duplicated register is
-// worse than no picker.
+// The upsert doors also accept `assignee`, and this page must never use them
+// for it: they conflict on (subject_type, subject_key, author_key) with
+// `author_key` stamped server-side from the credential, so re-posting somebody
+// else's row does not reassign it — it inserts a second row carrying their
+// text under your name. The live register's authors are 'MC (To Review)',
+// 'MC', 'codex:…' and 'claude:…', none of them a console username, so that
+// door would fork every row it touched rather than a few. The by-id endpoint
+// re-derives nothing and never writes `author_key`.
+//
+// The server owns which handles are acceptable — unknown and INACTIVE are both
+// a 400 with a message that names the problem. That message is shown verbatim
+// rather than replaced with a generic failure: "handle 'jordyn' is not active"
+// tells the reader what to do next, and "could not assign" does not.
 //
 // Two UI-only tokens, for the same reason NO_AUTHOR exists: "" already means
 // "no assignee filter", so "assigned to nobody" and "assigned to me" each need
@@ -402,6 +500,11 @@ const DECISION_OPTIONS = [
 async function load() {
   loading.value = true;
   error.value = null;
+  // A selection is made against what is ON SCREEN. Carrying it across a filter
+  // change would let "assign the 12 I ticked" act on rows the reader can no
+  // longer see — the same trap AuditReceipts already guards.
+  selected.clear();
+  bulkResult.value = null;
   try {
     const params = { status: filters.status, limit: 2000 };
     if (filters.subject_type) params.subject_type = filters.subject_type;
@@ -513,6 +616,21 @@ function kindLabel(kind) {
 }
 
 /**
+ * What a comment may be assigned TO — ACTIVE seats only, plus the unassign.
+ *
+ * Built once and shared by every row's picker and by the bulk bar. An inactive
+ * seat is never offered: the server refuses one with a 400, so offering it
+ * would be offering a choice that cannot be made.
+ */
+const assignOptions = computed(() => [
+  { value: '', label: 'Unassigned' },
+  ...directory.seats.value.map((p) => ({
+    value: p.handle,
+    label: p.display_name || p.handle,
+  })),
+]);
+
+/**
  * Every row's assignment, resolved ONCE per load — not per render.
  *
  * Same discipline as `anchors`, and for the same reason: this is per-row work
@@ -527,26 +645,208 @@ function kindLabel(kind) {
  * it. Those rows are deliberately left alone by the backend, so the console
  * has to state it rather than render a dead assignment as a live one.
  */
-const assignments = computed(() => {
+/**
+ * Resolve ONE handle to what a row needs to show — memoised, and keyed on the
+ * DIRECTORY rather than on the rows.
+ *
+ * This indirection is load-bearing, and the register-scale spec is what
+ * proved it. `assignments` below depends on every row's `assignee_role`, so a
+ * bulk run that assigns 113 comments invalidates it 113 times. With the
+ * resolution inlined there, each invalidation re-resolved all 113 rows: 21,321
+ * directory reads for one bulk assign, O(n²) in the size of the register —
+ * the same shape as the anchor defect that took this page down, reintroduced
+ * by the assignment feature.
+ *
+ * A computed that returns a memoising function fixes it structurally. The
+ * cache recomputes only when the DIRECTORY changes, so it survives every row
+ * mutation; re-resolving the register afterwards costs one cached Map lookup
+ * per row and zero reads. Distinct SEATS is the real dimension here — there
+ * are four of them and a hundred and thirteen rows.
+ */
+const seatIndex = computed(() => {
   const dir = directory.byHandle.value;
-  const m = new Map();
-  all.value.forEach((r) => {
-    const handle = String(r.assignee_role || '').trim();
-    if (!handle) return;
-    const person = dir.get(handle.toLowerCase());
-    m.set(r.id, {
-      handle,
-      label: (person && person.display_name) || handle,
+  const base = assignOptions.value;
+  const cache = new Map();
+  return (handle) => {
+    if (cache.has(handle)) return cache.get(handle);
+    let entry;
+    if (!handle) {
+      // The common case shares ONE options array by reference. 113 rows each
+      // holding their own copy of the same four options is the kind of
+      // per-row allocation this page has already been taken down by once.
+      entry = { handle: '', label: '', stale: false, options: base };
+    } else {
+      const person = dir.get(handle.toLowerCase());
       // Unknown to the directory is NOT stale — it is unknown, and saying
       // "no longer active" about a handle nobody has ever heard of would be a
       // guess. It shows as the bare handle instead.
-      stale: !!person && !person.active,
-    });
+      const stale = !!person && !person.active;
+      const label = (person && person.display_name) || handle;
+      const offered = base.some((o) => o.value === handle);
+      entry = {
+        handle,
+        label,
+        stale,
+        // A row holding a handle the picker does not offer still has to SHOW
+        // it, or the select renders blank and claims the point is unassigned.
+        // It is added disabled, so it can be moved off and never onto.
+        options: offered ? base : [
+          ...base,
+          { value: handle, label: stale ? `${label} — no longer active` : label, disabled: true },
+        ],
+      };
+    }
+    cache.set(handle, entry);
+    return entry;
+  };
+});
+
+const assignments = computed(() => {
+  const resolve = seatIndex.value;
+  const m = new Map();
+  all.value.forEach((r) => {
+    m.set(r.id, resolve(String(r.assignee_role || '').trim()));
   });
   return m;
 });
 
-function assignmentOf(row) { return assignments.value.get(row.id) || null; }
+const EMPTY_ASSIGNMENT = { handle: '', label: '', stale: false, options: [] };
+function assignmentOf(row) { return assignments.value.get(row.id) || EMPTY_ASSIGNMENT; }
+
+/** The server's own words, preferred over anything this page could invent. */
+function assignError(e) {
+  return e?.response?.data?.error || e?.message || 'Could not change the assignment.';
+}
+
+/** Enough of a comment to recognise it in a failure list. */
+function rowLabel(row) {
+  const label = (row.subject_label || '').trim();
+  if (label) return label;
+  const text = (row.comment || '').trim();
+  return text.length > 50 ? `${text.slice(0, 50)}…` : (text || `comment ${row.id}`);
+}
+
+/**
+ * Drop a row that no longer belongs under the current assignee filter.
+ *
+ * Same rule the status buttons already follow: leaving a row captioned
+ * "with the bookkeeper" in a list filtered to the auditor is a list that lies.
+ */
+function reconcileAssigneeFilter(row) {
+  const handle = String(row.assignee_role || '');
+  const gone = filters.assignee === UNASSIGNED
+    ? !!handle
+    : !!assigneeFilterHandle.value && handle !== assigneeFilterHandle.value;
+  if (gone) {
+    all.value = all.value.filter((r) => r.id !== row.id);
+    selected.delete(row.id);
+  }
+}
+
+/**
+ * Assign ONE comment.
+ *
+ * Driven off the change event rather than v-model because the failure path
+ * matters: a native <select> has already moved when the handler runs, and
+ * `row.assignee_role` does not change on a refusal, so nothing would re-render
+ * and the control would sit there showing a seat the server rejected. The
+ * element is put back by hand.
+ */
+async function onAssignChange(row, event) {
+  const el = event.target;
+  const handle = el.value;
+  const previous = String(row.assignee_role || '');
+  if (handle === previous) return;
+  busyId.value = row.id;
+  actionError.value = null;
+  try {
+    const updated = await setCommentAssignee(row.id, handle);
+    row.assignee_role = updated?.assignee_role ?? handle;
+    reconcileAssigneeFilter(row);
+  } catch (e) {
+    el.value = previous;
+    actionError.value = assignError(e);
+  } finally {
+    busyId.value = null;
+  }
+}
+
+// ── Bulk assign ─────────────────────────────────────────────────────────────
+//
+// A Set, so membership is O(1) from the template: this is read once per row on
+// every render, and a list scan would put the register's size back into the
+// render path.
+const selected = reactive(new Set());
+const bulkHandle = ref('');
+const bulkBusy = ref(false);
+const bulkDone = ref(0);
+const bulkResult = ref(null);
+
+const selectedCount = computed(() => selected.size);
+const allShownSelected = computed(() =>
+  rows.value.length > 0 && rows.value.every((r) => selected.has(r.id)));
+
+function toggleSelected(row) {
+  if (selected.has(row.id)) selected.delete(row.id);
+  else selected.add(row.id);
+}
+function toggleSelectAll() {
+  if (allShownSelected.value) rows.value.forEach((r) => selected.delete(r.id));
+  else rows.value.forEach((r) => selected.add(r.id));
+}
+function clearSelection() { selected.clear(); }
+
+/**
+ * Assign the selection — ONE CALL PER COMMENT, reported honestly.
+ *
+ * The endpoint is by-id and takes one comment, so a run of forty is forty
+ * requests and any of them can be refused on its own. Reporting a whole-batch
+ * "42 assigned" when nine were rejected would be a claim the register itself
+ * disagrees with the moment it reloads, so what is reported is what happened:
+ * how many were attempted, how many landed, and every failure by name with the
+ * server's reason.
+ *
+ * Sequential, not Promise.all: forty parallel writes to one table for the sake
+ * of a second of wall-clock is not a trade worth making, and a serial run gives
+ * an honest progress count.
+ *
+ * Successes are deselected and failures are KEPT selected, so the retry is the
+ * same button again rather than re-ticking nine boxes.
+ */
+async function assignSelected() {
+  const targets = all.value.filter((r) => selected.has(r.id));
+  if (!targets.length || bulkBusy.value) return;
+  const handle = bulkHandle.value;
+  bulkBusy.value = true;
+  bulkDone.value = 0;
+  bulkResult.value = null;
+  actionError.value = null;
+  const done = [];
+  const failed = [];
+  for (const row of targets) {
+    try {
+      const updated = await setCommentAssignee(row.id, handle);
+      row.assignee_role = updated?.assignee_role ?? handle;
+      done.push(row);
+    } catch (e) {
+      failed.push({ id: row.id, label: rowLabel(row), error: assignError(e) });
+    } finally {
+      bulkDone.value += 1;
+    }
+  }
+  done.forEach((row) => { selected.delete(row.id); });
+  bulkResult.value = {
+    attempted: targets.length,
+    assigned: done.length,
+    failed,
+    handle,
+    handleLabel: handle ? directory.labelFor(handle) : '',
+  };
+  bulkBusy.value = false;
+  // Once, at the end — reconciling inside the loop would shrink the list under
+  // a run that is still reading it.
+  done.forEach(reconcileAssigneeFilter);
+}
 /* ── The anchor's filter context, rendered compactly ──────────────────────
  *
  * These filters are part of the anchor and must stay visible: the same
@@ -964,6 +1264,48 @@ onMounted(() => { directory.load(); load(); });
   font-size: 12.5px;
 }
 .cc-undo > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The bulk bar and its report wear the same clothes as the undo bar — they
+   are the same kind of thing: a transient strip about an action just taken or
+   about to be. */
+.cc-bulk,
+.cc-bulk-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--kdl-border);
+  border-radius: var(--kdl-radius-sm);
+  background: var(--kdl-border-subtle);
+  font-size: 12.5px;
+}
+.cc-bulk__field { display: flex; align-items: center; gap: 6px; }
+.cc-bulk__field > span { opacity: .65; font-size: var(--kdl-font-size-overline); }
+
+.cc-bulk-result { flex-wrap: wrap; align-items: flex-start; }
+/* A run with refusals in it is not a success, and must not read as one. */
+.cc-bulk-result--bad { border-color: var(--kdl-status-warning); }
+.cc-bulk-result__head { margin: 0; flex: 1; min-width: 0; }
+.cc-bulk-result__list {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  padding-left: var(--kdl-space-4);
+  font-size: var(--kdl-font-size-overline);
+}
+.cc-bulk-result__note {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: var(--kdl-font-size-overline);
+  opacity: .65;
+}
+
+.cc-selectall { margin-bottom: 8px; font-size: var(--kdl-font-size-overline); opacity: .75; }
+.cc-selectall label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+.cc__pick { flex: 0 0 auto; cursor: pointer; }
+.cc__assign { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.cc__assign label { font-size: var(--kdl-font-size-overline); opacity: .65; }
 
 .cc-list { display: flex; flex-direction: column; gap: 10px; }
 .cc {
