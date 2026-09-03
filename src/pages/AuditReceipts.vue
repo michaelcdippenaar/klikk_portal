@@ -384,6 +384,17 @@
               />
             </div>
           </section>
+
+          <!-- Auditors are what the activity trail RECORDS — they do not get to
+               read it. The backend 403s /api/activity/ for them regardless. -->
+          <section v-if="!isAuditor" class="ar-section">
+            <h3 class="ar-section__heading">Activity</h3>
+            <ObjectActivity
+              v-if="detail.sha256"
+              target-kind="receipt"
+              :target-id="detail.sha256"
+            />
+          </section>
         </div>
       </div>
 
@@ -491,6 +502,7 @@ import KToggle from '../components/klikk/KToggle.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import ReceiptCommentCell from '../components/receipts/ReceiptCommentCell.vue';
 import CommentThread from '../components/comments/CommentThread.vue';
+import ObjectActivity from '../components/activity/ObjectActivity.vue';
 import { useCommentFeed } from '../composables/useCommentFeed';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';

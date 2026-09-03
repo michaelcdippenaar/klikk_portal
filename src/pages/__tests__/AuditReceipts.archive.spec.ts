@@ -62,6 +62,16 @@ vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
 // The page polls the live comment feed (useCommentFeed). Mocked to a silent
 // no-op: these specs are about the page, and an unmocked poll would make a
 // real HTTP request from the test run.
+// The detail dialogs render ObjectActivity (standard users). Mocked so these
+// specs stay about the page and make no real HTTP request.
+vi.mock('../../api/activity', () => ({
+  listActivity: vi.fn().mockResolvedValue({ count: 0, results: [] }),
+  listObjectActivity: vi.fn().mockResolvedValue({ count: 0, results: [] }),
+  listActivityActors: vi.fn().mockResolvedValue([]),
+  listActivityActions: vi.fn().mockResolvedValue([]),
+  exportActivity: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../api/comments', () => ({
   getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
 }));
@@ -805,6 +815,55 @@ describe('AuditReceipts — live comment feed', () => {
       w.unmount();
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+// ── Activity section in the detail modal ────────────────────────────────────
+
+describe('AuditReceipts — activity section', () => {
+  it('a standard user sees the receipt\'s activity in the detail modal', async () => {
+    const { listObjectActivity } = await import('../../api/activity');
+    (listObjectActivity as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+      results: [{
+        id: 5, occurred_at: '2026-08-20T11:00:00Z', actor: 'anine', actor_role: 'standard',
+        action: 'receipt.archived', target_kind: 'receipt', target_id: P1_SHAS[0],
+        target_ref: 'Makro', changes: { archived: { from: false, to: true } },
+        source: 'console', ip: null, user_agent: '', request_id: '',
+      }],
+    });
+
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    expect(listObjectActivity).toHaveBeenCalledWith('receipt', P1_SHAS[0], { page_size: 50 });
+    const modal = modalEl()!;
+    expect(modal.textContent).toContain('Activity');
+    expect(modal.textContent).toContain('receipt.archived');
+    expect(modal.textContent).toContain('anine');
+    w.unmount();
+  });
+
+  it('an AUDITOR sees no activity section at all — they are what it records', async () => {
+    mockAuth.isAuditor = true;
+    mockAuth.user = { role: 'auditor' };
+    const { listObjectActivity } = await import('../../api/activity');
+    (listObjectActivity as unknown as ReturnType<typeof vi.fn>).mockClear();
+    try {
+      const w = mountPage();
+      await flushPromises();
+      await bodyRows(w)[0].trigger('click');
+      await flushPromises();
+
+      expect(modalEl()!.querySelector('[data-test="object-activity"]')).toBeNull();
+      expect(listObjectActivity).not.toHaveBeenCalled();
+      w.unmount();
+    } finally {
+      mockAuth.isAuditor = false;
+      mockAuth.user = { role: 'standard' };
     }
   });
 });

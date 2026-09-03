@@ -195,6 +195,11 @@
                     <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
                     <path d="M12 17.5v-11" />
                   </template>
+                  <template v-else-if="item.lucide === 'history'">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M12 7v5l4 2" />
+                  </template>
                   <!-- Fallback: dot -->
                   <template v-else>
                     <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
@@ -273,6 +278,7 @@ const ALL_NAV_GROUPS = [
       { name: 'audit-receipts',   label: 'Receipts',         lucide: 'receipt' },
       { name: 'audit-receipts-v2', label: 'Receipts V2',     lucide: 'receipt' },
       { name: 'audit-comments',  label: 'Cell Comments',    lucide: 'message-square' },
+      { name: 'audit-activity',  label: 'Activity',         lucide: 'history' },
     ],
   },
   {

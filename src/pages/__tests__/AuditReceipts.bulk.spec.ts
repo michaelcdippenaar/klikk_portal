@@ -57,6 +57,16 @@ vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
 // The page polls the live comment feed (useCommentFeed). Mocked to a silent
 // no-op: these specs are about the page, and an unmocked poll would make a
 // real HTTP request from the test run.
+// The detail dialogs render ObjectActivity (standard users). Mocked so these
+// specs stay about the page and make no real HTTP request.
+vi.mock('../../api/activity', () => ({
+  listActivity: vi.fn().mockResolvedValue({ count: 0, results: [] }),
+  listObjectActivity: vi.fn().mockResolvedValue({ count: 0, results: [] }),
+  listActivityActors: vi.fn().mockResolvedValue([]),
+  listActivityActions: vi.fn().mockResolvedValue([]),
+  exportActivity: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../api/comments', () => ({
   getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
 }));

@@ -66,6 +66,16 @@ vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
 // The page polls the live comment feed (useCommentFeed). Mocked to a silent
 // no-op: these specs are about the page, and an unmocked poll would make a
 // real HTTP request from the test run.
+// The detail dialogs render ObjectActivity (standard users). Mocked so these
+// specs stay about the page and make no real HTTP request.
+vi.mock('../../api/activity', () => ({
+  listActivity: vi.fn().mockResolvedValue({ count: 0, results: [] }),
+  listObjectActivity: vi.fn().mockResolvedValue({ count: 0, results: [] }),
+  listActivityActors: vi.fn().mockResolvedValue([]),
+  listActivityActions: vi.fn().mockResolvedValue([]),
+  exportActivity: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../api/comments', () => ({
   getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
 }));
@@ -1483,5 +1493,69 @@ describe('AuditFindings — live comment feed', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ── Activity tab ────────────────────────────────────────────────────────────
+
+describe('AuditFindings — activity tab', () => {
+  function tabLabels(dlg: HTMLElement): string[] {
+    return [...dlg.querySelectorAll('[role="tab"]')].map((t) => (t.textContent || '').trim());
+  }
+
+  it('a standard user gets an Activity tab that lists that finding\'s events', async () => {
+    const { listObjectActivity } = await import('../../api/activity');
+    (listObjectActivity as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+      results: [{
+        id: 7, occurred_at: '2026-08-20T11:00:00Z', actor: 'mc', actor_role: 'standard',
+        action: 'finding.status_changed', target_kind: 'finding', target_id: '1',
+        target_ref: 'FY26-001', changes: { status: { from: 'OPEN', to: 'RESOLVED' } },
+        source: 'console', ip: null, user_agent: '', request_id: '',
+      }],
+    });
+
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const dlg = dialogEl()!;
+    expect(tabLabels(dlg).some((t) => t.includes('Activity'))).toBe(true);
+
+    const tab = [...dlg.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .find((t) => (t.textContent || '').includes('Activity'))!;
+    tab.click();
+    await flushPromises();
+
+    expect(listObjectActivity).toHaveBeenCalledWith('finding', 1, { page_size: 50 });
+    const panel = dialogEl()!;
+    expect(panel.textContent).toContain('finding.status_changed');
+    expect(panel.textContent).toContain('mc');
+    w.unmount();
+  });
+});
+
+describe('AuditFindings — auditors never see the activity trail', () => {
+  beforeEach(() => {
+    mockAuth.isAuditor = true;
+    mockAuth.user = { role: 'auditor' };
+  });
+
+  afterEach(() => {
+    mockAuth.isAuditor = false;
+    mockAuth.user = { role: 'standard' };
+  });
+
+  it('the detail dialog has no Activity tab for an auditor', async () => {
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const dlg = dialogEl()!;
+    const labels = [...dlg.querySelectorAll('[role="tab"]')].map((t) => (t.textContent || '').trim());
+    expect(labels.some((t) => t.includes('Activity'))).toBe(false);
+    w.unmount();
   });
 });

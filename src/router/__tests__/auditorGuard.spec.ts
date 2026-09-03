@@ -51,7 +51,10 @@ describe('router — auditor guard', () => {
 
   it('auditors are redirected off every other page to the receipts register', async () => {
     mockAuth.isAuditor = true;
-    for (const target of ['portal', 'reporting', 'processes', 'investec-account', 'pricelist']) {
+    // 'audit-activity' is in the list on purpose: auditors are what the
+    // activity trail RECORDS, so it is not an auditor route.
+    for (const target of ['portal', 'reporting', 'processes', 'investec-account', 'pricelist',
+      'audit-activity']) {
       await router.push({ name: 'audit-findings' });
       await router.push({ name: target }).catch(() => {});
       expect(router.currentRoute.value.name, `route ${target}`).toBe('audit-receipts');

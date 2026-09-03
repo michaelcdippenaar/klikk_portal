@@ -131,6 +131,13 @@ const routes = [
             component: () => import('@/pages/AuditReceiptsV2.vue'),
           },
           {
+            // Standard users only — NOT in AUDITOR_ROUTES (router/index.js) or
+            // the auditor nav filter. Auditors are what this trail records.
+            path: 'audit/activity',
+            name: 'audit-activity',
+            component: () => import('@/pages/AuditActivity.vue'),
+          },
+          {
             path: 'audit/comments',
             name: 'audit-comments',
             component: () => import('@/pages/AuditComments.vue'),

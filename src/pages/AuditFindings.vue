@@ -499,6 +499,12 @@
           :attachments="detailAttachments"
           @update:attachments="onAttachmentsUpdate"
         />
+
+        <ObjectActivity
+          v-else-if="detailTab === 'activity'"
+          target-kind="finding"
+          :target-id="detail.id"
+        />
       </template>
     </KDialog>
 
@@ -595,6 +601,7 @@ import FindingCubeView from '../components/findings/FindingCubeView.vue';
 import FindingLinks from '../components/findings/FindingLinks.vue';
 import FindingCommentCell from '../components/findings/FindingCommentCell.vue';
 import CommentThread from '../components/comments/CommentThread.vue';
+import ObjectActivity from '../components/activity/ObjectActivity.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
 import { useCommentFeed } from '../composables/useCommentFeed';
@@ -1133,12 +1140,18 @@ const detailLinks = ref([]);
 const detailLoading = ref(false);
 const detailTab = ref('detail');
 
-const detailTabs = computed(() => [
-  { name: 'detail', label: 'Detail', count: detailComments.value.length || null },
-  { name: 'cube', label: 'Cube view' },
-  { name: 'links', label: 'Linked evidence', count: detailLinks.value.length || null },
-  { name: 'attachments', label: 'Attachments', count: detailAttachments.value.length || null },
-]);
+const detailTabs = computed(() => {
+  const tabs = [
+    { name: 'detail', label: 'Detail', count: detailComments.value.length || null },
+    { name: 'cube', label: 'Cube view' },
+    { name: 'links', label: 'Linked evidence', count: detailLinks.value.length || null },
+    { name: 'attachments', label: 'Attachments', count: detailAttachments.value.length || null },
+  ];
+  // Auditors are what the activity trail RECORDS — they do not get to read it.
+  // The backend 403s /api/activity/ for them anyway; this keeps the dialog honest.
+  if (!isAuditor.value) tabs.push({ name: 'activity', label: 'Activity' });
+  return tabs;
+});
 
 const statusDraft = ref('OPEN');
 const ownerDraft = ref('');
