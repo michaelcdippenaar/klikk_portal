@@ -18,7 +18,7 @@
     <!-- Undo. Marking a comment actioned removes it from an "open" list, which
          is correct but leaves no way back from where the user is standing --
          they would have to know to change the status filter first. -->
-    <div v-if="undo" class="cc-undo">
+    <div v-if="!isAuditor && undo" class="cc-undo">
       <span>Marked <strong>{{ undo.status }}</strong>: "{{ undo.excerpt }}"</span>
       <button class="btn btn-ghost btn-sm" :disabled="undoBusy" @click="undoLast">
         {{ undoBusy ? 'Undoing…' : 'Undo' }}
@@ -82,24 +82,37 @@
               <span class="cc__when">{{ formatWhen(row.updated_at) }}</span>
             </div>
             <div class="cc__actions">
-              <button
-                v-if="row.status !== 'actioned'"
-                class="btn btn-ghost btn-sm"
-                :disabled="busyId === row.id"
-                @click="setStatus(row, 'actioned')"
-              >Actioned</button>
-              <button
-                v-if="row.status !== 'dismissed'"
-                class="btn btn-ghost btn-sm"
-                :disabled="busyId === row.id"
-                @click="setStatus(row, 'dismissed')"
-              >Dismiss</button>
-              <button
-                v-if="row.status !== 'open'"
-                class="btn btn-ghost btn-sm"
-                :disabled="busyId === row.id"
-                @click="setStatus(row, 'open')"
-              >Reopen</button>
+              <!-- The thread affordance sits FIRST and outside the auditor
+                   gate: discussing a flagged figure is the one write an
+                   auditor has, and it must not move when the status buttons
+                   next to it disappear. -->
+              <CubeCommentThreadCell
+                :ref="(el) => registerThreadCell(row.id, el)"
+                :commentId="row.id"
+                :count="Number(row.reply_count) || 0"
+                :currentUser="currentUser"
+                @added="onInlineReply"
+              />
+              <template v-if="!isAuditor">
+                <button
+                  v-if="row.status !== 'actioned'"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="busyId === row.id"
+                  @click="setStatus(row, 'actioned')"
+                >Actioned</button>
+                <button
+                  v-if="row.status !== 'dismissed'"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="busyId === row.id"
+                  @click="setStatus(row, 'dismissed')"
+                >Dismiss</button>
+                <button
+                  v-if="row.status !== 'open'"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="busyId === row.id"
+                  @click="setStatus(row, 'open')"
+                >Reopen</button>
+              </template>
             </div>
           </header>
 
@@ -109,15 +122,19 @@
           <!-- The verdict answers a different question from the status: what
                IS this, versus have we finished with it. -->
           <div v-if="row.subject_type !== 'cube_cell'" class="cc__verdict">
-            <label :for="'dec-' + row.id">Verdict</label>
-            <select
-              :id="'dec-' + row.id"
-              :value="row.decision || ''"
-              :disabled="busyId === row.id"
-              @change="setDecision(row, $event.target.value)"
-            >
-              <option v-for="d in DECISIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
-            </select>
+            <!-- Recording a verdict POSTs to /xero/data/comments/, which 403s
+                 for an auditor. The tags beside it are read-only, so they stay. -->
+            <template v-if="!isAuditor">
+              <label :for="'dec-' + row.id">Verdict</label>
+              <select
+                :id="'dec-' + row.id"
+                :value="row.decision || ''"
+                :disabled="busyId === row.id"
+                @change="setDecision(row, $event.target.value)"
+              >
+                <option v-for="d in DECISIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
+              </select>
+            </template>
             <span v-if="row.tags && row.tags.length" class="cc__tags">
               <span v-for="t in row.tags" :key="t" class="cc__tag">{{ t }}</span>
             </span>
@@ -142,7 +159,9 @@
             </span>
           </div>
 
-          <div v-if="row.subject_type === 'cube_cell'" class="cc__drill">
+          <!-- The drill resolves journal lines from /xero/data/journals/pivot/
+               — 403 for an auditor, so the affordance goes with it. -->
+          <div v-if="!isAuditor && row.subject_type === 'cube_cell'" class="cc__drill">
             <button
               class="btn btn-ghost btn-sm"
               :disabled="drillBusy === row.id"
@@ -158,7 +177,7 @@
             </span>
           </div>
 
-          <div v-if="row.subject_type === 'cube_cell' && drills[row.id]" class="cc__lines">
+          <div v-if="!isAuditor && row.subject_type === 'cube_cell' && drills[row.id]" class="cc__lines">
             <table class="cc__table">
               <thead>
                 <tr>
@@ -182,6 +201,23 @@
               Line cap reached — this shows the first {{ drills[row.id].rows.length }}.
             </p>
           </div>
+
+          <!-- The same thread as the row icon, in the expanded detail.
+               Deliberately ONE store behind both: a reply posted in the
+               popover appears here without a reload, and vice versa — two
+               views of one discussion that disagree would be worse than one. -->
+          <section v-if="isExpanded(row)" class="cc__thread" data-test="cc-detail-thread">
+            <h4 class="cc__thread-heading">Discussion</h4>
+            <CommentThread
+              :ref="(el) => registerDetailThread(row.id, el)"
+              :comments="threadOf(row.id).replies"
+              :loading="threadOf(row.id).loading"
+              :saving="threadOf(row.id).saving"
+              :error="threadOf(row.id).error"
+              :currentUser="currentUser"
+              @post="(payload) => postReply(row, payload)"
+            />
+          </section>
         </article>
       </div>
     </SectionCard>
@@ -191,7 +227,9 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import {
-  getComments,
+  getAuditCubeComments,
+  getCubeCommentReplies,
+  postCubeCommentReply,
   DECISIONS,
   setCommentDecision,
   setCubeCommentStatus,
@@ -199,6 +237,10 @@ import {
   commentCoordinates,
   normaliseFilters,
 } from '../api/cubeComments';
+import { useAuthStore } from '../stores/auth';
+import { useCommentFeed } from '../composables/useCommentFeed';
+import CommentThread from '../components/comments/CommentThread.vue';
+import CubeCommentThreadCell from '../components/comments/CubeCommentThreadCell.vue';
 import AppPage from '../components/shell/AppPage.vue';
 import PageHeader from '../components/klikk/PageHeader.vue';
 import SectionCard from '../components/klikk/SectionCard.vue';
@@ -209,6 +251,18 @@ import KBadge from '../components/klikk/KBadge.vue';
 import KInput from '../components/klikk/KInput.vue';
 import KSelect from '../components/klikk/KSelect.vue';
 import KSpinner from '../components/klikk/KSpinner.vue';
+
+const authStore = useAuthStore();
+
+/**
+ * Auditor accounts hold a read-only grant over /audit/ only. Every WRITE this
+ * page offers — verdict, status, undo — and the drill-down all sit under
+ * /xero/data/, which 403s for them. Rendering a control whose only outcome is
+ * a 403 is worse than not offering it, so they are hidden rather than
+ * disabled. The register, its filters, and the threads are unaffected.
+ */
+const isAuditor = computed(() => authStore.isAuditor);
+const currentUser = computed(() => authStore.user?.username || '');
 
 const STATUS_OPTIONS = [
   { label: 'Open', value: 'open' },
@@ -247,7 +301,12 @@ async function load() {
     // "__none__" cannot be a server-side equality filter -- an empty decision is
     // the ABSENCE of one -- so it is applied client-side below.
     if (filters.decision && filters.decision !== '__none__') params.decision = filters.decision;
-    const data = await getComments(params);
+    // ONE load path for every role. /audit/cube-comments/ serves the same rows
+    // and the same filters as the old /xero/data/comments/ list, plus
+    // reply_count — and it is the only one an auditor may reach, so a
+    // role-branched fetch would leave the auditor's branch untested by
+    // everyone who does not hold an auditor account.
+    const data = await getAuditCubeComments(params);
     all.value = data.results || [];
   } catch (e) {
     error.value = e?.response?.data?.error || e.message || 'Could not load comments.';
@@ -395,6 +454,9 @@ async function toggleDrill(row) {
   }
   drillBusy.value = row.id;
   actionError.value = null;
+  // The expanded detail carries the thread too; fetch it alongside rather
+  // than after, so the section does not appear empty and then fill in.
+  loadThread(row.id);
   try {
     drills[row.id] = await drillCubeComment(row);
   } catch (e) {
@@ -432,6 +494,148 @@ function reconText(row) {
     ? `${base} — does not match the commented ${money(row.cell_value)} (out by ${money(diff)}). The data has changed since.`
     : `${base} — matches the commented value.`;
 }
+
+// ── Reply threads ───────────────────────────────────────────────────────────
+//
+// Every comment in the register can be discussed. Two surfaces show the SAME
+// discussion — the row icon's popover and the expanded detail — so the page,
+// not either surface, owns the replies. Each surface keeps a mirror; the page
+// pushes into both on every event (local post, popover post, live feed), and
+// every merge is de-duped by reply id, so nothing is ever shown twice and the
+// two views cannot drift apart.
+
+const threads = reactive({});
+
+/** Popover cells and inline threads, per row, so both can be kept in step. */
+const threadCells = new Map();
+const detailThreads = new Map();
+
+function registerThreadCell(id, el) {
+  if (el) threadCells.set(String(id), el);
+  else threadCells.delete(String(id));
+}
+function registerDetailThread(id, el) {
+  if (el) detailThreads.set(String(id), el);
+  else detailThreads.delete(String(id));
+}
+
+const EMPTY_THREAD = Object.freeze({
+  replies: [], loading: false, loaded: false, saving: false, error: '',
+});
+
+/** Read-only accessor — safe to call from the template (no write on render). */
+function threadOf(id) {
+  return threads[String(id)] || EMPTY_THREAD;
+}
+
+function ensureThread(id) {
+  const key = String(id);
+  if (!threads[key]) {
+    threads[key] = { replies: [], loading: false, loaded: false, saving: false, error: '' };
+  }
+  return threads[key];
+}
+
+/** The detail is expanded exactly when its transactions are — one disclosure. */
+function isExpanded(row) {
+  return !isAuditor.value && row.subject_type === 'cube_cell' && !!drills[row.id];
+}
+
+async function loadThread(id) {
+  const t = ensureThread(id);
+  if (t.loaded || t.loading) return;
+  t.loading = true;
+  try {
+    const envelope = await getCubeCommentReplies(id);
+    t.replies = Array.isArray(envelope?.replies) ? envelope.replies : [];
+    t.loaded = true;
+  } catch {
+    // Degrade to composer-only. Not being able to READ the thread must not
+    // stop a reply being WRITTEN; the post path reports its own failures.
+    t.loaded = false;
+  } finally {
+    t.loading = false;
+  }
+}
+
+function knownReply(id, reply) {
+  if (!reply || reply.id === undefined || reply.id === null) return false;
+  return (threads[String(id)]?.replies || []).some((r) => String(r.id) === String(reply.id));
+}
+
+/** Append unless we already have it. Returns whether anything was added. */
+function mergeReply(id, reply) {
+  if (!reply || reply.id === undefined || reply.id === null) return false;
+  if (knownReply(id, reply)) return false;
+  const t = ensureThread(id);
+  t.replies = [...t.replies, reply];
+  return true;
+}
+
+function bumpReplyCount(id, by = 1) {
+  const row = all.value.find((r) => String(r.id) === String(id));
+  if (row) row.reply_count = (Number(row.reply_count) || 0) + by;
+}
+
+/** Posted from the expanded detail's composer. */
+async function postReply(row, { text, parentId = null } = {}) {
+  const body = String(text || '').trim();
+  const t = ensureThread(row.id);
+  if (!body || t.saving) return;
+  t.saving = true;
+  t.error = '';
+  try {
+    // parent_id is omitted entirely for a top-level reply, so that request
+    // stays byte-identical to the simplest thing the contract accepts.
+    const created = parentId == null
+      ? await postCubeCommentReply(row.id, body)
+      : await postCubeCommentReply(row.id, body, { parentId });
+    // The contract returns the created reply; if a proxy ever strips the body,
+    // show what was typed rather than swallowing it.
+    const reply = created && created.id != null
+      ? created
+      : { id: `local-${Date.now()}`, parent_id: parentId, text: body, author: currentUser.value, created_at: null };
+    mergeReply(row.id, reply);
+    threadCells.get(String(row.id))?.mergeComment?.(reply);
+    bumpReplyCount(row.id);
+    // Only now is the draft safe to drop — a failed post keeps it for retry.
+    detailThreads.get(String(row.id))?.clearDraft?.();
+  } catch {
+    t.error = 'Could not post — try again.';
+  } finally {
+    t.saving = false;
+  }
+}
+
+/** Posted from the row icon's popover — the cell already appended its own. */
+function onInlineReply({ commentId, comment }) {
+  mergeReply(commentId, comment);
+  bumpReplyCount(commentId);
+}
+
+/**
+ * Live feed. A reply someone else leaves surfaces within one poll interval:
+ * the badge bumps, an open thread appends in place, and a toast names them.
+ *
+ * The register is NOT refetched — a reply changes no server-side total, and
+ * reloading mid-triage would move rows under the reader.
+ */
+function applyFeedEvents(events) {
+  for (const event of events) {
+    const id = String(event.object_id);
+    // De-duped by reply id: your own POST already appended and bumped.
+    if (knownReply(id, event.comment)) continue;
+    mergeReply(id, event.comment);
+    threadCells.get(id)?.mergeComment?.(event.comment);
+    bumpReplyCount(id);
+  }
+}
+
+useCommentFeed({
+  kind: 'cube_comment',
+  onEvents: applyFeedEvents,
+  currentUser: () => currentUser.value,
+});
 
 watch(() => [filters.status, filters.subject_type, filters.decision], load);
 onMounted(load);
@@ -495,4 +699,13 @@ onMounted(load);
 .cc__table th { opacity: .65; font-weight: 500; }
 .ta-r { text-align: right; font-variant-numeric: tabular-nums; }
 .cc__note { font-size: 11px; opacity: .65; margin-top: 4px; }
+.cc__thread { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--k-border, #eee); }
+.cc__thread-heading {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .65;
+}
 </style>

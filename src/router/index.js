@@ -11,7 +11,9 @@ const router = createRouter({
 // Routes an auditor account may open. Everything else redirects to the
 // receipts register. UI-shaping only — the backend middleware is the real
 // gate (auditors get 403 outside read-only /audit/).
-const AUDITOR_ROUTES = new Set(['login', 'change-password', 'audit-receipts', 'audit-findings']);
+const AUDITOR_ROUTES = new Set([
+  'login', 'change-password', 'audit-receipts', 'audit-findings', 'audit-comments',
+]);
 
 // Navigation guard for protected routes
 router.beforeEach((to, from, next) => {

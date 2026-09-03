@@ -292,7 +292,7 @@ const ALL_NAV_GROUPS = [
 
 // Auditors see only the audit group, trimmed to the two pages their role can
 // open (the backend hard-gates the rest; this keeps the drawer honest).
-const AUDITOR_ROUTE_NAMES = new Set(['audit-receipts', 'audit-findings']);
+const AUDITOR_ROUTE_NAMES = new Set(['audit-receipts', 'audit-findings', 'audit-comments']);
 const navGroups = computed(() => {
   if (!authStore.isAuditor) return ALL_NAV_GROUPS;
   return ALL_NAV_GROUPS
