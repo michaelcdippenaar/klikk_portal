@@ -57,13 +57,20 @@ vi.mock('../../api/comments', () => ({
   getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
 }));
 
-// KSelect is stubbed with a plain <select> — NOT for convenience. This page
-// hands its Kind / Verdict / Author filters options whose value is the empty
-// string, and reka-ui's SelectItem throws on an empty-string value ("A
-// <SelectItem /> must have a value prop that is not an empty string"), which
-// kills the mount. That is a REAL pre-existing defect on this page, filed
-// separately; it is not what this spec is about, so the filters are rendered
-// through a faithful native stub that still round-trips v-model.
+// KSelect is stubbed with a plain <select> for stable `data-test` hooks and a
+// cheap mount; this spec is about threads and the auditor gate, not the filter
+// widget.
+//
+// It used to be stubbed for a second reason: this page's Kind / Verdict /
+// Author filters offer options whose value is the empty string, and reka-ui's
+// SelectItem throws on one ("A <SelectItem /> must have a value prop that is
+// not an empty string"), which killed the mount. That defect was real — it is
+// why MC saw no select-all on the author filter — and it is now FIXED in
+// KSelect, which carries "" past reka-ui behind an internal sentinel. The real
+// widget is exercised against a ""-valued option in
+// components/klikk/__tests__/KSelect.emptyOption.spec.ts, and the page's own
+// author filter is exercised with the REAL KSelect in
+// AuditComments.authorFilter.spec.ts. Do not re-file it.
 vi.mock('../../components/klikk/KSelect.vue', () => ({
   default: defineComponent({
     name: 'KSelect',
