@@ -265,7 +265,7 @@
           <!-- @click.stop: none of these may trigger the row's open-detail click -->
           <div class="af-actions" @click.stop>
             <button
-              v-if="row.status !== 'RESOLVED'"
+              v-if="!isAuditor && row.status !== 'RESOLVED'"
               class="af-action-btn af-action-btn--resolve"
               :disabled="rowBusyId !== null"
               title="Mark resolved"
@@ -275,7 +275,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
             <button
-              v-else
+              v-else-if="!isAuditor"
               class="af-action-btn"
               :disabled="rowBusyId !== null"
               title="Reopen"
@@ -293,6 +293,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
             </button>
             <KMenu
+              v-if="!isAuditor"
               align="end"
               :modelValue="actionMenuRowId === row.id"
               @update:modelValue="(v) => (actionMenuRowId = v ? row.id : null)"
@@ -463,7 +464,9 @@
               </li>
             </ul>
             <p v-else-if="!detailLoading" class="af-sub">No comments yet.</p>
-            <form v-if="!isAuditor" class="af-comment-form" @submit.prevent="addComment">
+            <!-- Auditors may comment (their one permitted write); the Update
+                 section above stays hidden for them. -->
+            <form class="af-comment-form" @submit.prevent="addComment">
               <textarea
                 ref="commentBoxRef"
                 v-model="commentDraft"
@@ -835,10 +838,10 @@ const ALL_COLUMNS = [
   { id: 'actions', header: '', enableSorting: false, enableResizing: false, meta: { align: 'right', width: '108px' } },
 ];
 
-// Auditors get no quick-action column (their role is read-only server-side).
-const columns = computed(() =>
-  isAuditor.value ? ALL_COLUMNS.filter((c) => c.id !== 'actions') : ALL_COLUMNS,
-);
+// Auditors keep the quick-action column, but it holds ONLY "Discuss" — the
+// status buttons and the ⋯ menu are gated in the #cell-actions template. Their
+// one permitted write is a comment (server-side: AuditorGateMiddleware).
+const columns = computed(() => ALL_COLUMNS);
 
 // ── Column widths (drag-to-resize, persisted per browser) ────────────────────
 

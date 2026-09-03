@@ -1234,13 +1234,12 @@ describe('AuditFindings — auditor mode', () => {
     mockAuth.user = { role: 'standard' };
   });
 
-  it('renders no selection checkboxes, no quick-action column, and no bulk bar', async () => {
+  it('renders no selection checkboxes and no bulk bar', async () => {
     const w = mountPage();
     await flushPromises();
 
     expect(rowCheckboxes(w).length).toBe(0);
     expect(w.find('thead input.ktable-checkbox').exists()).toBe(false);
-    expect(w.find('.af-actions').exists()).toBe(false);
     expect(w.find('.af-bulk-bar').exists()).toBe(false);
     // Read surface intact: rows and export buttons still render.
     expect(bodyRows(w).length).toBeGreaterThan(0);
@@ -1248,7 +1247,39 @@ describe('AuditFindings — auditor mode', () => {
     w.unmount();
   });
 
-  it('detail dialog shows no Update section and no comment form, but comments stay readable', async () => {
+  it('quick-action column keeps ONLY Discuss — no resolve/reopen, no ⋯ menu', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    // The column itself survives (auditors may comment) …
+    const cells = w.findAll('.af-actions');
+    expect(cells.length).toBeGreaterThan(0);
+    // … but each cell holds exactly one button, and it is Discuss.
+    const buttons = cells[0].findAll('button');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0].attributes('title')).toBe('Discuss — add a comment');
+
+    const titles = w.findAll('.af-actions button').map((b) => b.attributes('title'));
+    expect(titles).not.toContain('Mark resolved');
+    expect(titles).not.toContain('Reopen');
+    expect(titles).not.toContain('More actions');
+    w.unmount();
+  });
+
+  it('Discuss opens the detail dialog so the auditor can comment', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    await w.findAll('.af-actions button')[0].trigger('click');
+    await flushPromises();
+
+    const dialog = dialogEl();
+    expect(dialog).not.toBeNull();
+    expect(dialog!.querySelector('.af-comment-form')).not.toBeNull();
+    w.unmount();
+  });
+
+  it('detail dialog shows the comment form but still no Update section', async () => {
     const w = mountPage();
     await flushPromises();
 
@@ -1258,9 +1289,32 @@ describe('AuditFindings — auditor mode', () => {
     const dialog = dialogEl();
     expect(dialog).not.toBeNull();
     expect(dialog!.textContent).not.toContain('Save changes');
-    expect(dialog!.querySelector('.af-comment-form')).toBeNull();
-    // Comments from the envelope still render read-only.
+    expect(dialog!.querySelector('.af-comment-form')).not.toBeNull();
+    // Comments from the envelope still render.
     expect(dialog!.textContent).toContain('Bookkeeper notified');
+    w.unmount();
+  });
+
+  it('an auditor can post a comment and it appends to the thread', async () => {
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const dlg = dialogEl()!;
+    const ta = dlg.querySelector<HTMLTextAreaElement>('textarea.af-textarea');
+    expect(ta).not.toBeNull();
+    setNativeValue(ta!, 'Please supply the supporting invoice.');
+    await nextTick();
+
+    const submit = Array.from(dlg.querySelectorAll<HTMLButtonElement>('button'))
+      .find((b) => b.textContent?.trim() === 'Add comment');
+    expect(submit).toBeTruthy();
+    submit!.click();
+    await flushPromises();
+
+    expect(mocked.addFindingComment).toHaveBeenCalledWith(1, 'Please supply the supporting invoice.');
+    expect(dialogEl()!.textContent).toContain('Please supply the supporting invoice.');
     w.unmount();
   });
 });

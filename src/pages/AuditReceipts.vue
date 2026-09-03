@@ -232,10 +232,10 @@
           </span>
         </template>
 
+        <!-- Auditors get the full comment cell too: commenting is their one
+             permitted write (server-side: AuditorGateMiddleware). -->
         <template #cell-comment_count="{ value, row }">
-          <span v-if="isAuditor" :class="Number(value) ? '' : 'text-muted'">{{ Number(value) || 0 }}</span>
           <ReceiptCommentCell
-            v-else
             :sha256="row.sha256"
             :count="Number(value) || 0"
             @added="onInlineComment"
@@ -378,7 +378,8 @@
               </li>
             </ul>
             <p v-else-if="!detailLoading" class="ar-sub">No comments yet.</p>
-            <form v-if="!isAuditor" class="ar-comment-form" @submit.prevent="addComment">
+            <!-- Visible to auditors as well — archive/save/toggles above are not. -->
+            <form class="ar-comment-form" @submit.prevent="addComment">
               <textarea
                 ref="commentInputRef"
                 v-model="commentDraft"

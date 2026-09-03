@@ -652,4 +652,76 @@ describe('AuditReceipts — auditor mode', () => {
     expect(w.find('.ar-bulk-bar').exists()).toBe(false);
     w.unmount();
   });
+
+  it('rows keep the inline comment cell (auditors may comment)', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    const triggers = w.findAll('[data-test="inline-comment-trigger"]');
+    expect(triggers.length).toBe(bodyRows(w).length);
+    expect(cellFor(w, bodyRows(w)[0], 'Comments').text()).toBe('0');
+    w.unmount();
+  });
+
+  it('an auditor can post from the inline comment cell without opening the detail modal', async () => {
+    mocked.postReceiptComment.mockResolvedValue({
+      id: 9, text: 'Please supply the tax invoice.', author: 'auditor@example.com',
+      created_at: '2026-08-20T06:00:00Z',
+    });
+
+    const w = mountPage();
+    await flushPromises();
+
+    await bodyRows(w)[0].get('[data-test="inline-comment-trigger"]').trigger('click');
+    await flushPromises();
+    expect(modalEl()).toBeNull();
+
+    const input = document.body.querySelector<HTMLInputElement>('[data-test="inline-comment-input"]')!;
+    expect(input).not.toBeNull();
+    input.value = 'Please supply the tax invoice.';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(mocked.postReceiptComment).toHaveBeenCalledWith(P1_SHAS[0], 'Please supply the tax invoice.');
+    expect(cellFor(w, bodyRows(w)[0], 'Comments').text()).toBe('1');
+    expect(warnings).toEqual([]);
+    w.unmount();
+  });
+
+  it('detail modal shows the comment form but still no Archive/Save controls', async () => {
+    mocked.postReceiptComment.mockResolvedValue({
+      id: 10, text: 'Queried with the bookkeeper.', author: 'auditor@example.com',
+      created_at: '2026-08-20T07:00:00Z',
+    });
+
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const modal = modalEl();
+    expect(modal).not.toBeNull();
+    expect(modal!.querySelector('.ar-comment-form')).not.toBeNull();
+    const labels = Array.from(modal!.querySelectorAll('button')).map((b) => b.textContent?.trim());
+    expect(labels).not.toContain('Save changes');
+    expect(labels).not.toContain('Archive');
+    expect(labels).not.toContain('Restore');
+
+    const ta = modal!.querySelector<HTMLTextAreaElement>('textarea.ar-textarea')!;
+    expect(ta).not.toBeNull();
+    ta.value = 'Queried with the bookkeeper.';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    const submit = Array.from(modal!.querySelectorAll<HTMLButtonElement>('button'))
+      .find((b) => b.textContent?.trim() === 'Add comment')!;
+    expect(submit).toBeTruthy();
+    submit.click();
+    await flushPromises();
+
+    expect(mocked.postReceiptComment).toHaveBeenCalledWith(P1_SHAS[0], 'Queried with the bookkeeper.');
+    expect(modalEl()!.textContent).toContain('Queried with the bookkeeper.');
+    w.unmount();
+  });
 });
