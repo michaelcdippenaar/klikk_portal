@@ -30,6 +30,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// This file mounts a 200-row page. Its real budget is the assertions -- no Vue
+// warnings, and select-all ticking all 200 -- not wall-clock: the render is
+// O(rows) by design and the row count IS the test. Under full-suite parallelism
+// it exceeds vitest's 5s default and fails on load rather than on behaviour,
+// which was already happening on main. Same reason
+// AuditComments.registerScale.spec.ts carries one.
+vi.setConfig({ testTimeout: 30_000 });
 import { mount, flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
