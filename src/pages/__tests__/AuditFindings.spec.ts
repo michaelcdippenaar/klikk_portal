@@ -63,6 +63,15 @@ const routeQuery: Record<string, unknown> = {};
 const mockAuth = vi.hoisted(() => ({ isAuditor: false, user: { role: 'standard' } }));
 vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
 
+// The page polls the live comment feed (useCommentFeed). Mocked to a silent
+// no-op: these specs are about the page, and an unmocked poll would make a
+// real HTTP request from the test run.
+vi.mock('../../api/comments', () => ({
+  getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
+}));
+import { getCommentFeed } from '../../api/comments';
+const mockedFeed = getCommentFeed as unknown as ReturnType<typeof vi.fn>;
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ replace: routerReplace }),
@@ -884,13 +893,12 @@ describe('AuditFindings — detail modal', () => {
     await flushPromises();
 
     const dlg = dialogEl()!;
-    const ta = dlg.querySelector<HTMLTextAreaElement>('textarea.af-textarea');
+    const ta = dlg.querySelector<HTMLTextAreaElement>('[data-test="comment-input"]');
     expect(ta).not.toBeNull();
     setNativeValue(ta!, 'Chased the supplier again.');
     await nextTick();
 
-    const submit = Array.from(dlg.querySelectorAll<HTMLButtonElement>('button'))
-      .find((b) => b.textContent?.trim() === 'Add comment');
+    const submit = dlg.querySelector<HTMLButtonElement>('[data-test="comment-submit"]');
     expect(submit).toBeTruthy();
     submit!.click();
     await flushPromises();
@@ -1302,13 +1310,12 @@ describe('AuditFindings — auditor mode', () => {
     await flushPromises();
 
     const dlg = dialogEl()!;
-    const ta = dlg.querySelector<HTMLTextAreaElement>('textarea.af-textarea');
+    const ta = dlg.querySelector<HTMLTextAreaElement>('[data-test="comment-input"]');
     expect(ta).not.toBeNull();
     setNativeValue(ta!, 'Please supply the supporting invoice.');
     await nextTick();
 
-    const submit = Array.from(dlg.querySelectorAll<HTMLButtonElement>('button'))
-      .find((b) => b.textContent?.trim() === 'Add comment');
+    const submit = dlg.querySelector<HTMLButtonElement>('[data-test="comment-submit"]');
     expect(submit).toBeTruthy();
     submit!.click();
     await flushPromises();
@@ -1316,5 +1323,165 @@ describe('AuditFindings — auditor mode', () => {
     expect(mocked.addFindingComment).toHaveBeenCalledWith(1, 'Please supply the supporting invoice.');
     expect(dialogEl()!.textContent).toContain('Please supply the supporting invoice.');
     w.unmount();
+  });
+});
+
+// ── Threading + the live comment feed ───────────────────────────────────────
+
+describe('AuditFindings — threaded comments', () => {
+  it('the row comment cell opens a thread WITHOUT opening the detail dialog', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    const trigger = bodyRows(w)[0].get('[data-test="inline-comment-trigger"]');
+    await trigger.trigger('click');
+    await flushPromises();
+
+    // NB: dialogEl() would match the reka POPOVER, which also carries
+    // role="dialog" — the detail modal is specifically .kd-content.
+    expect(document.body.querySelector('.kd-content'), 'the row detail dialog opened').toBeNull();
+    expect(document.body.querySelector('[data-test="comment-input"]')).not.toBeNull();
+    expect(mocked.getFinding).toHaveBeenCalledWith(1);
+    expect(document.body.textContent).toContain('Bookkeeper notified');
+    w.unmount();
+  });
+
+  it('replies render nested under their parent and post with the parent id', async () => {
+    mocked.getFinding.mockImplementation(async (id: number) => ({
+      ...detailEnvelope(Number(id)),
+      comments: [
+        { id: 11, finding_id: 1, parent_id: null, text: 'Why was this paid first?', author: 'auditor@x.co', created_at: '2026-08-20T10:00:00Z' },
+        { id: 12, finding_id: 1, parent_id: 11, text: 'Supplier invoiced late.', author: 'mc', created_at: '2026-08-20T10:30:00Z' },
+      ],
+    }));
+    mocked.addFindingComment.mockResolvedValue({
+      id: 99, finding_id: 1, parent_id: 11, text: 'Thanks — noted.', author: 'mc',
+      created_at: '2026-08-20T12:00:00Z',
+    });
+
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const dlg = dialogEl()!;
+    const roots = [...dlg.querySelectorAll('[data-test="comment"]')];
+    const replies = [...dlg.querySelectorAll('[data-test="comment-reply"]')];
+    expect(roots).toHaveLength(1);
+    expect(replies).toHaveLength(1);
+    expect(replies[0].textContent).toContain('Supplier invoiced late.');
+    expect(roots[0].closest('li')!.contains(replies[0])).toBe(true);
+
+    dlg.querySelector<HTMLButtonElement>('[data-test="comment-reply-11"]')!.click();
+    await nextTick();
+    const input = dlg.querySelector<HTMLTextAreaElement>('[data-test="comment-reply-input-11"]')!;
+    expect(input).not.toBeNull();
+    setNativeValue(input, 'Thanks — noted.');
+    await nextTick();
+    input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(mocked.addFindingComment).toHaveBeenCalledWith(1, 'Thanks — noted.', { parentId: 11 });
+    w.unmount();
+  });
+
+  it('a top-level comment still posts WITHOUT a parent argument', async () => {
+    const w = mountPage();
+    await flushPromises();
+    await bodyRows(w)[0].trigger('click');
+    await flushPromises();
+
+    const dlg = dialogEl()!;
+    setNativeValue(dlg.querySelector<HTMLTextAreaElement>('[data-test="comment-input"]')!, 'top level');
+    await nextTick();
+    dlg.querySelector<HTMLButtonElement>('[data-test="comment-submit"]')!.click();
+    await flushPromises();
+
+    expect(mocked.addFindingComment).toHaveBeenCalledWith(1, 'top level');
+    expect(mocked.addFindingComment.mock.calls[0].length).toBe(2);
+    w.unmount();
+  });
+});
+
+describe('AuditFindings — live comment feed', () => {
+  function feedEvent(findingId: number, id = 500, author = 'anine') {
+    return {
+      kind: 'finding',
+      object_id: String(findingId),
+      object_ref: 'FY26-001 — Payments made before supplier bill captured',
+      comment: { id, parent_id: null, author, text: 'someone else commented', created_at: '2026-08-20T13:00:00Z' },
+    };
+  }
+
+  it('an event for a visible row bumps that row badge and nothing else, with no list refetch', async () => {
+    // Row 1 seeds with comment_count 2; the event must take it to 3. The
+    // mount-time poll only primes the cursor, so the event arrives on the next.
+    vi.useFakeTimers();
+    try {
+      mockedFeed.mockReset().mockResolvedValueOnce({ now: 'cursor-0', events: [] });
+      mockedFeed.mockResolvedValue({ now: 'cursor-1', events: [feedEvent(1)] });
+      const w = mountPage();
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+
+      const badge = (i: number) =>
+        bodyRows(w)[i].get('[data-test="inline-comment-count"]').text();
+      expect(badge(0)).toBe('3');
+      // Neighbours untouched, and the register was fetched exactly once.
+      expect(badge(1)).toBe('0');
+      expect(mocked.listFindings).toHaveBeenCalledTimes(1);
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an event for a row that is not on this page changes nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedFeed.mockReset().mockResolvedValueOnce({ now: 'cursor-0', events: [] });
+      mockedFeed.mockResolvedValue({ now: 'cursor-1', events: [feedEvent(9999)] });
+      const w = mountPage();
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+
+      // Every badge is exactly what the list returned — the seeded 2 on row 1.
+      expect(bodyRows(w).map((r) => r.get('[data-test="inline-comment-count"]').text()))
+        .toEqual(['2', '0', '0', '0', '0']);
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an event for the OPEN detail dialog appends the comment in place', async () => {
+    // The dialog is opened by the FIRST poll's mount-time call returning
+    // nothing; the SECOND poll (5s later, driven by fake timers) carries the
+    // event. Fake timers only around this test so the rest stay real.
+    vi.useFakeTimers();
+    try {
+      mockedFeed.mockReset().mockResolvedValue({ now: 'c', events: [] });
+      const w = mountPage();
+      await flushPromises();
+      await bodyRows(w)[0].trigger('click');
+      await flushPromises();
+      expect(dialogEl()!.textContent).not.toContain('someone else commented');
+
+      mockedFeed.mockResolvedValue({ now: 'c2', events: [feedEvent(1)] });
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+
+      expect(dialogEl()!.textContent).toContain('someone else commented');
+      // …and it is not double-counted when the same event arrives again.
+      const before = dialogEl()!.querySelectorAll('[data-test="comment"]').length;
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+      expect(dialogEl()!.querySelectorAll('[data-test="comment"]').length).toBe(before);
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

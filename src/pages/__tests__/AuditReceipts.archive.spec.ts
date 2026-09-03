@@ -59,6 +59,15 @@ const routeQuery: Record<string, unknown> = {};
 const mockAuth = vi.hoisted(() => ({ isAuditor: false, user: { role: 'standard' } }));
 vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
 
+// The page polls the live comment feed (useCommentFeed). Mocked to a silent
+// no-op: these specs are about the page, and an unmocked poll would make a
+// real HTTP request from the test run.
+vi.mock('../../api/comments', () => ({
+  getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
+}));
+import { getCommentFeed } from '../../api/comments';
+const mockedFeed = getCommentFeed as unknown as ReturnType<typeof vi.fn>;
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ replace: routerReplace }),
@@ -720,5 +729,82 @@ describe('AuditReceipts — auditor mode', () => {
     expect(mocked.postReceiptComment).toHaveBeenCalledWith(P1_SHAS[0], 'Queried with the bookkeeper.');
     expect(modalEl()!.textContent).toContain('Queried with the bookkeeper.');
     w.unmount();
+  });
+});
+
+// ── Live comment feed ───────────────────────────────────────────────────────
+
+describe('AuditReceipts — live comment feed', () => {
+  function feedEvent(sha: string, id = 500, author = 'anine') {
+    return {
+      kind: 'receipt',
+      object_id: sha,
+      object_ref: 'Makro · 2026-08-04 · R21 600.00',
+      comment: { id, parent_id: null, author, text: 'someone else commented', created_at: '2026-08-20T13:00:00Z' },
+    };
+  }
+
+  it('an event for a visible row bumps that row badge, leaves neighbours alone, and does NOT refetch the list', async () => {
+    // The mount-time poll only primes the cursor (it races the list fetch), so
+    // the event has to arrive on the SECOND poll.
+    vi.useFakeTimers();
+    try {
+      mockedFeed.mockReset().mockResolvedValueOnce({ now: 'cursor-0', events: [] });
+      mockedFeed.mockResolvedValue({ now: 'cursor-1', events: [feedEvent(P1_SHAS[0])] });
+      const w = mountPage();
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+
+      expect(cellFor(w, bodyRows(w)[0], 'Comments').text()).toBe('1');
+      expect(cellFor(w, bodyRows(w)[2], 'Comments').text()).toBe('2'); // seeded, untouched
+      expect(mocked.getReceipts).toHaveBeenCalledTimes(1);
+      expect(warnings).toEqual([]);
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an event for a receipt that is not on this page changes nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedFeed.mockReset().mockResolvedValueOnce({ now: 'cursor-0', events: [] });
+      mockedFeed.mockResolvedValue({ now: 'cursor-1', events: [feedEvent('z'.repeat(64))] });
+      const w = mountPage();
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+
+      expect(bodyRows(w).map((r) => cellFor(w, r, 'Comments').text())).toEqual(['0', '0', '2']);
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an event for the OPEN detail modal appends it once, and a repeat does not double it', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedFeed.mockReset().mockResolvedValue({ now: 'c', events: [] });
+      const w = mountPage();
+      await flushPromises();          // mount-time poll: primes the cursor
+      await bodyRows(w)[0].trigger('click');
+      await flushPromises();
+      expect(modalEl()!.textContent).not.toContain('someone else commented');
+
+      mockedFeed.mockResolvedValue({ now: 'c2', events: [feedEvent(P1_SHAS[0])] });
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+      expect(modalEl()!.textContent).toContain('someone else commented');
+
+      const before = modalEl()!.querySelectorAll('[data-test="comment"]').length;
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushPromises();
+      expect(modalEl()!.querySelectorAll('[data-test="comment"]').length).toBe(before);
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

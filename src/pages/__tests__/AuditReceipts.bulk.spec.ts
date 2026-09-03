@@ -54,6 +54,13 @@ const routeQuery: Record<string, unknown> = {};
 const mockAuth = vi.hoisted(() => ({ isAuditor: false, user: { role: 'standard' } }));
 vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
 
+// The page polls the live comment feed (useCommentFeed). Mocked to a silent
+// no-op: these specs are about the page, and an unmocked poll would make a
+// real HTTP request from the test run.
+vi.mock('../../api/comments', () => ({
+  getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
+}));
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ replace: routerReplace }),

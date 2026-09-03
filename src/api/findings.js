@@ -61,10 +61,19 @@ export async function updateFinding(id, body) {
 }
 
 /**
- * Add a comment. → 201 comment dict { id, finding_id, text, author, created_at }.
+ * Add a comment, optionally as a reply.
+ *
+ * body: { text, parent_id? } → 201 { id, finding_id, parent_id, text, author, created_at }
+ *
+ * `parentId` must be a comment on the SAME finding or the server 400s. Replying
+ * to a reply is accepted and re-parented onto the root server-side, so threads
+ * stay one level deep. `parent_id` is omitted entirely (not sent as null) for a
+ * new top-level comment. `author` is stamped from the authenticated user and is
+ * never sent from here — that is what makes the thread an audit trail.
  */
-export async function addFindingComment(id, text) {
-  const response = await apiClient.post(`${BASE}${encodeURIComponent(id)}/comments/`, { text });
+export async function addFindingComment(id, text, { parentId = null } = {}) {
+  const body = parentId == null ? { text } : { text, parent_id: parentId };
+  const response = await apiClient.post(`${BASE}${encodeURIComponent(id)}/comments/`, body);
   return response.data;
 }
 

@@ -257,8 +257,16 @@
           <span class="af-source" :title="value || ''">{{ value || '—' }}</span>
         </template>
 
-        <template #cell-comment_count="{ value }">
-          <span :class="value ? '' : 'text-muted'">{{ value || 0 }}</span>
+        <!-- Same affordance as the receipts register: the icon IS the way to
+             read or leave a comment, without opening the detail dialog. -->
+        <template #cell-comment_count="{ value, row }">
+          <FindingCommentCell
+            :ref="(el) => registerCommentCell(row.id, el)"
+            :findingId="row.id"
+            :count="Number(value) || 0"
+            :currentUser="currentUser"
+            @added="onInlineComment"
+          />
         </template>
 
         <template #cell-actions="{ row }">
@@ -454,38 +462,20 @@
               Comments
               <span class="af-section__note">{{ detailComments.length }}</span>
             </h3>
-            <ul v-if="detailComments.length" class="af-comments">
-              <li v-for="c in detailComments" :key="c.id" class="af-comment">
-                <div class="af-comment__meta">
-                  <span class="af-comment__author">{{ c.author || 'Unknown' }}</span>
-                  <span class="af-sub">{{ formatDateTime(c.created_at) }}</span>
-                </div>
-                <p class="af-comment__text">{{ c.text }}</p>
-              </li>
-            </ul>
-            <p v-else-if="!detailLoading" class="af-sub">No comments yet.</p>
-            <!-- Auditors may comment (their one permitted write); the Update
+            <!-- The SAME thread component the receipts side and the row
+                 popover use, so a reply reads identically everywhere.
+                 Auditors may comment (their one permitted write); the Update
                  section above stays hidden for them. -->
-            <form class="af-comment-form" @submit.prevent="addComment">
-              <textarea
+            <div class="af-comment-form">
+              <CommentThread
                 ref="commentBoxRef"
-                v-model="commentDraft"
-                class="af-textarea"
-                rows="2"
-                placeholder="Add a comment…"
-                :disabled="commentSaving"
+                :comments="detailComments"
+                :saving="commentSaving"
+                :loading="detailLoading"
+                :currentUser="currentUser"
+                @post="addComment"
               />
-              <div class="af-edit__actions">
-                <span />
-                <button
-                  type="submit"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="!commentDraft.trim() || commentSaving"
-                >
-                  {{ commentSaving ? 'Posting…' : 'Add comment' }}
-                </button>
-              </div>
-            </form>
+            </div>
           </section>
         </div>
         </div>
@@ -603,8 +593,11 @@ import StatusPill from '../components/klikk/StatusPill.vue';
 import FindingAttachments from '../components/findings/FindingAttachments.vue';
 import FindingCubeView from '../components/findings/FindingCubeView.vue';
 import FindingLinks from '../components/findings/FindingLinks.vue';
+import FindingCommentCell from '../components/findings/FindingCommentCell.vue';
+import CommentThread from '../components/comments/CommentThread.vue';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
+import { useCommentFeed } from '../composables/useCommentFeed';
 import { useAuthStore } from '../stores/auth';
 
 const route = useRoute();
@@ -613,6 +606,9 @@ const toast = useToast();
 const authStore = useAuthStore();
 /** UI-shaping only — the backend middleware enforces read-only for auditors. */
 const isAuditor = computed(() => authStore.isAuditor);
+// Used to mark your own comments "(you)" and to suppress a toast for a comment
+// you just left yourself.
+const currentUser = computed(() => authStore.user?.username || '');
 
 // ── Vocabulary (frozen contract) ─────────────────────────────────────────────
 
@@ -1149,8 +1145,9 @@ const ownerDraft = ref('');
 const dueDraft = ref('');
 const amountDraft = ref('');
 const editSaving = ref(false);
-const commentDraft = ref('');
 const commentSaving = ref(false);
+// The thread component owns the draft; this ref exists so "Discuss" can focus
+// its composer and so a successful post can clear it.
 const commentBoxRef = ref(null);
 
 const detailTitle = computed(() => (detail.value ? `${detail.value.ref} — ${detail.value.title}` : ''));
@@ -1200,7 +1197,6 @@ async function openDetail(row) {
   detailLinks.value = [];
   detailTab.value = 'detail';
   syncDraftsFromDetail();
-  commentDraft.value = '';
   detailOpen.value = true;
   detailLoading.value = true;
   try {
@@ -1259,15 +1255,19 @@ async function saveEdits() {
   }
 }
 
-async function addComment() {
+async function addComment({ text, parentId = null } = {}) {
   const d = detail.value;
   if (!d) return;
-  const text = commentDraft.value.trim();
-  if (!text) return;
+  const body = String(text || '').trim();
+  if (!body) return;
   commentSaving.value = true;
   actionError.value = null;
   try {
-    const created = await addFindingComment(d.id, text);
+    // A top-level post keeps the original two-argument call, so the request is
+    // byte-identical to what shipped before threading.
+    const created = parentId == null
+      ? await addFindingComment(d.id, body)
+      : await addFindingComment(d.id, body, { parentId });
     if (detail.value && detail.value.id === d.id) {
       detailComments.value = [...detailComments.value, created];
       detail.value = { ...detail.value, comment_count: detailComments.value.length };
@@ -1275,7 +1275,8 @@ async function addComment() {
     rows.value = rows.value.map((r) =>
       r.id === d.id ? { ...r, comment_count: (Number(r.comment_count) || 0) + 1 } : r,
     );
-    commentDraft.value = '';
+    // Only on success — a failed post keeps the draft so it can be retried.
+    commentBoxRef.value?.clearDraft?.();
   } catch (err) {
     raiseActionError(describeError(err, 'Posting the comment failed'));
     console.error(err);
@@ -1283,6 +1284,62 @@ async function addComment() {
     commentSaving.value = false;
   }
 }
+
+// ── Live comment feed ────────────────────────────────────────────────────────
+// Comments other people leave surface within one poll interval (5s) instead of
+// being missed until someone happens to reload. Row badges bump, an open
+// thread appends in place, and anything that is not yours raises a toast.
+
+const commentCells = new Map();
+
+function registerCommentCell(id, el) {
+  if (el) commentCells.set(String(id), el);
+  else commentCells.delete(String(id));
+}
+
+function onInlineComment({ findingId }) {
+  rows.value = rows.value.map((r) =>
+    String(r.id) === String(findingId)
+      ? { ...r, comment_count: (Number(r.comment_count) || 0) + 1 }
+      : r,
+  );
+}
+
+function applyFeedEvents(events) {
+  const bumped = new Map();
+  for (const event of events) {
+    const id = String(event.object_id);
+    bumped.set(id, (bumped.get(id) || 0) + 1);
+    // De-dupe by id: your own POST already appended it locally.
+    commentCells.get(id)?.mergeComment?.(event.comment);
+    if (detail.value && String(detail.value.id) === id) {
+      const known = detailComments.value.some(
+        (c) => String(c.id) === String(event.comment?.id),
+      );
+      if (!known && event.comment) {
+        detailComments.value = [...detailComments.value, event.comment];
+      }
+    }
+  }
+  // The register itself is NOT refetched: server totals are unaffected by a
+  // comment, and a reload mid-triage would move rows under the user.
+  rows.value = rows.value.map((r) => {
+    const extra = bumped.get(String(r.id));
+    return extra ? { ...r, comment_count: (Number(r.comment_count) || 0) + extra } : r;
+  });
+  if (detail.value) {
+    const extra = bumped.get(String(detail.value.id));
+    if (extra) {
+      detail.value = { ...detail.value, comment_count: detailComments.value.length };
+    }
+  }
+}
+
+useCommentFeed({
+  kind: 'finding',
+  onEvents: applyFeedEvents,
+  currentUser: () => currentUser.value,
+});
 
 watch(detailOpen, (open) => {
   if (!open) {

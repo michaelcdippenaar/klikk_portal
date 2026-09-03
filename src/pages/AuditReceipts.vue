@@ -236,6 +236,7 @@
              permitted write (server-side: AuditorGateMiddleware). -->
         <template #cell-comment_count="{ value, row }">
           <ReceiptCommentCell
+            :ref="(el) => registerCommentCell(row.sha256, el)"
             :sha256="row.sha256"
             :count="Number(value) || 0"
             :currentUser="currentUser"
@@ -490,6 +491,7 @@ import KToggle from '../components/klikk/KToggle.vue';
 import StatusPill from '../components/klikk/StatusPill.vue';
 import ReceiptCommentCell from '../components/receipts/ReceiptCommentCell.vue';
 import CommentThread from '../components/comments/CommentThread.vue';
+import { useCommentFeed } from '../composables/useCommentFeed';
 import { useReceiptSelection } from '../composables/useReceiptSelection';
 import { useToast } from '../composables/useToast';
 import { useAuthStore } from '../stores/auth';
@@ -713,6 +715,49 @@ function onInlineComment({ sha256 }) {
     detail.value = { ...detail.value, comment_count: (Number(detail.value.comment_count) || 0) + 1 };
   }
 }
+
+// ── Live comment feed ────────────────────────────────────────────────────────
+// Comments other people leave surface within one poll interval (5s) instead of
+// being missed until someone happens to reload. Row badges bump, an open
+// thread appends in place, and anything that is not yours raises a toast.
+
+const commentCells = new Map();
+
+function registerCommentCell(sha256, el) {
+  if (el) commentCells.set(sha256, el);
+  else commentCells.delete(sha256);
+}
+
+function applyFeedEvents(events) {
+  const bumped = new Map();
+  for (const event of events) {
+    const sha = String(event.object_id);
+    bumped.set(sha, (bumped.get(sha) || 0) + 1);
+    // De-dupe by id: your own POST already appended it locally.
+    commentCells.get(sha)?.mergeComment?.(event.comment);
+    if (detail.value && detail.value.sha256 === sha && event.comment) {
+      const known = (detail.value.comments || []).some(
+        (c) => String(c.id) === String(event.comment.id),
+      );
+      if (!known) {
+        const comments = [...(detail.value.comments || []), event.comment];
+        detail.value = { ...detail.value, comments, comment_count: comments.length };
+      }
+    }
+  }
+  // The register itself is NOT refetched: server totals are unaffected by a
+  // comment, and a reload mid-triage would move rows under the user.
+  rows.value = rows.value.map((r) => {
+    const extra = bumped.get(r.sha256);
+    return extra ? { ...r, comment_count: (Number(r.comment_count) || 0) + extra } : r;
+  });
+}
+
+useCommentFeed({
+  kind: 'receipt',
+  onEvents: applyFeedEvents,
+  currentUser: () => currentUser.value,
+});
 
 // ── Bulk actions ────────────────────────────────────────────────────────────
 const bulkRunning = ref(false);
