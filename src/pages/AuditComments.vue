@@ -150,10 +150,10 @@
                 :data-test="`cc-pick-${row.id}`"
                 @change="toggleSelected(row)"
               />
-              <KBadge :tone="row.status === 'open' ? 'warning' : 'neutral'">
+              <KBadge :tone="row.status === 'open' ? 'accent' : 'muted'">
                 {{ row.status }}
               </KBadge>
-              <KBadge v-if="row.subject_type !== 'cube_cell'" tone="info">
+              <KBadge v-if="row.subject_type !== 'cube_cell'" tone="muted">
                 {{ kindLabel(row.subject_type) }}
               </KBadge>
               <strong class="cc__author">{{ row.author || 'unattributed' }}</strong>

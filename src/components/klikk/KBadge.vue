@@ -7,7 +7,8 @@
   feature flags ("BETA"), environment indicators ("STAGING"), etc.
 
   API:
-    label   (string, required)
+    label   (string) — text to display. May instead be passed as default
+            slot content; the slot wins and `label` is the fallback.
     tone?   ('default' | 'accent' | 'muted') — colour scheme. Default 'default'.
     size?   ('sm' | 'md') — sm = 10px 2/6px padding, md = 11px 3/8px padding. Default 'md'.
 
@@ -22,7 +23,7 @@
   <span
     class="kbadge"
     :class="[`kbadge--${tone}`, `kbadge--${size}`]"
-  >{{ label }}</span>
+  ><slot>{{ label }}</slot></span>
 </template>
 
 <script setup>
@@ -30,7 +31,7 @@ defineProps({
   /** The text displayed inside the badge (count, label, version, etc.). */
   label: {
     type: String,
-    required: true,
+    default: '',
   },
   /**
    * Colour tone:

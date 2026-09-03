@@ -37,7 +37,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // it exceeds vitest's 5s default and fails on load rather than on behaviour,
 // which was already happening on main. Same reason
 // AuditComments.registerScale.spec.ts carries one.
-vi.setConfig({ testTimeout: 30_000 });
+// Timeout is set GLOBALLY in vitest.config.js (60s), not here. A per-file
+// vi.setConfig leaks to whatever else shares the worker: this file setting
+// 30s was dragging the global ceiling DOWN for AuditFindings.spec.ts, which
+// has no override of its own and was failing at 30s while the config said 60.
 import { mount, flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 

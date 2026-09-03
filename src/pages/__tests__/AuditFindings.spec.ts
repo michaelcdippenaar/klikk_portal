@@ -1045,7 +1045,12 @@ describe('AuditFindings — bulk bar', () => {
     await nextTick();
     expect(bulkBar(w).exists()).toBe(false);
     w.unmount();
-  }, 30000);
+  });
+// NOTE: this test carried a per-test timeout argument of 30000ms, which
+// overrides vitest.config.js entirely -- so raising the global ceiling had no
+// effect on it and it failed 5/5 while the config said 60s. It mounts 501
+// findings to exercise the 500 cap at its boundary, measured at 35-42s under
+// full-suite load. It now inherits the global 60s.
 });
 
 // ── 8. Error / empty / loading states ───────────────────────────────────────

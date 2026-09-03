@@ -39,7 +39,10 @@ import { mount, flushPromises } from '@vue/test-utils';
  * machine load in a way timings are not — see the note at the top. The
  * budget is still "at most once per row, and nothing on re-render".
  */
-vi.setConfig({ testTimeout: 30_000 });
+// Timeout is set GLOBALLY in vitest.config.js (60s), not here. A per-file
+// vi.setConfig leaks to whatever else shares the worker: this file setting
+// 30s was dragging the global ceiling DOWN for AuditFindings.spec.ts, which
+// has no override of its own and was failing at 30s while the config said 60.
 
 // Counts real parses by wrapping the one function every anchor read goes
 // through. A spy here is the honest measure — timings vary with machine load,
