@@ -153,10 +153,20 @@
           <!-- Filters are part of the anchor: the same coordinates under a
                different date window is a different number. Showing them is the
                difference between a reader trusting the figure and guessing. -->
-          <div v-if="hasFilters(row)" class="cc__filters">
-            <span v-for="(v, k) in filtersOf(row)" :key="k" class="cc__filter">
-              {{ k }}: {{ v }}
+          <div v-if="hasFilters(row)" :id="`cc-filters-${row.id}`" class="cc__filters">
+            <span v-for="chip in shownChips(row)" :key="chip.key" class="cc__filter">
+              {{ chipText(row, chip) }}
             </span>
+            <button
+              v-if="chipOverflow(row)"
+              type="button"
+              class="cc__filter cc__filter--more"
+              :aria-expanded="!!openFilters[row.id]"
+              :aria-controls="`cc-filters-${row.id}`"
+              @click="toggleFilters(row)"
+            >
+              {{ openFilters[row.id] ? 'Show less' : `+${chipOverflow(row)} more` }}
+            </button>
           </div>
 
           <!-- The drill resolves journal lines from /xero/data/journals/pivot/
@@ -416,11 +426,109 @@ async function setDecision(row, decision) {
     busyId.value = null;
   }
 }
-function filtersOf(row) {
+/* ── The anchor's filter context, rendered compactly ──────────────────────
+ *
+ * These filters are part of the anchor and must stay visible: the same
+ * coordinates under a different date window is a different number, and showing
+ * the cut is the difference between a reader trusting the figure and guessing.
+ *
+ * But they were rendered verbatim, and one key is not a scalar. `dimf` is a
+ * JSON blob of {dimension: [members]}, and a comment written in the Excel
+ * add-in after the subset picker's "add all shown" carried every year and
+ * every month — twelve and a hundred and forty-four values — straight onto the
+ * card. MC: "It clutters the space. Does not happen where Claude posts." It
+ * did not happen for an agent because add_cube_comment sends only the
+ * dimensions it actually narrowed.
+ *
+ * The add-in now writes an all-members subset the way it writes "no filter" —
+ * omitted — so new comments are quiet at the source. This is the other half,
+ * and it is the half that matters for the ~113 comments ALREADY stored: they
+ * keep their verbose anchors, and nothing rewrites them. Collapsed by default,
+ * expandable in place, so a verbose anchor from ANY source can never flood the
+ * page again.
+ *
+ * Nothing is hidden, only folded: every value is one click away, and the
+ * counts say how much is folded. */
+
+const FILTER_CHIPS_SHOWN = 4;
+const FILTER_VALUES_SHOWN = 3;
+
+// row.id -> expanded. Per row, so opening one card's filters does not open
+// every card's.
+const openFilters = reactive({});
+
+function toggleFilters(row) { openFilters[row.id] = !openFilters[row.id]; }
+
+/**
+ * The anchor as a flat list of {key, label, values}.
+ *
+ * `dimf` is expanded into ONE CHIP PER DIMENSION rather than being shown as
+ * the blob it is stored as — that is what turns a wall of JSON into "year: …"
+ * and "month: …". A dimf that will not parse falls back to a single chip
+ * carrying it raw: unreadable is still better than silently dropped, because
+ * these values are what tell the reader which figure the comment is about.
+ */
+function filterChips(row) {
   const f = normaliseFilters(row.filters);
-  return Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v != null));
+  const chips = [];
+  Object.entries(f).forEach(([k, v]) => {
+    if (v === '' || v == null) return;
+    if (k === 'dimf') {
+      let dims = v;
+      if (typeof dims === 'string') {
+        try { dims = JSON.parse(dims); } catch { dims = null; }
+      }
+      if (dims && typeof dims === 'object' && !Array.isArray(dims)) {
+        Object.entries(dims).forEach(([dim, vals]) => {
+          const list = (Array.isArray(vals) ? vals : [vals])
+            .filter((x) => x !== '' && x != null)
+            .map(String);
+          if (list.length) chips.push({ key: `dimf.${dim}`, label: dim, values: list });
+        });
+        return;
+      }
+      chips.push({ key: 'dimf', label: 'dimf', values: [String(v)] });
+      return;
+    }
+    chips.push({ key: k, label: k, values: [String(v)] });
+  });
+  return chips;
 }
-function hasFilters(row) { return Object.keys(filtersOf(row)).length > 0; }
+
+function hasFilters(row) { return filterChips(row).length > 0; }
+
+function shownChips(row) {
+  const chips = filterChips(row);
+  return openFilters[row.id] ? chips : chips.slice(0, FILTER_CHIPS_SHOWN);
+}
+
+/** One chip: "year: 2015, 2016, 2017 +9 more" collapsed, all of it expanded. */
+function chipText(row, chip) {
+  const vals = chip.values;
+  if (openFilters[row.id] || vals.length <= FILTER_VALUES_SHOWN) {
+    return `${chip.label}: ${vals.join(', ')}`;
+  }
+  const head = vals.slice(0, FILTER_VALUES_SHOWN).join(', ');
+  return `${chip.label}: ${head} +${vals.length - FILTER_VALUES_SHOWN} more`;
+}
+
+/**
+ * How much folding is going on — 0 when the whole anchor is already visible,
+ * so the toggle does not appear on the short anchors most comments carry.
+ * Counts hidden CHIPS plus hidden VALUES, because a single chip holding a
+ * hundred and forty-four months is the case this exists for.
+ */
+function chipOverflow(row) {
+  // Deliberately independent of the open state: this is how much WOULD be
+  // folded, so the toggle stays put once expanded. Deriving it from the
+  // current state made "Show less" disappear on a card whose overflow was all
+  // values and no extra chips — expanded, with no way back.
+  const chips = filterChips(row);
+  const hiddenChips = Math.max(0, chips.length - FILTER_CHIPS_SHOWN);
+  const hiddenValues = chips.slice(0, FILTER_CHIPS_SHOWN)
+    .reduce((n, c) => n + Math.max(0, c.values.length - FILTER_VALUES_SHOWN), 0);
+  return hiddenChips + hiddenValues;
+}
 
 function money(v) {
   const n = Number(v);
@@ -728,6 +836,34 @@ onMounted(load);
 .cc__value { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cc__filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
 .cc__filter { font-size: 10.5px; opacity: .65; border: 1px dashed var(--k-border, #ddd); border-radius: 4px; padding: 1px 5px; }
+/* The expand toggle wears the chip's clothes so the row still reads as one
+   line of context, but it is a real <button> — operable by keyboard and
+   announced as expandable, which a clickable <span> would not be.
+   Solid border rather than the chips' dashed one is the "actionable" tell; the
+   label ("+N more" / "Show less") carries the affordance in words, so it never
+   rests on style alone.
+
+   Longhands, NOT `font: inherit`: the shorthand resets font-size and would
+   force this rule to restate the 10.5px that .cc__filter already owns — a
+   duplicated literal born from a reset, and one that silently drifts the day
+   someone changes the chip.
+
+   No :focus-visible rule here on purpose. klikk.css authors the ring globally
+   and overrides it to navy in light mode; restating the `outline` shorthand
+   locally re-sets outline-color and quietly defeats that, which is exactly the
+   defect this file would have inherited by copying the six K-components that
+   do it. Override the property, never the shorthand. */
+.cc__filter--more {
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: none;
+  border-style: solid;
+  cursor: pointer;
+  opacity: .8;
+}
+.cc__filter--more:hover { opacity: 1; }
 .cc__drill { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
 .cc__recon { font-size: 11.5px; }
 .cc__recon--ok { color: var(--k-success, #157347); }
