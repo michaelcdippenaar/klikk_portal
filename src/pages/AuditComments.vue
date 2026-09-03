@@ -495,10 +495,45 @@ function filterChips(row) {
   return chips;
 }
 
-function hasFilters(row) { return filterChips(row).length > 0; }
+/**
+ * Every row's anchor, parsed EXACTLY ONCE per load.
+ *
+ * `filterChips` JSON.parses the row's stored filters and then the `dimf` blob
+ * inside it. That blob is ~10 KB — the whole list response is 1.4 MB for 113
+ * comments, nearly all of it anchors — and the template touched it FOUR times
+ * per row per render: `hasFilters`, `shownChips`, and `chipOverflow` twice.
+ * Measured: 452 parses to draw the page, and 452 more on every re-render, so
+ * every keystroke in the search box and every 5-second feed poll re-parsed
+ * about four megabytes of JSON. That is what took the page down.
+ *
+ * A computed keyed off `all` fixes it structurally rather than by trimming the
+ * call sites: the parse happens when rows arrive and never during render. It
+ * recomputes only when the register is reloaded — mutating a row's `decision`
+ * or `reply_count` does not touch `filters`, so triage does not re-parse.
+ *
+ * `overflow` is precomputed here for the same reason: it was the call site
+ * hit twice per row, and the template must not do arithmetic over member
+ * lists while painting.
+ */
+const anchors = computed(() => {
+  const m = new Map();
+  all.value.forEach((r) => {
+    const chips = filterChips(r);
+    const hiddenChips = Math.max(0, chips.length - FILTER_CHIPS_SHOWN);
+    const hiddenValues = chips.slice(0, FILTER_CHIPS_SHOWN)
+      .reduce((n, c) => n + Math.max(0, c.values.length - FILTER_VALUES_SHOWN), 0);
+    m.set(r.id, { chips, overflow: hiddenChips + hiddenValues });
+  });
+  return m;
+});
+
+const EMPTY_ANCHOR = { chips: [], overflow: 0 };
+function anchorOf(row) { return anchors.value.get(row.id) || EMPTY_ANCHOR; }
+
+function hasFilters(row) { return anchorOf(row).chips.length > 0; }
 
 function shownChips(row) {
-  const chips = filterChips(row);
+  const { chips } = anchorOf(row);
   return openFilters[row.id] ? chips : chips.slice(0, FILTER_CHIPS_SHOWN);
 }
 
@@ -517,18 +552,16 @@ function chipText(row, chip) {
  * so the toggle does not appear on the short anchors most comments carry.
  * Counts hidden CHIPS plus hidden VALUES, because a single chip holding a
  * hundred and forty-four months is the case this exists for.
+ *
+ * Deliberately independent of the open state: this is how much WOULD be
+ * folded, so the toggle stays put once expanded. Deriving it from the current
+ * state made "Show less" disappear on a card whose overflow was all values and
+ * no extra chips — expanded, with no way back.
+ *
+ * Computed in `anchors`, not here: this is read twice per row per render and
+ * used to re-parse the anchor each time.
  */
-function chipOverflow(row) {
-  // Deliberately independent of the open state: this is how much WOULD be
-  // folded, so the toggle stays put once expanded. Deriving it from the
-  // current state made "Show less" disappear on a card whose overflow was all
-  // values and no extra chips — expanded, with no way back.
-  const chips = filterChips(row);
-  const hiddenChips = Math.max(0, chips.length - FILTER_CHIPS_SHOWN);
-  const hiddenValues = chips.slice(0, FILTER_CHIPS_SHOWN)
-    .reduce((n, c) => n + Math.max(0, c.values.length - FILTER_VALUES_SHOWN), 0);
-  return hiddenChips + hiddenValues;
-}
+function chipOverflow(row) { return anchorOf(row).overflow; }
 
 function money(v) {
   const n = Number(v);
