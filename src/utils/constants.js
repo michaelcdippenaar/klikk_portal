@@ -17,6 +17,7 @@ export const API_ENDPOINTS = {
   // Auth
   LOGIN: '/api/auth/login/',
   REFRESH: '/api/auth/refresh/',
+  CHANGE_PASSWORD: '/api/auth/change-password/',
 
   // Xero Auth
   XERO_AUTH_INITIATE: '/xero/auth/initiate/',

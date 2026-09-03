@@ -9,6 +9,15 @@ const routes = [
     component: () => import('@/pages/Login.vue'),
   },
   {
+    // Outside the app shell on purpose: an account holding a temporary
+    // password gets 403 on every other endpoint, so a nav full of dead
+    // routes would be worse than no nav.
+    path: '/change-password',
+    name: 'change-password',
+    component: () => import('@/pages/ChangePassword.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/app',
     component: () => import('@/layouts/MainLayout.vue'),
     meta: { requiresAuth: true },

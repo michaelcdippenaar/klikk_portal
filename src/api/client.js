@@ -92,6 +92,28 @@ apiClient.interceptors.response.use(
       }
     }
 
+    // Belt-and-braces for a stale tab: the account was flagged
+    // must_change_password after this tab loaded, so the router guard never
+    // ran. Route to the change-password screen rather than showing the user a
+    // page full of failed requests. Router is imported lazily — it imports the
+    // stores, which import this module.
+    if (
+      error.response?.status === 403
+      && error.response?.data?.code === 'password_change_required'
+    ) {
+      try {
+        const { default: router } = await import('../router');
+        if (router.currentRoute.value.name !== 'change-password') {
+          router.push({
+            name: 'change-password',
+            query: { redirect: router.currentRoute.value.fullPath },
+          });
+        }
+      } catch (e) {
+        console.error('Could not route to the change-password screen', e);
+      }
+    }
+
     return Promise.reject(error);
   }
 );

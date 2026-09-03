@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockAuth = vi.hoisted(() => ({
   isAuthenticated: true,
   isAuditor: false,
+  mustChangePassword: false,
   user: { role: 'standard' },
 }));
 vi.mock('../../stores/auth', () => ({ useAuthStore: () => mockAuth }));
@@ -26,6 +27,7 @@ describe('router — auditor guard', () => {
   beforeEach(() => {
     mockAuth.isAuthenticated = true;
     mockAuth.isAuditor = false;
+    mockAuth.mustChangePassword = false;
     mockAuth.user = { role: 'standard' };
   });
 
@@ -68,5 +70,66 @@ describe('router — auditor guard', () => {
     // and would never run the guard.
     await router.push({ name: 'audit-findings' }).catch(() => {});
     expect(router.currentRoute.value.name).toBe('login');
+  });
+});
+
+// ── Forced password change ──────────────────────────────────────────────────
+
+describe('router — forced password change', () => {
+  beforeEach(async () => {
+    mockAuth.isAuthenticated = true;
+    mockAuth.isAuditor = false;
+    mockAuth.mustChangePassword = false;
+    mockAuth.user = { role: 'standard' };
+    // Park somewhere neutral so each case is a real navigation, not a no-op.
+    await router.push({ name: 'portal' }).catch(() => {});
+  });
+
+  it('a flagged user is pushed to change-password wherever they aim, carrying the redirect', async () => {
+    mockAuth.mustChangePassword = true;
+    await router.push({ name: 'reporting' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('change-password');
+    expect(router.currentRoute.value.query.redirect).toBe('/app/reporting');
+  });
+
+  it('a flagged AUDITOR lands on change-password, not the receipts register', async () => {
+    mockAuth.isAuditor = true;
+    mockAuth.mustChangePassword = true;
+    mockAuth.user = { role: 'auditor' };
+    await router.push({ name: 'audit-findings' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('change-password');
+  });
+
+  it('change-password itself is reachable — the guard must not loop', async () => {
+    mockAuth.mustChangePassword = true;
+    await router.push({ name: 'change-password' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('change-password');
+  });
+
+  it('a flagged user hitting /login goes to change-password, not the dashboard', async () => {
+    mockAuth.mustChangePassword = true;
+    await router.push('/login').catch(() => {});
+    expect(router.currentRoute.value.name).toBe('change-password');
+  });
+
+  it('an UNflagged user is unaffected', async () => {
+    await router.push({ name: 'reporting' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('reporting');
+  });
+
+  it('an unauthenticated caller still goes to login even if the stale flag is set', async () => {
+    mockAuth.isAuthenticated = false;
+    mockAuth.mustChangePassword = true;
+    await router.push({ name: 'reporting' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('login');
+  });
+
+  it('clearing the flag frees navigation again', async () => {
+    mockAuth.mustChangePassword = true;
+    await router.push({ name: 'reporting' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('change-password');
+    mockAuth.mustChangePassword = false;
+    await router.push({ name: 'reporting' }).catch(() => {});
+    expect(router.currentRoute.value.name).toBe('reporting');
   });
 });

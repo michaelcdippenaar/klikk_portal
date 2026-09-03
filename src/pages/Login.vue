@@ -159,8 +159,17 @@ async function handleLogin() {
     const result = await authStore.login(username.value, password.value);
 
     if (result.success) {
-      const redirect = route.query.redirect || '/app';
-      router.push(redirect);
+      const redirect = route.query.redirect;
+      // A temporary password is not a working session — carry the original
+      // destination through so they land where they meant to go afterwards.
+      if (authStore.mustChangePassword) {
+        router.push({
+          name: 'change-password',
+          ...(redirect ? { query: { redirect } } : {}),
+        });
+        return;
+      }
+      router.push(redirect || '/app');
     } else {
       error.value = result.error || 'Login failed';
     }

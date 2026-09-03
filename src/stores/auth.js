@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { login as apiLogin, refreshToken as apiRefreshToken } from '../api/auth';
+import {
+  changePassword as apiChangePassword,
+  login as apiLogin,
+  refreshToken as apiRefreshToken,
+} from '../api/auth';
 import { STORAGE_KEYS } from '../utils/constants';
 
 function getCookieDomain() {
@@ -38,6 +42,14 @@ export const useAuthStore = defineStore('auth', () => {
    * (nav, guards, hidden write controls) — it is NOT the security boundary.
    */
   const isAuditor = computed(() => user.value?.role === 'auditor');
+
+  /**
+   * The account is holding a temporary password (created by create_auditor).
+   * The backend 403s everything except the auth + change-password endpoints
+   * until it is replaced; the router guard mirrors that so the user lands on
+   * the right screen instead of a wall of failed requests.
+   */
+  const mustChangePassword = computed(() => !!user.value?.must_change_password);
 
   // Load user from localStorage on init
   const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
@@ -91,6 +103,32 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Rotate the password. On success the flag is cleared in state AND in the
+   * persisted user, so a reload does not send the holder back to the
+   * change-password screen with nothing left to change.
+   *
+   * Returns { success } or { success: false, error, errors } where `errors`
+   * are the server's password-validator messages.
+   */
+  async function changePassword(currentPassword, newPassword) {
+    try {
+      await apiChangePassword(currentPassword, newPassword);
+      if (user.value) {
+        user.value = { ...user.value, must_change_password: false };
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user.value));
+      }
+      return { success: true };
+    } catch (error) {
+      const data = error.response?.data;
+      return {
+        success: false,
+        error: getAuthErrorMessage(error),
+        errors: Array.isArray(data?.errors) ? data.errors : [],
+      };
+    }
+  }
+
   function logout() {
     user.value = null;
     token.value = null;
@@ -108,7 +146,9 @@ export const useAuthStore = defineStore('auth', () => {
     refreshTokenValue,
     isAuthenticated,
     isAuditor,
+    mustChangePassword,
     login,
+    changePassword,
     refreshToken,
     logout,
   };
