@@ -25,10 +25,33 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
+/**
+ * Vitest's 5-second default is a harness default, not a budget.
+ *
+ * Every test in this file MOUNTS the whole register — 113 cards over a 1.4 MB
+ * payload — which is the entire point of the file, and it takes a second or so
+ * on its own. Run alongside the other 79 spec files the runner schedules in
+ * parallel, that drifted past five seconds often enough to make the suite
+ * flaky, and a flaky guard is a guard people learn to ignore.
+ *
+ * Raising the wall-clock ceiling does NOT weaken anything here: what this file
+ * asserts is CALL COUNTS (`parseCalls`, `seatReads`), which are invariant to
+ * machine load in a way timings are not — see the note at the top. The
+ * budget is still "at most once per row, and nothing on re-render".
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
 // Counts real parses by wrapping the one function every anchor read goes
 // through. A spy here is the honest measure — timings vary with machine load,
 // call counts do not.
 const parseCalls = vi.hoisted(() => ({ n: 0 }));
+
+// The same measure, for the OTHER piece of per-row work this page does: every
+// row that carries an `assignee_role` has to be resolved to a person's name.
+// `seatReads` counts real property reads on the directory, through a Proxy —
+// a name resolved in the template would be read once per row PER RENDER, which
+// is precisely the shape that took this page down last time.
+const seatReads = vi.hoisted(() => ({ n: 0 }));
 
 vi.mock('../../api/cubeComments', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/cubeComments')>();
@@ -43,6 +66,25 @@ vi.mock('../../api/cubeComments', async (importOriginal) => {
     setCommentDecision: vi.fn(),
     drillCubeComment: vi.fn(),
   };
+});
+// The page decorates every row with the seat directory and fills the
+// "Assigned to" filter from it. Mocked at the network boundary like every
+// other fetch in this spec; the fixture is the live directory as at
+// 2026-09-03, INCLUDING the inactive seat — a directory with only active
+// people in it could not catch the console offering an inactive one.
+vi.mock('../../api/people', () => {
+  const people = [
+    { id: 1, handle: 'auditor', display_name: 'George du Preez', email: 'george@moore.co.za', active: true },
+    { id: 2, handle: 'bookkeeper', display_name: 'Anzelle Vermaak', email: 'anzelle@moore.co.za', active: true },
+    { id: 3, handle: 'jordyn', display_name: 'Jordyn Wolhuter', email: 'jordyn@klikk.co.za', active: false },
+    { id: 4, handle: 'mc', display_name: 'MC Dippenaar', email: 'mc@tremly.com', active: true },
+  ].map((p) => new Proxy(p, {
+    get(target, prop, recv) {
+      if (prop === 'display_name' || prop === 'active') seatReads.n += 1;
+      return Reflect.get(target, prop, recv);
+    },
+  }));
+  return { getPeople: vi.fn().mockResolvedValue({ count: people.length, results: people }) };
 });
 vi.mock('../../api/comments', () => ({
   getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
@@ -79,14 +121,25 @@ function register() {
     row_dims: ['account'], row_path: ['6100 Repairs'], col_dims: ['month'],
     col_path: '2026-08', measure: 'amount', cell_value: '21600.00', reply_count: 0,
     filters: JSON.stringify({ tenant: 'Klikk', journal_type: 'ACCREC', dimf: DIMF }),
+    // All three assignment states, spread across the whole register rather
+    // than sampled on row 1: unassigned, with a live seat, and with a seat
+    // that has since been stood down. A fixture where every row is the same
+    // could not tell "resolved once" from "resolved once per distinct value".
+    assignee_role: ASSIGNMENTS[i % 3],
   }));
 }
+
+const ASSIGNMENTS = ['', 'bookkeeper', 'jordyn'];
+/** How many of the 113 carry a seat at all — the ceiling on honest lookups. */
+const ASSIGNED_ROWS = Array.from({ length: REGISTER_SIZE }, (_, i) => ASSIGNMENTS[i % 3])
+  .filter(Boolean).length;
 
 let w: ReturnType<typeof mount> | null = null;
 
 beforeEach(() => {
   vi.clearAllMocks();
   parseCalls.n = 0;
+  seatReads.n = 0;
   mocked.getAuditCubeComments.mockResolvedValue({ results: register() });
 });
 afterEach(() => { w?.unmount(); w = null; document.body.innerHTML = ''; });
@@ -162,5 +215,96 @@ describe('AuditComments — the whole register at production scale', () => {
     const others = cards.slice(1)
       .filter((c) => c.find('.cc__filters').text().includes('2026-12'));
     expect(others).toHaveLength(0);
+  });
+});
+
+
+/**
+ * The assignment decoration, at the same scale and under the same rule.
+ *
+ * Showing "who is this with" is per-row work read from the template, which is
+ * exactly the shape of the defect this file exists for: the anchor chips were
+ * correct on every card and still took the page down, because the cost was in
+ * the aggregate and in the RE-render. Correctness tests would pass on a
+ * template that called `labelFor(row.assignee_role)` inline and rebuilt a Map
+ * 113 times per keystroke, so the guard has to measure, not just look.
+ */
+describe('AuditComments — assignment at register scale', () => {
+  /**
+   * TWO tests, two mounts, several invariants each — deliberately.
+   *
+   * Every mount here paints 113 cards over a 1.4 MB payload, so an `it` per
+   * assertion would triple this file's wall-clock for nothing: the invariants
+   * below are read off ONE rendered page, and splitting them would only mean
+   * rendering the same page again to ask it another question.
+   */
+
+  it('names every assigned seat, offers only the live ones, and resolves each row once', async () => {
+    const page = await mountPage();
+
+    // ── what it says ──
+    const chips = page.findAll('[data-test^="cc-assignee-"]');
+    expect(chips).toHaveLength(ASSIGNED_ROWS);
+    const texts = chips.map((c) => c.text());
+    // The PERSON is shown; the handle is what the title carries.
+    expect(texts.filter((t) => t.includes('Anzelle Vermaak')).length).toBeGreaterThan(0);
+    expect(texts.every((t) => !t.includes('bookkeeper'))).toBe(true);
+    // A stood-down seat says so in words, not by colour alone.
+    expect(texts.filter((t) => t.includes('Jordyn Wolhuter'))
+      .every((t) => t.includes('no longer active'))).toBe(true);
+
+    // ── what it offers ──
+    const options = (page.vm as unknown as {
+      assigneeOptions: Array<{ label: string; value: string }>;
+    }).assigneeOptions;
+    expect(options.map((o) => o.value)).not.toContain('jordyn');
+    expect(options.map((o) => o.label).join(' ')).not.toContain('Jordyn');
+
+    // ── what it cost ──
+    // Two reads per ASSIGNED row (the name, and whether the seat is still
+    // held), plus a small constant for the four-seat directory the filter is
+    // built from. The number that matters is the coefficient: bounded by the
+    // rows that carry a seat, and — see the next test — not paid again on the
+    // next render. A template-side `labelFor()` would pay all of it on every
+    // keystroke and every 5-second feed poll.
+    expect(seatReads.n).toBeLessThanOrEqual(ASSIGNED_ROWS * 2 + 16);
+    // Guard the guard: a fixture with no assignments would pass everything
+    // above while measuring nothing.
+    expect(ASSIGNED_ROWS).toBeGreaterThan(60);
+  });
+
+  it('resolves nothing again — not on a keystroke, an expand, a triage, or idle', async () => {
+    const page = await mountPage();
+    const vm = page.vm as unknown as {
+      filters: { q: string };
+      all: Array<{ status: string }>;
+    };
+
+    // A keystroke in the search box.
+    parseCalls.n = 0;
+    seatReads.n = 0;
+    vm.filters.q = 'note';
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(page.findAll('article.cc').length).toBeGreaterThan(0);
+    expect(seatReads.n).toBe(0);
+
+    // Expanding one card's anchor.
+    await page.find('.cc__filter--more').trigger('click');
+    await flushPromises();
+    expect(seatReads.n).toBe(0);
+
+    // Triage: `status` is mutated in place, and neither `filters` nor
+    // `assignee_role` changes, so neither derived map may recompute.
+    vm.all[0].status = 'actioned';
+    vm.all[50].status = 'dismissed';
+    await flushPromises();
+    expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBe(0);
+
+    // And sitting still.
+    await new Promise((r) => setTimeout(r, 400));
+    expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBe(0);
   });
 });

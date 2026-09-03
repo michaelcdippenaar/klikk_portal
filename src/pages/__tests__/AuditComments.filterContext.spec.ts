@@ -30,6 +30,22 @@ vi.mock('../../api/cubeComments', async (importOriginal) => {
     drillCubeComment: vi.fn(),
   };
 });
+// The page decorates every row with the seat directory and fills the
+// "Assigned to" filter from it. Mocked at the network boundary like every
+// other fetch in this spec; the fixture is the live directory as at
+// 2026-09-03, INCLUDING the inactive seat — a directory with only active
+// people in it could not catch the console offering an inactive one.
+vi.mock('../../api/people', () => ({
+  getPeople: vi.fn().mockResolvedValue({
+    count: 4,
+    results: [
+      { id: 1, handle: 'auditor', display_name: 'George du Preez', email: 'george@moore.co.za', active: true },
+      { id: 2, handle: 'bookkeeper', display_name: 'Anzelle Vermaak', email: 'anzelle@moore.co.za', active: true },
+      { id: 3, handle: 'jordyn', display_name: 'Jordyn Wolhuter', email: 'jordyn@klikk.co.za', active: false },
+      { id: 4, handle: 'mc', display_name: 'MC Dippenaar', email: 'mc@tremly.com', active: true },
+    ],
+  }),
+}));
 vi.mock('../../api/comments', () => ({
   getCommentFeed: vi.fn().mockResolvedValue({ now: null, events: [] }),
 }));

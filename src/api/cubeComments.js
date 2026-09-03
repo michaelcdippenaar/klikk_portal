@@ -29,8 +29,24 @@ export async function getComments(params = {}) {
 /**
  * Record a verdict on a non-cube subject.
  *
- * Sends the subject and the decision only; the API upserts on
- * (subject, author), so the existing note and tags are preserved.
+ * NOT REACHABLE FROM THE UI, and must not be wired back to one.
+ *
+ * The premise below is wrong in a way that matters. /xero/data/comments/ does
+ * upsert — but on (subject_type, subject_key, AUTHOR_KEY), and `author_key` is
+ * stamped by the server from the credential, never read from the `author`
+ * field this function sends. Re-posting a comment written by anyone else
+ * therefore does not amend it: it INSERTS A SECOND ROW carrying their text
+ * under the requester's name. The same endpoint 400s outright when
+ * subject_type is 'cube_cell', which is most of the register.
+ *
+ * Kept, unused, rather than deleted: it is the record of what the verdict
+ * write actually did, and the next person to reach for "just POST the
+ * decision" needs to find this note rather than rediscover it in the data. The
+ * verdict vocabulary is an open design decision MC has reserved; when it is
+ * settled the write will want its own by-id endpoint, not this.
+ *
+ * The verdict FILTER is unaffected and still live — `decision` is real stored
+ * data written by the add-in and the MCP, and reading it was never the defect.
  */
 export async function setCommentDecision(comment, decision) {
   const response = await apiClient.post('/xero/data/comments/', {
