@@ -29,8 +29,24 @@ export async function getComments(params = {}) {
 /**
  * Record a verdict on a non-cube subject.
  *
- * Sends the subject and the decision only; the API upserts on
- * (subject, author), so the existing note and tags are preserved.
+ * NOT REACHABLE FROM THE UI, and must not be wired back to one.
+ *
+ * The premise below is wrong in a way that matters. /xero/data/comments/ does
+ * upsert — but on (subject_type, subject_key, AUTHOR_KEY), and `author_key` is
+ * stamped by the server from the credential, never read from the `author`
+ * field this function sends. Re-posting a comment written by anyone else
+ * therefore does not amend it: it INSERTS A SECOND ROW carrying their text
+ * under the requester's name. The same endpoint 400s outright when
+ * subject_type is 'cube_cell', which is most of the register.
+ *
+ * Kept, unused, rather than deleted: it is the record of what the verdict
+ * write actually did, and the next person to reach for "just POST the
+ * decision" needs to find this note rather than rediscover it in the data. The
+ * verdict vocabulary is an open design decision MC has reserved; when it is
+ * settled the write will want its own by-id endpoint, not this.
+ *
+ * The verdict FILTER is unaffected and still live — `decision` is real stored
+ * data written by the add-in and the MCP, and reading it was never the defect.
  */
 export async function setCommentDecision(comment, decision) {
   const response = await apiClient.post('/xero/data/comments/', {
@@ -159,6 +175,37 @@ export async function postCubeCommentReply(id, text, { parentId = null } = {}) {
   const response = await apiClient.post(
     `${AUDIT_BASE}${encodeURIComponent(id)}/replies/`,
     body
+  );
+  return response.data;
+}
+
+/**
+ * Hand ONE comment to a seat. Addressed BY ID.
+ *
+ * POST /xero/data/journals/pivot/comments/<id>/assign/  {assignee}
+ *   200 → the full comment row, plus `reassigned: true|false`
+ *   400 → unknown or INACTIVE handle; the message names the problem
+ *   404 → no such comment
+ *   403 → auditor role (everything under /xero/data/ is shut to them)
+ *
+ * Deliberately NOT the upsert doors, which also accept `assignee`. Those
+ * conflict on (subject_type, subject_key, author_key) and stamp the REQUESTER
+ * as author, so re-posting somebody else's row does not reassign it — it
+ * inserts a second row carrying their text under the caller's name. Every
+ * author in the live register is a name no console account holds, so that door
+ * would fork every row it touched. This one re-derives nothing, recomputes no
+ * anchor, and never writes `author_key`.
+ *
+ * `handle` is a SEAT ('bookkeeper'), never a person. '' unassigns.
+ *
+ * The 400 is the server refusing a handle it will not accept — an inactive
+ * seat is "assigning to a role nobody holds". That message is worth showing
+ * verbatim; callers must not swallow it.
+ */
+export async function setCommentAssignee(id, handle) {
+  const response = await apiClient.post(
+    `/xero/data/journals/pivot/comments/${encodeURIComponent(id)}/assign/`,
+    { assignee: handle || '' },
   );
   return response.data;
 }
