@@ -117,3 +117,48 @@ export function normaliseFilters(filters) {
     return {};
   }
 }
+
+// ── The auditor-reachable view of the same register ─────────────────────────
+//
+// Auditors are gated to read-only /audit/ endpoints; everything under
+// /xero/data/ 403s for them, including the list above. /audit/cube-comments/
+// serves the SAME rows with the SAME filters (plus `reply_count`), so the page
+// has ONE load path rather than a branch that only one role ever exercises —
+// a branch nobody with a standard account can see is a branch that rots.
+
+const AUDIT_BASE = '/audit/cube-comments/';
+
+/**
+ * The register, read through the audit gate.
+ * Same params as getComments (status | subject_type | decision | limit …);
+ * rows carry `reply_count` on top of the shared shape.
+ */
+export async function getAuditCubeComments(params = {}) {
+  const response = await apiClient.get(AUDIT_BASE, { params });
+  return response.data;
+}
+
+/**
+ * One comment's replies, oldest first.
+ * → { comment_id, replies: [{ id, parent_id, author, text, created_at }] }
+ */
+export async function getCubeCommentReplies(id) {
+  const response = await apiClient.get(`${AUDIT_BASE}${encodeURIComponent(id)}/replies/`);
+  return response.data;
+}
+
+/**
+ * Post a reply, optionally under another reply.
+ *
+ * `parent_id` is OMITTED entirely (never sent as null) for a top-level reply —
+ * the contract distinguishes absent from null. `author` is stamped server-side
+ * and is never sent from here; that is what makes the thread an audit trail.
+ */
+export async function postCubeCommentReply(id, text, { parentId = null } = {}) {
+  const body = parentId == null ? { text } : { text, parent_id: parentId };
+  const response = await apiClient.post(
+    `${AUDIT_BASE}${encodeURIComponent(id)}/replies/`,
+    body
+  );
+  return response.data;
+}

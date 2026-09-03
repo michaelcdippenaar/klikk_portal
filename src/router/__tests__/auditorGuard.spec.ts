@@ -47,6 +47,14 @@ describe('router — auditor guard', () => {
     expect(router.currentRoute.value.query.status).toBe('NOT IN XERO');
     await router.push({ name: 'audit-findings', query: { fy: '2026' } });
     expect(router.currentRoute.value.name).toBe('audit-findings');
+    // Cell comments joined the auditor surface with the reply threads: the
+    // register is served by /audit/cube-comments/ and the write an auditor
+    // has there is a reply, not a verdict.
+    await router.push({ name: 'audit-comments' });
+    expect(router.currentRoute.value.name).toBe('audit-comments');
+    await router.push({ path: '/app/pipeline/audit/comments', query: { status: 'all' } });
+    expect(router.currentRoute.value.name).toBe('audit-comments');
+    expect(router.currentRoute.value.query.status).toBe('all');
   });
 
   it('auditors are redirected off every other page to the receipts register', async () => {
