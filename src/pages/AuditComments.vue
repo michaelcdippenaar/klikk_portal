@@ -281,6 +281,10 @@ const drills = reactive({});
 
 const filters = reactive({ status: 'open', subject_type: '', decision: '', author: '', q: '' });
 
+// A comment with neither author_key nor author. Not a stored value — "" means
+// "no author filter" — so the two need separate tokens.
+const NO_AUTHOR = '__no_author__';
+
 const KIND_OPTIONS = [
   { label: 'Everything', value: '' },
   { label: 'Cube cells', value: 'cube_cell' },
@@ -322,7 +326,12 @@ const rows = computed(() => {
   const term = (filters.q || '').toLowerCase();
   return all.value.filter((r) => {
     if (filters.decision === '__none__' && r.decision) return false;
-    if (filters.author && (r.author_key || r.author || '') !== filters.author) return false;
+    if (filters.author) {
+      const who = r.author_key || r.author || '';
+      // NO_AUTHOR is a UI-only token for the rows that carry neither; it must
+      // not be compared against stored text.
+      if (filters.author === NO_AUTHOR ? who !== '' : who !== filters.author) return false;
+    }
     if (!term) return true;
     const hay = [
       r.comment,
@@ -334,14 +343,49 @@ const rows = computed(() => {
   });
 });
 
+/**
+ * Every author in the register, plus the select-all row.
+ *
+ * Identity is `author_key`, falling back to `author` only when the key is
+ * empty. The KEY is who wrote it; `author` is the display name. They agree on
+ * every row today, but stating the rule matters: two people posting under the
+ * same display name stay separate, and one identity that renames itself stays
+ * one row here. A filter that silently relied on the two matching would break
+ * the moment someone posts under a new identity.
+ *
+ * Options are derived from the rows actually loaded, never hard-coded, so a
+ * new agent identity appears here the first time it comments — and a
+ * deliberate attribution like "MC (To Review)" shows up as the first-class
+ * author it is, with no special case.
+ *
+ * "Everyone" is `value: ''`, which the row filter reads as "no author filter".
+ * That option used to be inert: reka-ui throws on an empty-string SelectItem
+ * value and took the whole dropdown down with it, which is why the page looked
+ * like it had no select-all. KSelect now carries "" past reka-ui — see
+ * components/klikk/__tests__/KSelect.emptyOption.spec.ts.
+ */
 const authorOptions = computed(() => {
   const seen = new Map();
+  let blank = 0;
   all.value.forEach((r) => {
     const key = r.author_key || r.author || '';
-    if (key && !seen.has(key)) seen.set(key, r.author || key);
+    if (!key) { blank += 1; return; }
+    const e = seen.get(key);
+    if (e) e.n += 1;
+    else seen.set(key, { label: r.author || key, n: 1 });
   });
-  return [{ label: 'Everyone', value: '' },
-    ...[...seen.entries()].map(([value, label]) => ({ label, value }))];
+  // Counts, because the point of this filter is deciding whose notes to read.
+  const named = [...seen.entries()]
+    .sort((a, b) => b[1].n - a[1].n || a[1].label.localeCompare(b[1].label))
+    .map(([value, { label, n }]) => ({ label: `${label} (${n})`, value }));
+  return [
+    { label: `Everyone (${all.value.length})`, value: '' },
+    ...named,
+    // Only when such rows exist. A comment with neither key nor name would
+    // otherwise be visible under "Everyone" and reachable under nothing —
+    // present in the register but impossible to filter to.
+    ...(blank ? [{ label: `No author recorded (${blank})`, value: NO_AUTHOR }] : []),
+  ];
 });
 
 const emptyBody = computed(() =>

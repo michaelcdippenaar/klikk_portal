@@ -25,7 +25,7 @@
     <label v-if="label" :id="labelId" class="kselect-label">{{ label }}</label>
 
     <SelectRoot
-      :model-value="modelValue != null ? String(modelValue) : undefined"
+      :model-value="rootValue"
       :disabled="disabled"
       @update:model-value="onSelect"
     >
@@ -41,7 +41,11 @@
         :aria-invalid="error ? 'true' : undefined"
       >
         <SelectValue class="kselect-value">
-          <span v-if="!modelValue && !isEmptyValue" class="kselect-placeholder">
+          <!-- An option that MATCHES wins, so a deliberate ""-valued option
+               ("Everyone", "Any", "All mirrors") reads as its own label rather
+               than as blank. Every other case is left exactly as it was. -->
+          <span v-if="selectedOption">{{ selectedOption.label }}</span>
+          <span v-else-if="!modelValue && !isEmptyValue" class="kselect-placeholder">
             {{ placeholder || 'Select…' }}
           </span>
           <span v-else>{{ selectedLabel }}</span>
@@ -88,8 +92,8 @@
           <SelectViewport class="kselect-viewport">
             <SelectItem
               v-for="opt in normalizedOptions"
-              :key="opt.value"
-              :value="String(opt.value)"
+              :key="String(opt.value)"
+              :value="itemValue(opt.value)"
               :disabled="opt.disabled"
               class="kselect-item"
             >
@@ -246,6 +250,55 @@ const normalizedOptions = computed(() =>
   }),
 );
 
+/**
+ * An option whose value is the empty string, carried past reka-ui.
+ *
+ * `<SelectItem value="">` THROWS — reka-ui reserves "" for "cleared, show the
+ * placeholder" — and the throw happens in setup while the dropdown list is
+ * being built, so it takes the WHOLE dropdown with it, not just that one row.
+ * Nothing is logged where a user would see it; the control simply stops
+ * offering choices.
+ *
+ * That is not a hypothetical. Every "show me all of them" option on the audit
+ * comments page is written `{ value: '' }` — "Everyone" on the author filter,
+ * "Everything" on Kind, "Any" on Verdict — and so is `utils/receipts.js` and
+ * FindingCubeView's "All mirrors". MC reported it as "the author filter has no
+ * select-all": the option was there in the source and could never render.
+ *
+ * So "" is swapped for a sentinel on the way INTO reka-ui and swapped back on
+ * the way out. Callers keep writing the natural `{ value: '' }` and never have
+ * to know; fixing it here rather than in each page is what stops the next
+ * filter bar from being born broken. The sentinel is deliberately not a string
+ * any caller would use as a real value.
+ */
+const EMPTY_VALUE = '__kselect_empty__';
+
+function itemValue(v) {
+  return v === '' ? EMPTY_VALUE : String(v);
+}
+
+/** The option whose value IS the current selection, "" included. */
+const selectedOption = computed(() => {
+  if (props.modelValue == null) return null;
+  return normalizedOptions.value.find(
+    (o) => String(o.value) === String(props.modelValue),
+  ) || null;
+});
+
+/**
+ * What reka-ui is told is selected.
+ *
+ * "" means one of two different things and they must not be confused: with a
+ * matching option it is a real choice ("Everyone") and maps to the sentinel;
+ * with no matching option it is "nothing selected" and must stay "" so the
+ * placeholder still shows.
+ */
+const rootValue = computed(() => {
+  if (props.modelValue == null) return undefined;
+  if (props.modelValue === '') return selectedOption.value ? EMPTY_VALUE : undefined;
+  return String(props.modelValue);
+});
+
 /** Whether the current model value is considered "empty". */
 const isEmptyValue = computed(() => props.modelValue == null || props.modelValue === '');
 
@@ -257,9 +310,12 @@ const selectedLabel = computed(() => {
 });
 
 function onSelect(val) {
+  // Back through the sentinel first, so a ""-valued option emits "" and not
+  // the internal marker.
+  const raw = val === EMPTY_VALUE ? '' : val;
   // Try to find the original value type in options
-  const found = normalizedOptions.value.find((o) => String(o.value) === val);
-  emit('update:modelValue', found ? found.value : val);
+  const found = normalizedOptions.value.find((o) => String(o.value) === String(raw));
+  emit('update:modelValue', found ? found.value : raw);
 }
 
 function clearSelection() {
