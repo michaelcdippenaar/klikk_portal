@@ -172,6 +172,29 @@
             </KBadge>
             <span class="cc__author">{{ row.author || 'unattributed' }}</span>
             <span class="cc__when" :title="row.updated_at || ''">{{ formatWhen(row.updated_at) }}</span>
+            <span v-if="!isAuditor" class="cc__triage">
+              <button
+                v-if="row.status !== 'actioned'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busyId === row.id"
+                :data-test="`cc-actioned-${row.id}`"
+                @click="setStatus(row, 'actioned')"
+              >Actioned</button>
+              <button
+                v-if="row.status !== 'dismissed'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busyId === row.id"
+                :data-test="`cc-dismiss-${row.id}`"
+                @click="setStatus(row, 'dismissed')"
+              >Dismiss</button>
+              <button
+                v-if="row.status !== 'open'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busyId === row.id"
+                :data-test="`cc-reopen-${row.id}`"
+                @click="setStatus(row, 'open')"
+              >Reopen</button>
+            </span>
             <KBadge v-if="row.subject_type !== 'cube_cell'" tone="muted">
               {{ kindLabel(row.subject_type) }}
             </KBadge>
@@ -492,26 +515,6 @@
                     : (expanded[row.id] ? 'Hide detail' : 'All transactions') }}
                 </button>
               </span>
-              <template v-if="!isAuditor">
-                <button
-                  v-if="row.status !== 'actioned'"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="busyId === row.id"
-                  @click="setStatus(row, 'actioned')"
-                >Actioned</button>
-                <button
-                  v-if="row.status !== 'dismissed'"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="busyId === row.id"
-                  @click="setStatus(row, 'dismissed')"
-                >Dismiss</button>
-                <button
-                  v-if="row.status !== 'open'"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="busyId === row.id"
-                  @click="setStatus(row, 'open')"
-                >Reopen</button>
-              </template>
             </div>
           </footer>
 
@@ -1947,13 +1950,35 @@ onMounted(() => { directory.load(); load(); });
    is what "widget in widget" describes and why 121 of them read as clutter.
    One SectionCard edge; hairline-separated rows inside it. That removes a
    whole nesting level with nothing but CSS. */
-.cc-list { display: flex; flex-direction: column; }
-.cc {
-  padding: var(--kdl-space-3) 0;
-  border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
+/* Each comment IS the card, and the list is the ground it sits on.
+ *
+ * The hairline-separated version was too quiet to read: MC, scrolling 121 of
+ * these, said he was "struggling to see where the widget separate" and asked
+ * for a shadow on a grey background. He is right, and it also resolves the
+ * widget-in-widget complaint better than hairlines did -- the nesting he
+ * objected to was a bordered row inside a bordered, shadowed panel holding a
+ * bordered table, three edges deep. Moving the card treatment OUT of the panel
+ * and ONTO the row leaves exactly one card edge per comment, with the panel
+ * reduced to ground. The drill is a sunken drawer inside that one card, not a
+ * fourth box.
+ *
+ * Bled to the panel's edges with negative margins so the grey runs full width
+ * rather than leaving a white gutter that would read as another frame. */
+.cc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kdl-space-3);
+  background: var(--kdl-page-bg);
+  padding: var(--kdl-space-3);
+  margin: 0 calc(-1 * var(--kdl-space-4));
+  margin-bottom: calc(-1 * var(--kdl-space-4));
 }
-.cc:last-child { border-bottom: none; padding-bottom: 0; }
-.cc:first-child { padding-top: 0; }
+.cc {
+  background: var(--kdl-card-bg);
+  border-radius: var(--kdl-radius-md);
+  box-shadow: var(--shadow-soft);
+  padding: var(--kdl-space-3) var(--kdl-space-4);
+}
 
 /* 1. Identity — the quietest line on the card. */
 .cc__meta {
@@ -2204,15 +2229,37 @@ onMounted(() => { directory.load(); load(); });
    "no longer active" in words, so it never rests on colour alone. */
 .cc__assignee--stale { color: var(--kdl-status-warning); }
 .cc__actions { display: flex; align-items: center; gap: var(--kdl-space-1); flex-wrap: wrap; }
+/* Triage sits top-right of the card, on MC's instruction. margin-left:auto
+ * inside the existing flex header, so it right-aligns without reordering the
+ * identity line or needing a second layout context. It comes BEFORE the
+ * kind badge in source order so the badge stays with the metadata it belongs
+ * to when the row wraps on a narrow window. */
+.cc__triage {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--kdl-space-1);
+}
 .cc__drill { display: inline-flex; }
 
 /* 7-8. The drawers — a LAYER under the row, not another box on top of it.
         Sunken surface, full row bleed, no border and no radius: the moment
         this gets an edge it becomes the third nested frame again. */
+/* A band ACROSS the card, not a box floating in it. Now that the card has its
+ * own edges, a drawer inset on all sides would read as a fourth frame -- and
+ * sunken is close enough in tone to the grey ground that a floating one looks
+ * like a hole punched through to the page. Bled to the card's padding so it
+ * spans edge to edge and reads as a layer underneath. */
 .cc__drawer {
-  margin-top: var(--kdl-space-3);
-  padding: var(--kdl-space-3);
+  margin: var(--kdl-space-3) calc(-1 * var(--kdl-space-4)) 0;
+  padding: var(--kdl-space-3) var(--kdl-space-4);
   background: var(--kdl-surface-sunken);
+  border-top: var(--kdl-border-width) solid var(--kdl-border-subtle);
+}
+.cc__drawer:last-child {
+  margin-bottom: calc(-1 * var(--kdl-space-3));
+  border-bottom-left-radius: var(--kdl-radius-md);
+  border-bottom-right-radius: var(--kdl-radius-md);
 }
 .cc__drawer-lead {
   margin: 0 0 var(--kdl-space-2);
