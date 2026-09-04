@@ -1020,7 +1020,7 @@ describe('AuditComments — the edit history drawer', () => {
    * fixed, this test becomes:
    *   expect(oldText).toEqual(['Original wording.'])
    */
-  it('PINS TODAY\'S BEHAVIOUR: the trail\'s "what it said before" renders EMPTY', async () => {
+  it('the trail shows what the text said before each edit', async () => {
     mocked.getCubeCommentTextHistory.mockResolvedValue(TRAIL_TWO);
     const w = await mounted();
     await at(w, 'cc-history-open-43').trigger('click');
@@ -1034,12 +1034,15 @@ describe('AuditComments — the edit history drawer', () => {
       expect(squish(li.find('.cc__history-meta').text())).toMatch(/^mc · \S/);
     }
     // …and the words are not.
+    // ...and so are the words. The endpoint returns from_text/to_text; the
+    // template read previous_text/previous/text, none of which exist, so every
+    // entry rendered an empty line under a correct "who . when" caption. Same
+    // class as the badge that shipped empty -- element present, fetch made,
+    // count right, content blank, and invisible to any spec asserting .exists().
     const oldText = items.map((li) => squish(li.find('.cc__history-text').text()));
-    expect(oldText).toEqual(['', '']);
-    // Neither the before nor the after appears anywhere in the drawer.
+    expect(oldText).toEqual(['Original wording.', 'Reworded by MC earlier.']);
     const panel = at(w, 'cc-history-panel-43').text();
-    expect(panel).not.toContain('Original wording.');
-    expect(panel).not.toContain('Reworded again.');
+    expect(panel).toContain('Original wording.');
     w.unmount();
   });
 
