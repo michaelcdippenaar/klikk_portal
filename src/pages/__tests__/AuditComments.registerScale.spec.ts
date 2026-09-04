@@ -106,6 +106,8 @@ import AuditComments from '../AuditComments.vue';
 const mocked = api as unknown as {
   getAuditCubeComments: ReturnType<typeof vi.fn>;
   setCommentAssignee: ReturnType<typeof vi.fn>;
+  drillCubeComment: ReturnType<typeof vi.fn>;
+  getCubeCommentReplies: ReturnType<typeof vi.fn>;
 };
 
 // ~10 KB of anchor per comment, matching production's 1.4 MB across 113 rows.
@@ -501,5 +503,393 @@ describe('AuditComments — assignment at register scale', () => {
     seatReads.n = 0;
     await new Promise((r) => setTimeout(r, 400));
     expect(seatReads.n).toBe(0);
+  });
+});
+
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE TRANSACTIONS ON THE RESTING CARD, AT REGISTER SCALE.
+ *
+ * MC replaced the coordinate chip run with the actual ledger lines: "Just put
+ * the actual transaction widget there. It is obviously imprtant to see which
+ * transaction the comment refer to."
+ *
+ * Each of those lines is a DRILL — a query against
+ * /xero/data/journals/pivot/drill/ — and this register is 113 rows. Fetching
+ * one per row on load is the exact per-row cost that took this page down, in
+ * a more expensive currency than the JSON parses above: those were CPU, these
+ * are round trips. So the invariants here are about WHEN a drill happens:
+ *
+ *   - mounting the whole register fetches NOTHING on its own
+ *   - only the cards a viewport actually reports fetch, and never more than a
+ *     handful are in flight at once
+ *   - a keystroke, a filter change and opening an editor fetch nothing
+ *   - a card that has already loaded never asks again
+ *
+ * And, separately, about what the reader SEES — asserted as rendered TEXT,
+ * because a badge on this page shipped EMPTY while seventy-five mount specs
+ * passed on `.exists()`.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+type IOEntry = { isIntersecting: boolean; target: Element };
+
+/**
+ * The page's viewport gate, under test control.
+ *
+ * happy-dom ships an IntersectionObserver whose `observe` is a documented
+ * no-op, so the real one would let every assertion below pass by never firing.
+ * This one records what was observed and lets a test say which cards the
+ * reader has scrolled to.
+ */
+class FakeIO {
+  static instances: FakeIO[] = [];
+  targets = new Set<Element>();
+  constructor(public cb: (entries: IOEntry[]) => void, public options: unknown) {
+    FakeIO.instances.push(this);
+  }
+  observe(el: Element) { this.targets.add(el); }
+  unobserve(el: Element) { this.targets.delete(el); }
+  disconnect() { this.targets.clear(); }
+  takeRecords(): IOEntry[] { return []; }
+}
+
+/** In-flight accounting for the drill mock, so concurrency can be measured. */
+const drill = { inFlight: 0, peak: 0, pending: [] as Array<() => void> };
+
+/** What one cell resolves to. Row 1 reconciles, row 2 is empty, the rest do not. */
+function drillFor(row: { id: number }) {
+  const n = row.id === 1 ? 5 : row.id === 2 ? 0 : 2;
+  const rows = Array.from({ length: n }, (_, k) => ({
+    id: `${row.id}-${k}`,
+    date: `2025-12-0${k + 1}`,
+    journal_number: 9000 + k,
+    journal_type: 'ACCPAY',
+    account_code: 'HH--TR02',
+    account_name: 'Transport Expense',
+    supplier_name: 'Titan Trailers (Atlantic Trailers)',
+    description: `Trailer respray leg ${k + 1}`,
+    // Xero's two tracking axes. Line 0 carries both, the rest carry only the
+    // first, because a line may use either, both or neither and the card must
+    // read correctly for each.
+    tracking1: 'Equipment Rental - General',
+    tracking2: k === 0 ? '4 Otterkuil' : '',
+    tracking1_category: 'Division',
+    amount: '4320.00',
+  }));
+  return { rows, count: n, line_total: (4320 * n).toFixed(2), truncated: false };
+}
+
+function armDrill() {
+  drill.inFlight = 0;
+  drill.peak = 0;
+  drill.pending = [];
+  mocked.drillCubeComment.mockImplementation((row: { id: number }) => {
+    drill.inFlight += 1;
+    drill.peak = Math.max(drill.peak, drill.inFlight);
+    return new Promise((resolve) => {
+      drill.pending.push(() => { drill.inFlight -= 1; resolve(drillFor(row)); });
+    });
+  });
+}
+
+/** Let every outstanding drill answer — including the ones the queue starts next. */
+async function settleDrills() {
+  for (let guard = 0; drill.pending.length && guard < 50; guard += 1) {
+    drill.pending.splice(0).forEach((done) => done());
+    await flushPromises();
+  }
+  await flushPromises();
+}
+
+/** "The reader scrolled these cards into view." */
+async function reveal(page: ReturnType<typeof mount>, ids: number[]) {
+  const io = FakeIO.instances[0];
+  const entries: IOEntry[] = [];
+  ids.forEach((id) => {
+    const el = page.find(`article.cc[data-comment-id="${id}"]`).element;
+    entries.push({ isIntersecting: true, target: el });
+  });
+  io.cb(entries);
+  await flushPromises();
+}
+
+function cardText(page: ReturnType<typeof mount>, id: number) {
+  return page.find(`article.cc[data-comment-id="${id}"]`).text().replace(/\s+/g, ' ');
+}
+
+describe('AuditComments — the transactions on the resting card', () => {
+  beforeEach(() => {
+    FakeIO.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeIO);
+    armDrill();
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('mounts 113 cards and fetches NOT ONE drill until something is on screen', async () => {
+    const page = await mountPage();
+    expect(page.findAll('article.cc')).toHaveLength(REGISTER_SIZE);
+    // The whole point. 113 drills on load is the regression this guards.
+    expect(mocked.drillCubeComment).not.toHaveBeenCalled();
+    // ONE observer for the register, not one per row — and every card is
+    // watched, so scrolling anywhere still works.
+    expect(FakeIO.instances).toHaveLength(1);
+    expect(FakeIO.instances[0].targets.size).toBe(REGISTER_SIZE);
+  });
+
+  it('fetches ONLY the cards the viewport reports, a few at a time', async () => {
+    const page = await mountPage();
+    const onScreen = [1, 2, 3, 4, 5, 6, 7, 8];
+    await reveal(page, onScreen);
+
+    // Bounded by the viewport, and nowhere near the register.
+    expect(mocked.drillCubeComment.mock.calls.length).toBeLessThanOrEqual(onScreen.length);
+    expect(mocked.drillCubeComment.mock.calls.length).toBeLessThan(REGISTER_SIZE / 4);
+    // Never a stampede: a browser reporting a whole screenful at once turns
+    // into a queue, not eight concurrent queries.
+    expect(drill.peak).toBeLessThanOrEqual(4);
+
+    await settleDrills();
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(onScreen.length);
+    const asked = mocked.drillCubeComment.mock.calls.map((c) => (c[0] as { id: number }).id);
+    expect([...asked].sort((a, b) => a - b)).toEqual(onScreen);
+    // And the 105 nobody looked at were never asked for.
+    expect(asked.some((id) => id > 8)).toBe(false);
+  });
+
+  it('shows the lines themselves — date, account, supplier, description, amount', async () => {
+    const page = await mountPage();
+    await reveal(page, [1]);
+    await settleDrills();
+
+    const text = cardText(page, 1);
+    // The reconciliation lead, in words.
+    expect(text).toContain('5 lines, 21,600.00 — matches the commented value.');
+    // The transaction itself. Every field MC named, as rendered text.
+    expect(text).toContain('2025-12-01');
+    expect(text).toContain('HH--TR02 Transport Expense');
+    expect(text).toContain('Titan Trailers (Atlantic Trailers)');
+    expect(text).toContain('Trailer respray leg 1');
+    expect(text).toContain('4,320.00');
+
+    // The coordinate run MC rejected is gone from every card, and with it the
+    // bare `measure` label that rendered the word "amount" with no value.
+    expect(page.findAll('.cc__coord')).toHaveLength(0);
+    expect(page.findAll('.cc__measure')).toHaveLength(0);
+    expect(text).not.toContain('account_class');
+  });
+
+  it('caps a long cell at three lines and says how many more, in words', async () => {
+    const page = await mountPage();
+    await reveal(page, [1]);
+    await settleDrills();
+
+    const shown = page.findAll(`article.cc[data-comment-id="1"] .cc__txn-line`);
+    expect(shown).toHaveLength(3);
+    // Field by field, as rendered — the whole reason this replaced the chips.
+    expect(shown.map((l) => [
+      l.find('.cc__txn-date').text(),
+      l.find('.cc__txn-account').text(),
+      l.find('.cc__txn-who').text(),
+      l.find('.cc__txn-desc').text(),
+      l.find('.cc__txn-amount').text(),
+    ])).toEqual([1, 2, 3].map((k) => [
+      `2025-12-0${k}`,
+      'HH--TR02 Transport Expense',
+      'Titan Trailers (Atlantic Trailers)',
+      `Trailer respray leg ${k}`,
+      '4,320.00',
+    ]));
+    const more = page.find('[data-test="cc-txn-more-1"]');
+    expect(more.text()).toBe('2 more lines — show all 5');
+
+    // And the full set is one click away, in the table.
+    await more.trigger('click');
+    await flushPromises();
+    expect(page.findAll(`[data-test="cc-lines-1"] tbody tr`)).toHaveLength(5);
+  });
+
+  it('a card with two lines does not offer a fold it does not need', async () => {
+    const page = await mountPage();
+    await reveal(page, [3]);
+    await settleDrills();
+    expect(page.findAll(`article.cc[data-comment-id="3"] .cc__txn-line`)).toHaveLength(2);
+    expect(page.find('[data-test="cc-txn-more-3"]').exists()).toBe(false);
+    // A drill that no longer adds up to the commented figure SAYS so.
+    expect(cardText(page, 3)).toContain(
+      '2 lines, 8,640.00 — does not match the commented 21,600.00 (out by 12,960.00).');
+  });
+
+  it('says it is loading, and says when a cell resolves to nothing', async () => {
+    const page = await mountPage();
+    await reveal(page, [2]);
+    // Mid-flight: the card SAYS the lines are coming rather than sitting blank.
+    expect(page.find('[data-test="cc-txn-loading-2"]').text())
+      .toBe('Loading the transactions behind this figure…');
+
+    await settleDrills();
+    // Empty is a finding, not blank space.
+    expect(page.find('[data-test="cc-txn-loading-2"]').exists()).toBe(false);
+    expect(cardText(page, 2)).toContain('No transactions resolve to this cell.');
+    expect(page.findAll(`article.cc[data-comment-id="2"] .cc__txn-line`)).toHaveLength(0);
+  });
+
+  it('reports a refused drill on the card that asked for it', async () => {
+    const page = await mountPage();
+    mocked.drillCubeComment.mockRejectedValueOnce({
+      response: { data: { error: 'the pivot refused those coordinates' } },
+    });
+    await reveal(page, [4]);
+    await flushPromises();
+    expect(page.find('[data-test="cc-txn-error-4"]').text())
+      .toBe('the pivot refused those coordinates');
+  });
+
+  it('never asks twice — a card scrolled past keeps what it loaded', async () => {
+    const page = await mountPage();
+    await reveal(page, [1, 2]);
+    await settleDrills();
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(2);
+
+    // Reported as visible again (scroll-back, or a re-render re-observing).
+    await reveal(page, [1, 2]);
+    await settleDrills();
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(2);
+    // And it still says what it said.
+    expect(cardText(page, 1)).toContain('5 lines, 21,600.00 — matches the commented value.');
+  });
+
+  it('a keystroke, a filter change and an open editor cost ZERO fetches', async () => {
+    const page = await mountPage();
+    await reveal(page, [1, 2, 3]);
+    await settleDrills();
+    const baseline = mocked.drillCubeComment.mock.calls.length;
+    expect(baseline).toBe(3);
+
+    const vm = page.vm as unknown as { filters: { q: string; status: string } };
+
+    // A keystroke re-renders all 113 cards.
+    parseCalls.n = 0;
+    vm.filters.q = 'note';
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(baseline);
+    expect(parseCalls.n).toBe(0);
+
+    // A filter change reloads the register outright.
+    vm.filters.status = 'all';
+    await flushPromises();
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(baseline);
+
+    // Opening an editor.
+    const editors = page.findAll('[data-test^="cc-edit-"]')
+      .filter((b) => /cc-edit-\d+$/.test(b.attributes('data-test') || ''));
+    await editors[9].trigger('click');
+    await flushPromises();
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(baseline);
+
+    // And sitting still, with the 5-second feed poll running.
+    await new Promise((r) => setTimeout(r, 400));
+    expect(mocked.drillCubeComment).toHaveBeenCalledTimes(baseline);
+  });
+
+  it('lines arriving do not open every discussion — 113 threads is the same bug', async () => {
+    const page = await mountPage();
+    await reveal(page, [1, 2, 3, 4, 5]);
+    await settleDrills();
+    // The disclosure is its own state now. If it were still "has a drill", the
+    // transactions landing would expand every card and fetch every thread.
+    expect(page.findAll('[data-test="cc-detail-thread"]')).toHaveLength(0);
+    expect(mocked.getCubeCommentReplies).not.toHaveBeenCalled();
+    expect(page.findAll('[data-test^="cc-lines-"]')).toHaveLength(0);
+
+    await page.find('[data-test="cc-drill-1"]').trigger('click');
+    await flushPromises();
+    expect(page.findAll('[data-test="cc-detail-thread"]')).toHaveLength(1);
+    expect(mocked.getCubeCommentReplies).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A cell whose value is NULL.
+ *
+ * MC's paste of the old card ended with a bare "amount" and nothing after it:
+ * the coordinate run rendered the measure name as a label whether or not the
+ * cell carried a figure. Whatever replaced it must not do that.
+ */
+describe('AuditComments — a cell with no value', () => {
+  beforeEach(() => {
+    FakeIO.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeIO);
+    armDrill();
+    mocked.getAuditCubeComments.mockResolvedValue({
+      results: [{
+        ...register()[2], id: 3, cell_value: null, subject_label: 'Transport · Dec 2025',
+      }],
+    });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('renders no dangling label, and a lead line that states the lines only', async () => {
+    const page = await mountPage();
+    await reveal(page, [3]);
+    await settleDrills();
+
+    const text = cardText(page, 3);
+    // The headline still names the cell; there is simply no figure beside it.
+    expect(text).toContain('Transport · Dec 2025');
+    expect(page.find('[data-test="cc-amount-3"]').exists()).toBe(false);
+    // No orphaned measure name anywhere on the resting card.
+    expect(text).not.toMatch(/\bamount\b/);
+    // The lead states what WAS found and claims no reconciliation it cannot
+    // make: there is nothing to reconcile against.
+    expect(text).toContain('2 lines, 8,640.00');
+    expect(text).not.toContain('does not match');
+    expect(text).not.toContain('matches the commented value');
+  });
+});
+
+
+// ── Tracking ────────────────────────────────────────────────────────────────
+//
+// MC asked for the tracking category on the transaction view: it is how he
+// recognises which job a cost belongs to, and it was on every line already and
+// simply not rendered. Asserted as TEXT — this page has now shipped a badge
+// that rendered empty and an edit trail that rendered blank lines under correct
+// captions, both invisible to a spec that only asserts the element exists.
+describe('AuditComments — tracking on the transaction lines', () => {
+  beforeEach(() => {
+    FakeIO.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeIO);
+    armDrill();
+  });
+
+  it('shows the tracking option on a resting card, without expanding it', async () => {
+    const w = await mountPage();
+    await reveal(w, [1]);
+    await settleDrills();
+    expect(cardText(w, 1)).toContain('Equipment Rental - General');
+    w.unmount();
+  });
+
+  it('joins both axes when a line carries two, and shows one when it carries one', async () => {
+    const w = await mountPage();
+    await reveal(w, [1]);
+    await settleDrills();
+    const lines = w.find('article.cc[data-comment-id="1"]')
+      .findAll('.cc__txn-line').map((li) => li.text().replace(/\s+/g, ' ').trim());
+    expect(lines[0]).toContain('Equipment Rental - General \u00b7 4 Otterkuil');
+    expect(lines[1]).toContain('Equipment Rental - General');
+    expect(lines[1]).not.toContain('4 Otterkuil');
+    w.unmount();
+  });
+
+  it('renders no tracking element at all on a cell whose drill is empty', async () => {
+    const w = await mountPage();
+    await reveal(w, [2]);
+    await settleDrills();
+    expect(w.find('article.cc[data-comment-id="2"]')
+      .findAll('.cc__txn-track')).toHaveLength(0);
+    w.unmount();
   });
 });
