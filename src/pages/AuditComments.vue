@@ -247,7 +247,7 @@
                 Text edited — written by {{ row.author || 'unattributed' }}
               </span>
               <button
-                v-if="row.edited && editing.id !== row.id"
+                v-if="!isAuditor && row.edited && editing.id !== row.id"
                 type="button"
                 class="cc__linkbtn"
                 :data-test="`cc-history-open-${row.id}`"
