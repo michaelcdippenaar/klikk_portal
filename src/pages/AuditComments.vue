@@ -138,7 +138,18 @@
       </div>
 
       <div class="cc-list">
-        <article v-for="row in rows" :key="row.id" class="cc">
+        <!-- The card registers itself with the ONE IntersectionObserver this
+             page owns. That is what pays for the transactions being on the
+             resting card at all: the register is ~121 rows and a drill is a
+             query, so only the cards a reader has actually scrolled to ever
+             ask for one. See `registerCard` / `enqueueDrill`. -->
+        <article
+          v-for="row in rows"
+          :key="row.id"
+          :ref="(el) => registerCard(row, el)"
+          :data-comment-id="row.id"
+          class="cc"
+        >
           <!-- 1. IDENTITY — deliberately recessive.
                Who wrote it and when is context, not the point of the card, so
                it sits at overline/caption weight with the status badge as the
@@ -285,14 +296,60 @@
             </div>
           </div>
 
-          <!-- 4. ANCHOR DETAIL — the rest of the coordinates, read as one
-               muted run. Present because a note without its figure is just a
-               sentence; recessive because the reader already has the headline. -->
-          <div v-if="row.subject_type === 'cube_cell'" class="cc__coords">
-            <span v-for="(v, k) in coordsOf(row)" :key="k" class="cc__coord">
-              <span class="cc__dim">{{ k }}</span>{{ v }}
-            </span>
-            <span class="cc__measure">{{ row.measure }}</span>
+          <!-- 4. THE TRANSACTIONS — what the note is actually about.
+               This slot used to carry the coordinate run: account_class,
+               account_type, tracking1, fin_year, month, and a bare `measure`
+               that rendered the word "amount" with nothing after it whenever
+               the cell carried no value. MC: "actualy no need for this …
+               Just put the actual transaction widget there. It is obviously
+               imprtant to see which transaction the comment refer to."
+               The coordinates described the cell in the cube's own machine
+               vocabulary; the lines below are the ledger rows the comment is
+               arguing about, which is the thing a reader wants.
+
+               NOTHING here is computed while painting. The lead line, the
+               preview rows and the fold count are all built once, when the
+               drill resolves — `txOf` is a plain map read, the same shape as
+               `anchorOf` and `assignmentOf`. -->
+          <div
+            v-if="showsTransactions(row) && txOf(row).present"
+            class="cc__drawer cc__txn"
+            :data-test="`cc-txn-${row.id}`"
+          >
+            <p v-if="txOf(row).pending" class="cc__drawer-lead" :data-test="`cc-txn-loading-${row.id}`">
+              Loading the transactions behind this figure…
+            </p>
+            <p
+              v-else-if="txOf(row).error"
+              class="cc__drawer-lead cc__recon--bad"
+              role="alert"
+              :data-test="`cc-txn-error-${row.id}`"
+            >{{ txOf(row).error }}</p>
+            <template v-else>
+              <p class="cc__drawer-lead cc__recon" :class="txOf(row).leadClass">{{ txOf(row).lead }}</p>
+              <ul v-if="txOf(row).preview.length" class="cc__txn-lines">
+                <li v-for="line in txOf(row).preview" :key="line.key" class="cc__txn-line">
+                  <span class="cc__txn-date">{{ line.date }}</span>
+                  <span class="cc__txn-what">
+                    <span class="cc__txn-account">{{ line.account }}</span>
+                    <span v-if="line.who" class="cc__txn-who">{{ line.who }}</span>
+                    <span v-if="line.description" class="cc__txn-desc">{{ line.description }}</span>
+                  </span>
+                  <span class="cc__txn-amount">{{ line.amount }}</span>
+                </li>
+              </ul>
+              <!-- A cell can resolve to dozens of lines. Three at rest keeps
+                   every card the same height; the rest are one click away and
+                   the card SAYS how many, rather than implying three is all
+                   there is. -->
+              <button
+                v-if="txOf(row).hidden && !expanded[row.id]"
+                type="button"
+                class="cc__linkbtn"
+                :data-test="`cc-txn-more-${row.id}`"
+                @click="toggleDrill(row)"
+              >{{ txOf(row).hidden }} more line{{ txOf(row).hidden === 1 ? '' : 's' }} — show all {{ txOf(row).total }}</button>
+            </template>
           </div>
 
           <!-- The verdict SELECTOR is gone. It POSTed to /xero/data/comments/,
@@ -422,15 +479,16 @@
               />
               <!-- The drill resolves journal lines from /xero/data/journals/pivot/
                    — 403 for an auditor, so the affordance goes with it. -->
-              <span v-if="!isAuditor && row.subject_type === 'cube_cell'" class="cc__drill">
+              <span v-if="showsTransactions(row)" class="cc__drill">
                 <button
                   class="btn btn-ghost btn-sm"
-                  :disabled="drillBusy === row.id"
+                  :disabled="txOf(row).pending"
+                  :data-test="`cc-drill-${row.id}`"
                   @click="toggleDrill(row)"
                 >
-                  {{ drillBusy === row.id
+                  {{ txOf(row).pending
                     ? 'Resolving…'
-                    : (drills[row.id] ? 'Hide transactions' : 'Show transactions') }}
+                    : (expanded[row.id] ? 'Hide detail' : 'All transactions') }}
                 </button>
               </span>
               <template v-if="!isAuditor">
@@ -462,8 +520,11 @@
                read as cluttered. It is now a full-width sunken panel that
                reads as something underneath the row rather than another thing
                stacked on it, led by the reconciliation line. -->
-          <div v-if="!isAuditor && row.subject_type === 'cube_cell' && drills[row.id]" class="cc__drawer">
-            <p class="cc__drawer-lead cc__recon" :class="reconClass(row)">{{ reconText(row) }}</p>
+          <div
+            v-if="showsTransactions(row) && expanded[row.id] && txOf(row).rows.length"
+            class="cc__drawer"
+            :data-test="`cc-lines-${row.id}`"
+          >
             <div class="cc__lines">
               <table class="cc__table">
                 <thead>
@@ -473,7 +534,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="line in drills[row.id].rows" :key="line.id">
+                  <tr v-for="line in txOf(row).rows" :key="line.id">
                     <td>{{ line.date }}</td>
                     <td>{{ line.journal_number }}</td>
                     <td>{{ line.journal_type }}</td>
@@ -485,8 +546,8 @@
                 </tbody>
               </table>
             </div>
-            <p v-if="drills[row.id].truncated" class="cc__note">
-              Line cap reached — this shows the first {{ drills[row.id].rows.length }}.
+            <p v-if="txOf(row).truncated" class="cc__note">
+              Line cap reached — this shows the first {{ txOf(row).rows.length }}.
             </p>
           </div>
 
@@ -515,7 +576,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import {
   getAuditCubeComments,
   getCubeCommentReplies,
@@ -526,7 +587,6 @@ import {
   setCubeCommentText,
   getCubeCommentTextHistory,
   drillCubeComment,
-  commentCoordinates,
   normaliseFilters,
 } from '../api/cubeComments';
 import { useAuthStore } from '../stores/auth';
@@ -571,7 +631,6 @@ const loading = ref(false);
 const error = ref(null);
 const actionError = ref(null);
 const busyId = ref(null);
-const drillBusy = ref(null);
 const all = ref([]);
 const drills = reactive({});
 
@@ -764,8 +823,6 @@ const emptyBody = computed(() =>
   filters.status === 'open'
     ? 'No open comments. Comments are written on a cell in the Excel add-in, or by an agent through the MCP.'
     : 'Nothing matches these filters.');
-
-function coordsOf(row) { return commentCoordinates(row); }
 
 function kindLabel(kind) {
   return ({ bank_txn: 'Bank transaction', cube_cell: 'Cube cell',
@@ -1400,23 +1457,70 @@ async function setStatus(row, status) {
   }
 }
 
-async function toggleDrill(row) {
-  if (drills[row.id]) {
-    delete drills[row.id];
-    return;
-  }
-  drillBusy.value = row.id;
-  actionError.value = null;
-  // The expanded detail carries the thread too; fetch it alongside rather
-  // than after, so the section does not appear empty and then fill in.
-  loadThread(row.id);
-  try {
-    drills[row.id] = await drillCubeComment(row);
-  } catch (e) {
-    actionError.value = e?.response?.data?.error || e.message || 'Could not resolve the transactions.';
-  } finally {
-    drillBusy.value = null;
-  }
+/* ── The transactions behind the figure ──────────────────────────────────
+ *
+ * These used to be strictly on demand, behind a "Show transactions" button,
+ * and the resting card carried the cell's COORDINATES instead — account_class,
+ * account_type, tracking1, fin_year, month, and a bare `measure`. MC, reading
+ * this register every day: "actualy no need for this … Just put the actual
+ * transaction widget there. It is obviously imprtant to see which transaction
+ * the comment refer to."
+ *
+ * THE COST. A drill is a query against /xero/data/journals/pivot/drill/, and
+ * the register is ~121 rows. Fetching one per row on load is 121 queries and
+ * is precisely the per-row cost that took this page down once. So the fetch is
+ * gated on VISIBILITY, twice over:
+ *
+ *   1. ONE IntersectionObserver for the whole page — not a timer, not an
+ *      observer per row — hands back the cards a reader has actually scrolled
+ *      to. A card is unobserved the moment it is queued, so it asks once.
+ *   2. Whatever the observer hands back is put through a queue with a hard
+ *      in-flight cap. A tall window, a zoomed-out page or a browser that
+ *      reports the whole list as intersecting cannot turn into 121 concurrent
+ *      requests; it turns into 121 requests four at a time, and in practice
+ *      into the six or eight a viewport actually holds.
+ *
+ * Rows scrolled past KEEP what they loaded — re-fetching on scroll-back would
+ * trade one cost for a worse one. Rows never scrolled to never fetch at all.
+ *
+ * Everything the card RENDERS from a drill — the lead line, the three preview
+ * rows, the fold count — is built once here, when the response lands. The
+ * template does map reads only: this page has been taken down by per-row work
+ * on the render path, and a `reconText(row)` called from the template would
+ * re-run on every keystroke and every 5-second feed poll.
+ */
+
+/** How many lines a resting card shows before it folds and says how many more. */
+const TXN_PREVIEW = 3;
+/** Concurrent drills, hard cap. The viewport holds fewer; this is the ceiling. */
+const TXN_MAX_IN_FLIGHT = 4;
+/** Start a card's fetch a little before it is actually on screen. */
+const TXN_ROOT_MARGIN = '300px 0px';
+
+/** Whether this row has transactions to show AT ALL — cube cells, and not for
+ *  an auditor, whose account 403s on everything under /xero/data/. */
+function showsTransactions(row) {
+  return !isAuditor.value && row.subject_type === 'cube_cell';
+}
+
+const EMPTY_DRILL = Object.freeze({
+  present: false, pending: false, error: '', lead: '', leadClass: '',
+  preview: [], rows: [], hidden: 0, total: 0, truncated: false,
+});
+
+/** A plain map read, like `anchorOf` and `assignmentOf`. No work on render. */
+function txOf(row) { return drills[row.id] || EMPTY_DRILL; }
+
+/** One ledger line, in the words a reader uses. Built once, at fetch time. */
+function previewLine(line, i) {
+  return {
+    key: line.id ?? `${i}`,
+    date: line.date || '',
+    account: [line.account_code, line.account_name].filter(Boolean).join(' ').trim(),
+    who: String(line.supplier_name || '').trim(),
+    description: String(line.description || '').trim(),
+    amount: money(line.amount),
+  };
 }
 
 /**
@@ -1426,26 +1530,171 @@ async function toggleDrill(row) {
  * adds up to the value the comment was written about is a real signal — the
  * ledger changed under a figure someone already reviewed — so it is stated
  * plainly rather than quietly displayed as if it agreed.
+ *
+ * The drill is passed IN rather than read off `drills`, so these can be called
+ * while the entry is still being assembled — and so the strings they return
+ * are computed exactly once, at fetch time, instead of on every render.
  */
-function reconDiff(row) {
-  const d = drills[row.id];
+function reconDiff(row, d) {
   if (!d || row.cell_value === null || row.cell_value === undefined) return null;
   return Math.abs(Number(row.cell_value) - Number(d.line_total));
 }
-function reconClass(row) {
-  const diff = reconDiff(row);
+function reconClass(row, d) {
+  const diff = reconDiff(row, d);
   if (diff === null) return 'cc__recon--plain';
   return diff > 0.005 ? 'cc__recon--bad' : 'cc__recon--ok';
 }
-function reconText(row) {
-  const d = drills[row.id];
+function reconText(row, d) {
   if (!d) return '';
   const base = `${d.count} line${d.count === 1 ? '' : 's'}, ${money(d.line_total)}`;
-  const diff = reconDiff(row);
+  const diff = reconDiff(row, d);
   if (diff === null) return base;
   return diff > 0.005
     ? `${base} — does not match the commented ${money(row.cell_value)} (out by ${money(diff)}). The data has changed since.`
     : `${base} — matches the commented value.`;
+}
+
+/** Ids we have already asked for. Plain Set, deliberately not reactive: it is
+ *  read from a ref callback on every patch and must never be a render dep. */
+const requested = new Set();
+const drillQueue = [];
+let drillsInFlight = 0;
+
+/**
+ * Fetch one row's lines and build everything the card will render from them.
+ *
+ * The empty answer is stated IN WORDS. A cell that resolves to nothing is a
+ * real finding — the comment points at a figure with no ledger behind it —
+ * and rendering it as blank space would leave the reader unable to tell that
+ * from a fetch that never happened.
+ */
+async function runDrill(row) {
+  drills[row.id] = { ...EMPTY_DRILL, present: true, pending: true };
+  try {
+    const payload = await drillCubeComment(row);
+    const lines = Array.isArray(payload?.rows) ? payload.rows : [];
+    const d = {
+      present: true,
+      pending: false,
+      error: '',
+      rows: lines,
+      count: Number(payload?.count ?? lines.length) || 0,
+      line_total: payload?.line_total,
+      truncated: !!payload?.truncated,
+      total: lines.length,
+      preview: lines.slice(0, TXN_PREVIEW).map(previewLine),
+      hidden: Math.max(0, lines.length - TXN_PREVIEW),
+    };
+    d.lead = lines.length
+      ? reconText(row, d)
+      : 'No transactions resolve to this cell.';
+    d.leadClass = lines.length ? reconClass(row, d) : 'cc__recon--plain';
+    drills[row.id] = d;
+  } catch (e) {
+    drills[row.id] = {
+      ...EMPTY_DRILL,
+      present: true,
+      error: e?.response?.data?.error || e?.message || 'Could not resolve the transactions.',
+    };
+  }
+}
+
+/** Drain the queue up to the in-flight cap. */
+function pumpDrills() {
+  while (drillsInFlight < TXN_MAX_IN_FLIGHT && drillQueue.length) {
+    const id = drillQueue.shift();
+    const row = all.value.find((r) => String(r.id) === String(id));
+    if (!row) continue;
+    drillsInFlight += 1;
+    runDrill(row).finally(() => { drillsInFlight -= 1; pumpDrills(); });
+  }
+}
+
+/** Ask for a row's lines, at most once, and never more than the cap at a time. */
+function enqueueDrill(id) {
+  if (requested.has(id)) return;
+  requested.add(id);
+  drillQueue.push(id);
+  pumpDrills();
+}
+
+/** Jump the queue — the reader pressed a button and is waiting on it. */
+function ensureDrill(row) {
+  if (requested.has(row.id)) return;
+  requested.add(row.id);
+  runDrill(row);
+}
+
+// ── The viewport gate ───────────────────────────────────────────────────────
+//
+// One observer, one entry per card. Created lazily because the cards exist
+// before `onMounted` fires on a cached register, and torn down on unmount.
+let cardObserver = null;
+const cardEls = new Map();
+
+function onCardsVisible(entries) {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    const el = entry.target;
+    cardObserver?.unobserve(el);
+    const id = Number(el?.dataset?.commentId);
+    if (Number.isFinite(id)) enqueueDrill(id);
+  }
+}
+
+function ensureCardObserver() {
+  if (cardObserver) return cardObserver;
+  // Absent in older browsers and in a bare jsdom. Without it nothing
+  // auto-loads and the "All transactions" button still works — degrading to
+  // the old behaviour is the right failure, and fetching all 121 is not.
+  if (typeof IntersectionObserver === 'undefined') return null;
+  cardObserver = new IntersectionObserver(onCardsVisible, {
+    rootMargin: TXN_ROOT_MARGIN,
+    threshold: 0,
+  });
+  return cardObserver;
+}
+
+/**
+ * Called from the card's `:ref`, which Vue re-invokes on every patch — so this
+ * has to be O(1) and idempotent, and it must not read reactive state. It does
+ * a Map compare and an `observe()`, which the spec defines as a no-op on a
+ * target already being watched.
+ */
+function registerCard(row, el) {
+  if (!el || !showsTransactions(row)) return;
+  if (requested.has(row.id) || cardEls.get(row.id) === el) return;
+  cardEls.set(row.id, el);
+  ensureCardObserver()?.observe(el);
+}
+
+onBeforeUnmount(() => {
+  cardObserver?.disconnect();
+  cardObserver = null;
+  cardEls.clear();
+});
+
+/**
+ * The full detail: every line in a table, and the discussion.
+ *
+ * Expansion is now its OWN state rather than "has a drill loaded". It had to
+ * be: the lines arrive on their own now, and keying the disclosure off their
+ * presence would open every card's Discussion — and fetch every card's thread
+ * — the moment the transactions landed.
+ */
+const expanded = reactive({});
+
+function toggleDrill(row) {
+  if (expanded[row.id]) {
+    expanded[row.id] = false;
+    return;
+  }
+  expanded[row.id] = true;
+  actionError.value = null;
+  // The expanded detail carries the thread too; fetch it alongside rather
+  // than after, so the section does not appear empty and then fill in.
+  loadThread(row.id);
+  ensureDrill(row);
 }
 
 // ── Reply threads ───────────────────────────────────────────────────────────
@@ -1489,9 +1738,9 @@ function ensureThread(id) {
   return threads[key];
 }
 
-/** The detail is expanded exactly when its transactions are — one disclosure. */
+/** The detail and the discussion are one disclosure — see `expanded`. */
 function isExpanded(row) {
-  return !isAuditor.value && row.subject_type === 'cube_cell' && !!drills[row.id];
+  return showsTransactions(row) && !!expanded[row.id];
 }
 
 async function loadThread(id) {
@@ -1608,7 +1857,15 @@ onMounted(() => { directory.load(); load(); });
  * exactly that. Opacity-for-hierarchy is gone from this file: it dims the
  * BACKGROUND through the glyph as well as the ink, so .65 on one surface and
  * .65 on another are two different greys, and neither is one the design
- * system knows about. */
+ * system knows about.
+ *
+ * CONTRAST. MC on the old chip run: "a bit darker, difficult to see". He was
+ * right, and about more than the chips. --kdl-text-hint is #9CA3AF, which is
+ * 2.6:1 on the card — below AA at any size — and this file was spending it on
+ * text meant to be READ rather than on decoration. The runs that survive on
+ * the resting card (the filter summary line, the line-cap note, the drill
+ * table's headers) are on --kdl-text-muted, #6B7280, 4.8:1. Moved at the TOKEN
+ * layer; opacity would have been the wrong fix twice over. */
 
 .cc-undo {
   display: flex;
@@ -1785,25 +2042,55 @@ onMounted(() => { directory.load(); load(); });
 }
 .cc__linkbtn:hover { color: var(--kdl-text-primary); }
 
-/* 4. Anchor detail — one wrapped, muted run. */
-.cc__coords {
+/* 4. The transactions, at rest.
+      Same sunken layer as the drawers below (it carries `.cc__drawer` too),
+      NOT a bordered panel: a table in a box in a card is the "widget in
+      widget" nesting MC named, and putting an edge on this would rebuild it.
+      Plain elements rather than the shared table component for the same
+      reason .cc__coord was plain — this renders on every visible card, and a
+      component instance per line is a cost the register cannot carry. */
+.cc__txn-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cc__txn-line {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: var(--kdl-space-2);
+  padding: var(--kdl-space-1) 0;
+  font-size: var(--kdl-font-size-caption);
+  line-height: var(--kdl-line-height-body);
+  border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
+}
+.cc__txn-line:last-child { border-bottom: none; }
+.cc__txn-date {
+  color: var(--kdl-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Account, supplier and description on one wrapping run: three columns of
+   their own would give a five-word description the same width as an account
+   code, and the card would read as a spreadsheet rather than a sentence. */
+.cc__txn-what {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--kdl-space-1);
-  align-items: center;
-  font-size: var(--kdl-font-size-caption);
-  color: var(--kdl-text-muted);
+  gap: var(--kdl-space-1) var(--kdl-space-2);
+  min-width: 0;
+  color: var(--kdl-text-secondary);
 }
-/* Plain spans, deliberately NOT KChip/KBadge instances: 121 rows times ~8
-   chips is a thousand component instances for a run of static text. They are
-   on tokens now; they are not components. */
-.cc__coord {
-  background: var(--kdl-border-subtle);
-  border-radius: var(--kdl-radius-sm);
-  padding: 2px var(--kdl-space-1);
+.cc__txn-account { font-weight: 500; }
+.cc__txn-who { color: var(--kdl-text-secondary); }
+.cc__txn-desc { color: var(--kdl-text-muted); }
+.cc__txn-amount {
+  color: var(--kdl-text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.cc__dim { color: var(--kdl-text-hint); margin-right: var(--kdl-space-1); }
-.cc__measure { color: var(--kdl-text-hint); }
+/* The fold sits under the lines rather than inline with them, so it never
+   reads as a fourth transaction. */
+.cc__txn .cc__linkbtn { margin-top: var(--kdl-space-2); }
 
 .cc__verdict {
   display: flex;
@@ -1831,11 +2118,11 @@ onMounted(() => { directory.load(); load(); });
   background: none;
   font: inherit;
   font-size: var(--kdl-font-size-overline);
-  color: var(--kdl-text-hint);
+  color: var(--kdl-text-muted);
   text-align: left;
   cursor: pointer;
 }
-.cc__context-toggle:hover { color: var(--kdl-text-muted); }
+.cc__context-toggle:hover { color: var(--kdl-text-primary); }
 .cc__filters {
   display: flex;
   flex-wrap: wrap;
@@ -1927,12 +2214,12 @@ onMounted(() => { directory.load(); load(); });
 }
 .cc__table tr:last-child td { border-bottom: none; }
 .cc__table th {
-  color: var(--kdl-text-hint);
+  color: var(--kdl-text-muted);
   font-weight: 500;
   font-size: var(--kdl-font-size-overline);
 }
 .ta-r { text-align: right; font-variant-numeric: tabular-nums; }
-.cc__note { font-size: var(--kdl-font-size-overline); color: var(--kdl-text-hint); margin-top: var(--kdl-space-1); }
+.cc__note { font-size: var(--kdl-font-size-overline); color: var(--kdl-text-muted); margin-top: var(--kdl-space-1); }
 
 .cc__history { margin: 0; padding: 0; list-style: none; }
 .cc__history-item {

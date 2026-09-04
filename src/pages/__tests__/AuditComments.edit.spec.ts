@@ -515,13 +515,18 @@ describe('AuditComments — an edit never re-attributes', () => {
 
   it('the anchor is unchanged by the edit, on screen as on the wire', async () => {
     const w = await mounted();
-    const before = squish(card(w, 41)!.find('.cc__coords').text());
+    // The anchor is the headline and the figure beside it. It used to be
+    // asserted through the coordinate run as well; that run is gone from the
+    // card (replaced by the transactions), so what is pinned here is what a
+    // reader now sees, before and after.
+    const before = squish(card(w, 41)!.find('.cc__anchor').text());
     await openEditor(w, 41);
     await type(w, 41, 'Different words entirely.');
     await save(w, 41);
 
     const c = card(w, 41)!;
-    expect(squish(c.find('.cc__coords').text())).toBe(before);
+    expect(squish(c.find('.cc__anchor').text())).toBe(before);
+    expect(before).toContain('Repairs & maintenance · Aug 2026');
     expect(squish(c.find('.cc__subject').text())).toBe('Repairs & maintenance · Aug 2026');
     expect(squish(c.find('[data-test="cc-amount-41"]').text())).toBe('R21,600.00');
     // The page offers no other write door for a comment's text.

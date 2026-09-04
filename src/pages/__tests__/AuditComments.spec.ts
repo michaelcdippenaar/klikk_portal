@@ -464,7 +464,7 @@ describe('AuditComments — auditor mode', () => {
     expect(labels).not.toContain('Actioned');
     expect(labels).not.toContain('Dismiss');
     expect(labels).not.toContain('Reopen');
-    expect(labels).not.toContain('Show transactions');
+    expect(labels).not.toContain('All transactions');
     expect(w.find('.cc__verdict select').exists()).toBe(false);
     expect(w.find('.cc__drill').exists()).toBe(false);
     expect(w.find('.cc-undo').exists()).toBe(false);
@@ -475,8 +475,14 @@ describe('AuditComments — auditor mode', () => {
     const w = mountPage();
     await flushPromises();
 
-    // Filters (the FilterBar selects/inputs) are untouched.
-    expect(w.findAll('.cc__coord').length).toBeGreaterThan(0);
+    // Filters (the FilterBar selects/inputs) are untouched, and so is the
+    // anchor headline. The coordinate run that used to be asserted here is
+    // gone from every card — MC replaced it with the transactions — and an
+    // auditor gets neither: the drill 403s for that role, so what has to
+    // survive for them is the headline naming the figure.
+    expect(w.findAll('.cc__subject').map((n) => n.text()).filter(Boolean).length)
+      .toBeGreaterThan(0);
+    expect(w.findAll('[data-test^="cc-txn-"]')).toHaveLength(0);
     expect(w.text()).toContain('trailer respray');
     expect(w.text()).toContain('Personal? Ask MC.');
     // The verdict WRAPPER survives for its read-only tags; only the select goes.
