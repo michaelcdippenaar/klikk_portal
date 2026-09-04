@@ -1230,24 +1230,30 @@ describe('AuditComments — an auditor is offered no way to write', () => {
    * and the trail should be served to auditors through /audit/ if they are
    * meant to have it at all.
    */
-  it('PINS TODAY\'S BEHAVIOUR: an auditor IS offered "Edit history", which 403s', async () => {
+  it('offers an auditor no "Edit history" control, because it would 403', async () => {
+    // The trail lives under /xero/data/, which is 403 for the auditor role in
+    // its entirety. Offering the button anyway gave an external bookkeeper a
+    // control that fails on click -- the worst kind on a tool she is being
+    // asked to trust for the first time. She still SEES that a comment was
+    // edited and who wrote it (the test below); she is simply not offered a
+    // door that is shut to her.
     mocked.getCubeCommentTextHistory.mockRejectedValue(
       httpError(403, { detail: 'You do not have permission to perform this action.' }));
     const w = await mounted();
 
-    const control = w.find('[data-test="cc-history-open-43"]');
-    expect(control.exists()).toBe(true);
-    expect(squish(control.text())).toBe('Edit history');
+    expect(w.find('[data-test="cc-history-open-43"]').exists()).toBe(false);
+    expect(w.text()).not.toContain('Edit history');
+    // No control, so nothing to click, so the shut door is never knocked on.
+    expect(mocked.getCubeCommentTextHistory).not.toHaveBeenCalled();
+    w.unmount();
+  });
 
-    await control.trigger('click');
-    await flushPromises();
-    // It reaches the door that is shut to this role, and the reader is told
-    // only that the trail could not be read.
-    expect(mocked.getCubeCommentTextHistory).toHaveBeenCalledWith(43);
-    // …and the reader is told only that something failed — see the `detail`
-    // finding in the history-drawer block above.
-    expect(squish(at(w, 'cc-history-panel-43').text()))
-      .toBe('Request failed with status code 403');
+  it('an auditor still sees THAT a comment was edited, and who wrote it', async () => {
+    // The marker is provenance and it comes off the list, which she may read.
+    // Hiding the trail must not hide the fact that there IS one.
+    const w = await mounted();
+    expect(at(w, 'cc-edited-43').exists()).toBe(true);
+    expect(squish(at(w, 'cc-edited-43').text())).toContain('Text edited');
     w.unmount();
   });
 });
