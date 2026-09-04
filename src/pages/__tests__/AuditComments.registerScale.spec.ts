@@ -569,6 +569,12 @@ function drillFor(row: { id: number }) {
     account_name: 'Transport Expense',
     supplier_name: 'Titan Trailers (Atlantic Trailers)',
     description: `Trailer respray leg ${k + 1}`,
+    // Xero's two tracking axes. Line 0 carries both, the rest carry only the
+    // first, because a line may use either, both or neither and the card must
+    // read correctly for each.
+    tracking1: 'Equipment Rental - General',
+    tracking2: k === 0 ? '4 Otterkuil' : '',
+    tracking1_category: 'Division',
     amount: '4320.00',
   }));
   return { rows, count: n, line_total: (4320 * n).toFixed(2), truncated: false };
@@ -840,5 +846,50 @@ describe('AuditComments — a cell with no value', () => {
     expect(text).toContain('2 lines, 8,640.00');
     expect(text).not.toContain('does not match');
     expect(text).not.toContain('matches the commented value');
+  });
+});
+
+
+// ── Tracking ────────────────────────────────────────────────────────────────
+//
+// MC asked for the tracking category on the transaction view: it is how he
+// recognises which job a cost belongs to, and it was on every line already and
+// simply not rendered. Asserted as TEXT — this page has now shipped a badge
+// that rendered empty and an edit trail that rendered blank lines under correct
+// captions, both invisible to a spec that only asserts the element exists.
+describe('AuditComments — tracking on the transaction lines', () => {
+  beforeEach(() => {
+    FakeIO.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeIO);
+    armDrill();
+  });
+
+  it('shows the tracking option on a resting card, without expanding it', async () => {
+    const w = await mountPage();
+    await reveal(w, [1]);
+    await settleDrills();
+    expect(cardText(w, 1)).toContain('Equipment Rental - General');
+    w.unmount();
+  });
+
+  it('joins both axes when a line carries two, and shows one when it carries one', async () => {
+    const w = await mountPage();
+    await reveal(w, [1]);
+    await settleDrills();
+    const lines = w.find('article.cc[data-comment-id="1"]')
+      .findAll('.cc__txn-line').map((li) => li.text().replace(/\s+/g, ' ').trim());
+    expect(lines[0]).toContain('Equipment Rental - General \u00b7 4 Otterkuil');
+    expect(lines[1]).toContain('Equipment Rental - General');
+    expect(lines[1]).not.toContain('4 Otterkuil');
+    w.unmount();
+  });
+
+  it('renders no tracking element at all on a cell whose drill is empty', async () => {
+    const w = await mountPage();
+    await reveal(w, [2]);
+    await settleDrills();
+    expect(w.find('article.cc[data-comment-id="2"]')
+      .findAll('.cc__txn-track')).toHaveLength(0);
+    w.unmount();
   });
 });

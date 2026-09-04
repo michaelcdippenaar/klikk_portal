@@ -333,6 +333,7 @@
                   <span class="cc__txn-what">
                     <span class="cc__txn-account">{{ line.account }}</span>
                     <span v-if="line.who" class="cc__txn-who">{{ line.who }}</span>
+                    <span v-if="line.tracking" class="cc__txn-track">{{ line.tracking }}</span>
                     <span v-if="line.description" class="cc__txn-desc">{{ line.description }}</span>
                   </span>
                   <span class="cc__txn-amount">{{ line.amount }}</span>
@@ -530,7 +531,8 @@
                 <thead>
                   <tr>
                     <th>Date</th><th>Jrnl #</th><th>Type</th><th>Account</th>
-                    <th>Supplier</th><th>Description</th><th class="ta-r">Amount</th>
+                    <th>Supplier</th><th>Tracking</th><th>Description</th>
+                    <th class="ta-r">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -540,6 +542,7 @@
                     <td>{{ line.journal_type }}</td>
                     <td>{{ line.account_code }} {{ line.account_name }}</td>
                     <td>{{ line.supplier_name }}</td>
+                    <td class="cc__td-track">{{ trackingOf(line) }}</td>
                     <td>{{ line.description }}</td>
                     <td class="ta-r">{{ money(line.amount) }}</td>
                   </tr>
@@ -1512,12 +1515,28 @@ const EMPTY_DRILL = Object.freeze({
 function txOf(row) { return drills[row.id] || EMPTY_DRILL; }
 
 /** One ledger line, in the words a reader uses. Built once, at fetch time. */
+/** Which tracking option a line carries, as the reader knows it.
+ *
+ * Xero has two tracking axes; a line may use either, both or neither. The
+ * OPTION is what MC recognises ("Equipment Rental - General") -- the category
+ * is the axis it belongs to and is the same on every line of a given axis, so
+ * it earns no column of its own. Joined rather than truncated: a line on both
+ * axes is a real thing and hiding the second one would misreport it.
+ */
+function trackingOf(line) {
+  return [line.tracking1, line.tracking2]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function previewLine(line, i) {
   return {
     key: line.id ?? `${i}`,
     date: line.date || '',
     account: [line.account_code, line.account_name].filter(Boolean).join(' ').trim(),
     who: String(line.supplier_name || '').trim(),
+    tracking: trackingOf(line),
     description: String(line.description || '').trim(),
     amount: money(line.amount),
   };
@@ -2065,6 +2084,11 @@ onMounted(() => { directory.load(); load(); });
   border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
 }
 .cc__txn-line:last-child { border-bottom: none; }
+.cc__txn-track {
+  color: var(--kdl-text-muted);
+  white-space: nowrap;
+}
+.cc__td-track { white-space: nowrap; color: var(--kdl-text-muted); }
 .cc__txn-date {
   color: var(--kdl-text-muted);
   font-variant-numeric: tabular-nums;

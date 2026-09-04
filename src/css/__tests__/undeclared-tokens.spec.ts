@@ -130,10 +130,21 @@ describe('every custom property referenced in src/ is declared in src/', () => {
 
 describe('the comments surface carries no colour literals of its own', () => {
   const page = readFileSync(join(SRC, 'pages/AuditComments.vue'), 'utf-8');
-  const style = page.slice(page.indexOf('<style'));
+  // Comments are stripped before the check. The guard is about what the
+  // stylesheet DECLARES, and prose that cites a token's value to justify a
+  // contrast decision ("--kdl-text-hint is #9CA3AF, 2.6:1") is documentation,
+  // not a literal. Matching it punished exactly the comment that explains why
+  // the colour was moved onto a token in the first place.
+  const style = page.slice(page.indexOf('<style')).replace(/\/\*[\s\S]*?\*\//g, '');
 
   it('declares no hex or rgb() in its scoped styles', () => {
     expect(style).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  });
+
+  it('still catches a real colour declaration, comments notwithstanding', () => {
+    const withLiteral = '/* --kdl-text-hint is #9CA3AF */\n.x { color: #ff0000; }';
+    const stripped = withLiteral.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(stripped).toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
   });
 
   it('takes its colours from the shared token layer', () => {
