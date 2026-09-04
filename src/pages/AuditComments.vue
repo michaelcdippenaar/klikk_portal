@@ -243,11 +243,11 @@
                 :data-test="`cc-edit-${row.id}`"
                 @click="startEdit(row)"
               >Edit text</button>
-              <span v-if="row.text_edited || row.edited" class="cc__edited" :data-test="`cc-edited-${row.id}`">
-                Text edited{{ row.text_edited_by ? ` by ${row.text_edited_by}` : '' }} — written by {{ row.author || 'unattributed' }}
+              <span v-if="row.edited" class="cc__edited" :data-test="`cc-edited-${row.id}`">
+                Text edited — written by {{ row.author || 'unattributed' }}
               </span>
               <button
-                v-if="(row.text_edited || row.edited) && editing.id !== row.id"
+                v-if="row.edited && editing.id !== row.id"
                 type="button"
                 class="cc__linkbtn"
                 :data-test="`cc-history-open-${row.id}`"
@@ -1283,8 +1283,10 @@ async function saveEdit(row) {
     // card disagreeing with the register on the next load.
     row.comment = typeof result?.comment === 'string' ? result.comment : text;
     if (result?.edited) {
-      row.text_edited = true;
-      row.text_edited_by = result.edited_by || currentUser.value;
+      // The register returns `edited` (EXISTS over the edit trail), so mark the
+      // row on the same field the list will carry on the next reload -- setting
+      // a different one made the marker vanish the moment the page refetched.
+      row.edited = true;
       // A recorded edit invalidates any history already on screen.
       if (history[row.id]?.open) await loadHistory(row, { force: true });
     } else {
