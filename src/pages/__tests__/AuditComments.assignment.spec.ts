@@ -635,3 +635,45 @@ describe('AuditComments — an auditor reads assignment and cannot write it', ()
     w.unmount();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The badge text, asserted ON THE PAGE and not only on the primitive.
+//
+// KBadge declared `label` and no <slot> while this page passed its text as slot
+// content, so every row's status and the subject-kind label rendered as EMPTY
+// SPANS -- on this register, in production. It was fixed in the primitive and
+// covered by KBadge.slot.spec.ts, but that spec cannot see this page: if a
+// refactor changes how AuditComments hands text to KBadge, the primitive spec
+// still passes and the register silently blanks again.
+//
+// The 75 mount-based specs here all passed against the broken component because
+// not one of them looked at what a badge SAID. These do.
+describe('AuditComments — the badges actually say something', () => {
+  it('renders each row status as visible badge text', async () => {
+    const w = await mounted();
+    const badges = w.findAll('.kbadge').map((b) => b.text());
+    expect(badges.length).toBeGreaterThan(0);
+    expect(badges.every((t) => t.trim().length > 0)).toBe(true);
+    expect(badges).toContain('open');
+    w.unmount();
+  });
+
+  it('shows the subject-kind label for a non-cube row', async () => {
+    const w = await mounted();
+    expect(w.text()).toContain('open');
+    // every badge on the page carries text; none is an empty span
+    expect(w.findAll('.kbadge').filter((b) => b.text().trim() === '')).toHaveLength(0);
+    w.unmount();
+  });
+
+  it('gives every badge a tone class the stylesheet defines', async () => {
+    const w = await mounted();
+    const DEFINED = ['kbadge--default', 'kbadge--accent', 'kbadge--muted'];
+    for (const b of w.findAll('.kbadge')) {
+      const tone = b.classes().find((c) => c.startsWith('kbadge--')
+        && !c.endsWith('--sm') && !c.endsWith('--md'));
+      expect(DEFINED, `unstyled tone class ${tone}`).toContain(tone);
+    }
+    w.unmount();
+  });
+});
