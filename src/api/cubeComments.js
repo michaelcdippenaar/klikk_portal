@@ -209,3 +209,48 @@ export async function setCommentAssignee(id, handle) {
   );
   return response.data;
 }
+
+/**
+ * Rewrite ONE comment's text. Addressed BY ID.
+ *
+ * POST /xero/data/journals/pivot/comments/<id>/text/  {comment}
+ *   200 → { edited: true|false, … }  — `false` is a NO-OP: the text was
+ *          already what was sent, and no history row was written.
+ *   400 → empty text, or any anchor/author field in the body
+ *   403 → auditor role, and the add-in credential
+ *   404 → no such comment
+ *
+ * The body carries the TEXT AND NOTHING ELSE, deliberately. The endpoint
+ * refuses a request that names an anchor or an author field, and that refusal
+ * is the point of the endpoint: a comment's figure and its writer are what
+ * make the register an audit trail, and the only thing a later reader may
+ * change is the wording. An admin tidying an agent's note must not end up
+ * looking like its author — so this door cannot re-attribute, and the console
+ * never asks it to.
+ *
+ * NOT the upsert doors. Those conflict on (subject_type, subject_key,
+ * author_key) with `author_key` stamped from the credential, so re-posting
+ * somebody else's row forks it under the caller's name rather than amending
+ * it — the same trap documented on setCommentDecision and setCommentAssignee.
+ */
+export async function setCubeCommentText(id, comment) {
+  const response = await apiClient.post(
+    `/xero/data/journals/pivot/comments/${encodeURIComponent(id)}/text/`,
+    { comment },
+  );
+  return response.data;
+}
+
+/**
+ * The edit trail for one comment — who changed the wording, when, and what it
+ * said before. Same path, GET.
+ *
+ * Read on demand only. The register list is already 1.4 MB for 113 rows, and
+ * an audit trail nobody has opened does not belong in it.
+ */
+export async function getCubeCommentTextHistory(id) {
+  const response = await apiClient.get(
+    `/xero/data/journals/pivot/comments/${encodeURIComponent(id)}/text/`,
+  );
+  return response.data;
+}

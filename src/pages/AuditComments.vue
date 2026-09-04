@@ -139,102 +139,160 @@
 
       <div class="cc-list">
         <article v-for="row in rows" :key="row.id" class="cc">
-          <header class="cc__head">
-            <div class="cc__who">
-              <input
-                v-if="!isAuditor"
-                type="checkbox"
-                class="cc__pick"
-                :checked="selected.has(row.id)"
-                :aria-label="`Select for bulk assign: ${rowLabel(row)}`"
-                :data-test="`cc-pick-${row.id}`"
-                @change="toggleSelected(row)"
-              />
-              <KBadge :tone="row.status === 'open' ? 'accent' : 'muted'">
-                {{ row.status }}
-              </KBadge>
-              <KBadge v-if="row.subject_type !== 'cube_cell'" tone="muted">
-                {{ kindLabel(row.subject_type) }}
-              </KBadge>
-              <strong class="cc__author">{{ row.author || 'unattributed' }}</strong>
-              <span class="cc__when">{{ formatWhen(row.updated_at) }}</span>
-            </div>
-            <div class="cc__actions">
-              <!-- The thread affordance sits FIRST and outside the auditor
-                   gate: discussing a flagged figure is the one write an
-                   auditor has, and it must not move when the status buttons
-                   next to it disappear. -->
-              <CubeCommentThreadCell
-                :ref="(el) => registerThreadCell(row.id, el)"
-                :commentId="row.id"
-                :count="Number(row.reply_count) || 0"
-                :currentUser="currentUser"
-                @added="onInlineReply"
-              />
-              <template v-if="!isAuditor">
-                <button
-                  v-if="row.status !== 'actioned'"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="busyId === row.id"
-                  @click="setStatus(row, 'actioned')"
-                >Actioned</button>
-                <button
-                  v-if="row.status !== 'dismissed'"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="busyId === row.id"
-                  @click="setStatus(row, 'dismissed')"
-                >Dismiss</button>
-                <button
-                  v-if="row.status !== 'open'"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="busyId === row.id"
-                  @click="setStatus(row, 'open')"
-                >Reopen</button>
-              </template>
-            </div>
+          <!-- 1. IDENTITY — deliberately recessive.
+               Who wrote it and when is context, not the point of the card, so
+               it sits at overline/caption weight with the status badge as the
+               only colour in the line.
+               The action buttons that used to live here have moved to the
+               footer: "who said this" and "what do I do about it" are two
+               different questions and were reading as one crowded row. -->
+          <header class="cc__meta">
+            <input
+              v-if="!isAuditor"
+              type="checkbox"
+              class="cc__pick"
+              :checked="selected.has(row.id)"
+              :aria-label="`Select for bulk assign: ${rowLabel(row)}`"
+              :data-test="`cc-pick-${row.id}`"
+              @change="toggleSelected(row)"
+            />
+            <KBadge :tone="row.status === 'open' ? 'accent' : 'muted'">
+              {{ row.status }}
+            </KBadge>
+            <span class="cc__author">{{ row.author || 'unattributed' }}</span>
+            <span class="cc__when" :title="row.updated_at || ''">{{ formatWhen(row.updated_at) }}</span>
+            <KBadge v-if="row.subject_type !== 'cube_cell'" tone="muted">
+              {{ kindLabel(row.subject_type) }}
+            </KBadge>
           </header>
 
-          <p v-if="row.subject_label" class="cc__subject">{{ row.subject_label }}</p>
-          <p class="cc__text">{{ row.comment }}</p>
+          <!-- 2. THE ANCHOR HEADLINE — what the note is about, and the figure
+               it was written against, on one line. The value used to be a
+               12px chip buried at the end of the coordinate run, which is the
+               wrong weight for the number the whole comment is arguing about. -->
+          <div v-if="row.subject_label || row.cell_value !== null && row.cell_value !== undefined"
+               class="cc__anchor">
+            <h3 v-if="row.subject_label" class="cc__subject">{{ row.subject_label }}</h3>
+            <span v-if="row.cell_value !== null && row.cell_value !== undefined"
+                  class="cc__amount"
+                  :data-test="`cc-amount-${row.id}`"><span class="cc__amount-cur">R</span>{{ money(row.cell_value) }}</span>
+          </div>
 
-          <!-- Whose queue this is in.
-               A WRITER gets the picker; its value IS the stored handle, so
-               there is no second control mirroring the same fact. Options are
-               one shared array — active seats plus "Unassigned" — built once
-               per load, never per row.
-               A stood-down seat is offered as a DISABLED option on the rows
-               that already hold it, and nowhere else: the select must not show
-               a blank where a real assignment exists, and the server refuses
-               an inactive handle anyway ("assigning to a role nobody holds is
-               the same as assigning to nobody").
-               An AUDITOR gets the chip. Everything under /xero/data/ is 403
-               for that role, so a picker there could only ever fail — but
-               reading who holds a point is a reviewer's whole job. -->
-          <div class="cc__assign">
-            <template v-if="!isAuditor">
-              <label :for="`asg-${row.id}`">Assigned to</label>
-              <select
-                :id="`asg-${row.id}`"
-                class="cc__assign-select"
-                :value="assignmentOf(row).handle"
-                :disabled="busyId === row.id || bulkBusy"
-                :data-test="`cc-assign-${row.id}`"
-                @change="onAssignChange(row, $event)"
-              >
-                <option v-for="o in assignmentOf(row).options" :key="o.value"
-                        :value="o.value" :disabled="o.disabled">{{ o.label }}</option>
-              </select>
-            </template>
-            <span
-              v-else-if="assignmentOf(row).handle"
-              class="cc__assignee"
-              :class="{ 'cc__assignee--stale': assignmentOf(row).stale }"
-              :data-test="`cc-assignee-${row.id}`"
-              :title="`Assigned to the ${assignmentOf(row).handle} seat`"
-            >
-              <span class="cc__assignee-tag">to</span>{{ assignmentOf(row).label
-              }}<span v-if="assignmentOf(row).stale"> — no longer active</span>
+          <!-- 3. THE COMMENT — the one thing on this card a human wrote, and
+               until now the quietest thing on it. Full contrast, body size,
+               the most air of any block here. Nothing competes with it.
+
+               Editing is INLINE rather than a modal: the text is edited where
+               it is read, and the anchor stays on screen while you do it —
+               which matters, because the anchor is the one thing the edit
+               endpoint refuses to change. -->
+          <div class="cc__body">
+            <p v-if="editing.id !== row.id" class="cc__text" :data-test="`cc-text-${row.id}`">{{ row.comment }}</p>
+
+            <div v-else class="cc__edit" :data-test="`cc-editor-${row.id}`">
+              <label class="cc__edit-label" :for="`cc-edit-input-${row.id}`">Comment text</label>
+              <textarea
+                :id="`cc-edit-input-${row.id}`"
+                v-model="editing.text"
+                class="cc__edit-input"
+                rows="4"
+                :disabled="editing.saving"
+                :data-test="`cc-edit-input-${row.id}`"
+              ></textarea>
+              <!-- Stated, because the endpoint enforces it and a reader who
+                   assumes otherwise would be editing under a misapprehension:
+                   the text is yours to change, the anchor and the author are
+                   not, and an admin editing an agent's note does not become
+                   its author. -->
+              <p class="cc__edit-note">
+                Text only. The anchor and the author stay as they are —
+                this stays {{ row.author || 'unattributed' }}'s comment.
+              </p>
+              <p v-if="editing.error" class="cc__edit-error" role="alert"
+                 :data-test="`cc-edit-error-${row.id}`">{{ editing.error }}</p>
+              <div class="cc__edit-actions">
+                <button
+                  class="btn btn-ghost btn-sm"
+                  :disabled="editing.saving"
+                  :data-test="`cc-edit-save-${row.id}`"
+                  @click="saveEdit(row)"
+                >{{ editing.saving ? 'Saving…' : 'Save text' }}</button>
+                <button
+                  class="btn btn-ghost btn-sm"
+                  :disabled="editing.saving"
+                  :data-test="`cc-edit-cancel-${row.id}`"
+                  @click="cancelEdit"
+                >Cancel</button>
+                <button
+                  type="button"
+                  class="cc__linkbtn"
+                  :data-test="`cc-history-${row.id}`"
+                  @click="toggleHistory(row)"
+                >{{ history[row.id] && history[row.id].open ? 'Hide edit history' : 'Edit history' }}</button>
+              </div>
+            </div>
+
+            <!-- The byline carries the edit affordance and, separately, the
+                 fact that the text HAS been edited. Two facts, never merged:
+                 whose comment it is, and who last changed its wording. -->
+            <p class="cc__byline">
+              <button
+                v-if="!isAuditor && editing.id !== row.id"
+                type="button"
+                class="cc__linkbtn"
+                :data-test="`cc-edit-${row.id}`"
+                @click="startEdit(row)"
+              >Edit text</button>
+              <span v-if="row.text_edited || row.edited" class="cc__edited" :data-test="`cc-edited-${row.id}`">
+                Text edited{{ row.text_edited_by ? ` by ${row.text_edited_by}` : '' }} — written by {{ row.author || 'unattributed' }}
+              </span>
+              <button
+                v-if="(row.text_edited || row.edited) && editing.id !== row.id"
+                type="button"
+                class="cc__linkbtn"
+                :data-test="`cc-history-open-${row.id}`"
+                @click="toggleHistory(row)"
+              >{{ history[row.id] && history[row.id].open ? 'Hide edit history' : 'Edit history' }}</button>
+            </p>
+
+            <!-- History lives on the same sunken layer as the transactions,
+                 and only once asked for: a resting card must not carry the
+                 weight of an audit trail nobody has opened. -->
+            <div v-if="history[row.id] && history[row.id].open"
+                 class="cc__drawer" :data-test="`cc-history-panel-${row.id}`">
+              <p v-if="history[row.id].loading" class="cc__drawer-lead">Loading the edit history…</p>
+              <p v-else-if="history[row.id].error" class="cc__drawer-lead cc__recon--bad" role="alert">
+                {{ history[row.id].error }}
+              </p>
+              <template v-else>
+                <p class="cc__drawer-lead">
+                  {{ history[row.id].entries.length }}
+                  edit{{ history[row.id].entries.length === 1 ? '' : 's' }} to the text.
+                  The anchor and the author have never changed.
+                </p>
+                <p v-if="!history[row.id].entries.length" class="cc__note">
+                  Nothing recorded — the text is as it was written.
+                </p>
+                <ol v-else class="cc__history">
+                  <li v-for="(h, i) in history[row.id].entries" :key="h.id || i" class="cc__history-item">
+                    <span class="cc__history-meta">
+                      {{ h.edited_by || h.author || 'unknown' }} · {{ formatWhen(h.edited_at || h.created_at) }}
+                    </span>
+                    <span class="cc__history-text">{{ h.previous_text ?? h.previous ?? h.text ?? '' }}</span>
+                  </li>
+                </ol>
+              </template>
+            </div>
+          </div>
+
+          <!-- 4. ANCHOR DETAIL — the rest of the coordinates, read as one
+               muted run. Present because a note without its figure is just a
+               sentence; recessive because the reader already has the headline. -->
+          <div v-if="row.subject_type === 'cube_cell'" class="cc__coords">
+            <span v-for="(v, k) in coordsOf(row)" :key="k" class="cc__coord">
+              <span class="cc__dim">{{ k }}</span>{{ v }}
             </span>
+            <span class="cc__measure">{{ row.measure }}</span>
           </div>
 
           <!-- The verdict SELECTOR is gone. It POSTed to /xero/data/comments/,
@@ -264,83 +322,180 @@
             </span>
           </div>
 
-          <!-- The anchor, shown as coordinates. This is what the comment is
-               ABOUT; without it the note is just a sentence. -->
-          <div v-if="row.subject_type === 'cube_cell'" class="cc__coords">
-            <span v-for="(v, k) in coordsOf(row)" :key="k" class="cc__coord">
-              <span class="cc__dim">{{ k }}</span>{{ v }}
-            </span>
-            <span class="cc__measure">{{ row.measure }}</span>
-            <span v-if="row.cell_value !== null" class="cc__value">{{ money(row.cell_value) }}</span>
-          </div>
-
-          <!-- Filters are part of the anchor: the same coordinates under a
-               different date window is a different number. Showing them is the
-               difference between a reader trusting the figure and guessing. -->
-          <div v-if="hasFilters(row)" :id="`cc-filters-${row.id}`" class="cc__filters">
-            <span v-for="chip in shownChips(row)" :key="chip.key" class="cc__filter">
-              {{ chipText(row, chip) }}
-            </span>
+          <!-- 5. FILTER CONTEXT — collapsed to ONE line by default.
+               Filters are part of the anchor (the same coordinates under a
+               different window is a different number) but they are the LEAST
+               of it, and rendered open they were the biggest thing on the
+               card. The resting line names the FIELDS and says how many more
+               there are; the values are one click away, exactly as before.
+               The role label is what stops it reading as the anchor itself. -->
+          <div v-if="hasFilters(row)" class="cc__context">
             <button
-              v-if="chipOverflow(row)"
               type="button"
-              class="cc__filter cc__filter--more"
+              class="cc__context-toggle"
               :aria-expanded="!!openFilters[row.id]"
-              :aria-controls="`cc-filters-${row.id}`"
+              :aria-controls="openFilters[row.id] ? `cc-filters-${row.id}` : undefined"
+              :data-test="`cc-context-${row.id}`"
               @click="toggleFilters(row)"
-            >
-              {{ openFilters[row.id] ? 'Show less' : `+${chipOverflow(row)} more` }}
-            </button>
+            >{{ openFilters[row.id] ? 'Hide filters' : anchorOf(row).summary }}</button>
+
+            <div v-if="openFilters[row.id]" :id="`cc-filters-${row.id}`" class="cc__filters">
+              <span v-for="chip in shownChips(row)" :key="chip.key" class="cc__filter">
+                {{ chipText(row, chip) }}
+              </span>
+              <!-- "+N more" once meant two different things on one card —
+                   fields folded away, and values folded inside a field. This
+                   one is VALUES, and says so; the line above counts FIELDS,
+                   and says that. -->
+              <button
+                v-if="chipOverflow(row)"
+                type="button"
+                class="cc__filter cc__filter--more"
+                :data-test="`cc-values-${row.id}`"
+                @click="toggleFilterValues(row)"
+              >
+                {{ openFilters[row.id] === ALL_VALUES ? 'Fewer values' : 'Show all values' }}
+              </button>
+            </div>
           </div>
 
-          <!-- The drill resolves journal lines from /xero/data/journals/pivot/
-               — 403 for an auditor, so the affordance goes with it. -->
-          <div v-if="!isAuditor && row.subject_type === 'cube_cell'" class="cc__drill">
-            <button
-              class="btn btn-ghost btn-sm"
-              :disabled="drillBusy === row.id"
-              @click="toggleDrill(row)"
-            >
-              {{ drillBusy === row.id
-                ? 'Resolving…'
-                : (drills[row.id] ? 'Hide transactions' : 'Show transactions') }}
-            </button>
+          <!-- 6. WHAT DO I DO WITH THIS — every action on the card, in one
+               row, at the bottom. Assignment on the left because it is a
+               statement of where the point sits; the verbs on the right.
 
-            <span v-if="drills[row.id]" class="cc__recon" :class="reconClass(row)">
-              {{ reconText(row) }}
-            </span>
-          </div>
+               An auditor keeps the read-only assignee chip and the thread:
+               everything under /xero/data/ 403s for that role, so the picker,
+               the drill and the status verbs are not rendered rather than
+               rendered-and-failing. -->
+          <footer class="cc__foot">
+            <!-- Whose queue this is in.
+                 A WRITER gets the picker; its value IS the stored handle, so
+                 there is no second control mirroring the same fact. Options are
+                 one shared array — active seats plus "Unassigned" — built once
+                 per load, never per row.
+                 A stood-down seat is offered as a DISABLED option on the rows
+                 that already hold it, and nowhere else: the select must not show
+                 a blank where a real assignment exists, and the server refuses
+                 an inactive handle anyway ("assigning to a role nobody holds is
+                 the same as assigning to nobody").
+                 An AUDITOR gets the chip. Everything under /xero/data/ is 403
+                 for that role, so a picker there could only ever fail — but
+                 reading who holds a point is a reviewer's whole job. -->
+            <div class="cc__assign">
+              <template v-if="!isAuditor">
+                <label :for="`asg-${row.id}`">Assigned to</label>
+                <select
+                  :id="`asg-${row.id}`"
+                  class="cc__assign-select"
+                  :value="assignmentOf(row).handle"
+                  :disabled="busyId === row.id || bulkBusy"
+                  :data-test="`cc-assign-${row.id}`"
+                  @change="onAssignChange(row, $event)"
+                >
+                  <option v-for="o in assignmentOf(row).options" :key="o.value"
+                          :value="o.value" :disabled="o.disabled">{{ o.label }}</option>
+                </select>
+              </template>
+              <span
+                v-else-if="assignmentOf(row).handle"
+                class="cc__assignee"
+                :class="{ 'cc__assignee--stale': assignmentOf(row).stale }"
+                :data-test="`cc-assignee-${row.id}`"
+                :title="`Assigned to the ${assignmentOf(row).handle} seat`"
+              >
+                <span class="cc__assignee-tag">to</span>{{ assignmentOf(row).label
+                }}<span v-if="assignmentOf(row).stale"> — no longer active</span>
+              </span>
+            </div>
 
-          <div v-if="!isAuditor && row.subject_type === 'cube_cell' && drills[row.id]" class="cc__lines">
-            <table class="cc__table">
-              <thead>
-                <tr>
-                  <th>Date</th><th>Jrnl #</th><th>Type</th><th>Account</th>
-                  <th>Supplier</th><th>Description</th><th class="ta-r">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="line in drills[row.id].rows" :key="line.id">
-                  <td>{{ line.date }}</td>
-                  <td>{{ line.journal_number }}</td>
-                  <td>{{ line.journal_type }}</td>
-                  <td>{{ line.account_code }} {{ line.account_name }}</td>
-                  <td>{{ line.supplier_name }}</td>
-                  <td>{{ line.description }}</td>
-                  <td class="ta-r">{{ money(line.amount) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="cc__actions">
+              <!-- The thread affordance sits FIRST and outside the auditor
+                   gate: discussing a flagged figure is the one write an
+                   auditor has, and it must not move when the status buttons
+                   next to it disappear. -->
+              <CubeCommentThreadCell
+                :ref="(el) => registerThreadCell(row.id, el)"
+                :commentId="row.id"
+                :count="Number(row.reply_count) || 0"
+                :currentUser="currentUser"
+                @added="onInlineReply"
+              />
+              <!-- The drill resolves journal lines from /xero/data/journals/pivot/
+                   — 403 for an auditor, so the affordance goes with it. -->
+              <span v-if="!isAuditor && row.subject_type === 'cube_cell'" class="cc__drill">
+                <button
+                  class="btn btn-ghost btn-sm"
+                  :disabled="drillBusy === row.id"
+                  @click="toggleDrill(row)"
+                >
+                  {{ drillBusy === row.id
+                    ? 'Resolving…'
+                    : (drills[row.id] ? 'Hide transactions' : 'Show transactions') }}
+                </button>
+              </span>
+              <template v-if="!isAuditor">
+                <button
+                  v-if="row.status !== 'actioned'"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="busyId === row.id"
+                  @click="setStatus(row, 'actioned')"
+                >Actioned</button>
+                <button
+                  v-if="row.status !== 'dismissed'"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="busyId === row.id"
+                  @click="setStatus(row, 'dismissed')"
+                >Dismiss</button>
+                <button
+                  v-if="row.status !== 'open'"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="busyId === row.id"
+                  @click="setStatus(row, 'open')"
+                >Reopen</button>
+              </template>
+            </div>
+          </footer>
+
+          <!-- 7. THE TRANSACTIONS — a LAYER, not a third box.
+               This was a bordered table inside a bordered card inside a
+               bordered section: "widget in widget", and the reason the page
+               read as cluttered. It is now a full-width sunken panel that
+               reads as something underneath the row rather than another thing
+               stacked on it, led by the reconciliation line. -->
+          <div v-if="!isAuditor && row.subject_type === 'cube_cell' && drills[row.id]" class="cc__drawer">
+            <p class="cc__drawer-lead cc__recon" :class="reconClass(row)">{{ reconText(row) }}</p>
+            <div class="cc__lines">
+              <table class="cc__table">
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Jrnl #</th><th>Type</th><th>Account</th>
+                    <th>Supplier</th><th>Description</th><th class="ta-r">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="line in drills[row.id].rows" :key="line.id">
+                    <td>{{ line.date }}</td>
+                    <td>{{ line.journal_number }}</td>
+                    <td>{{ line.journal_type }}</td>
+                    <td>{{ line.account_code }} {{ line.account_name }}</td>
+                    <td>{{ line.supplier_name }}</td>
+                    <td>{{ line.description }}</td>
+                    <td class="ta-r">{{ money(line.amount) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p v-if="drills[row.id].truncated" class="cc__note">
               Line cap reached — this shows the first {{ drills[row.id].rows.length }}.
             </p>
           </div>
 
-          <!-- The same thread as the row icon, in the expanded detail.
+          <!-- 8. The same thread as the row icon, in the expanded detail, on
+               the same sunken layer as the transactions above it.
                Deliberately ONE store behind both: a reply posted in the
                popover appears here without a reload, and vice versa — two
                views of one discussion that disagree would be worse than one. -->
-          <section v-if="isExpanded(row)" class="cc__thread" data-test="cc-detail-thread">
+          <section v-if="isExpanded(row)" class="cc__drawer cc__thread" data-test="cc-detail-thread">
             <h4 class="cc__thread-heading">Discussion</h4>
             <CommentThread
               :ref="(el) => registerDetailThread(row.id, el)"
@@ -368,6 +523,8 @@ import {
   DECISIONS,
   setCubeCommentStatus,
   setCommentAssignee,
+  setCubeCommentText,
+  getCubeCommentTextHistory,
   drillCubeComment,
   commentCoordinates,
   normaliseFilters,
@@ -871,14 +1028,37 @@ async function assignSelected() {
  * Nothing is hidden, only folded: every value is one click away, and the
  * counts say how much is folded. */
 
-const FILTER_CHIPS_SHOWN = 4;
+/** How many field NAMES the resting disclosure line names before it counts. */
+const FILTER_FIELDS_NAMED = 3;
 const FILTER_VALUES_SHOWN = 3;
+
+/**
+ * The disclosure has three states, not two, and they live in ONE reactive.
+ *
+ * falsy      — collapsed. One line naming the fields. MC's explicit choice:
+ *              he reads ~121 of these, and an open filter run was the largest
+ *              thing on a card whose largest thing should be the comment.
+ * 'fields'   — every field, with long member lists trimmed to three.
+ * 'all'      — every field, every member.
+ *
+ * Same reactive, same per-row keying, same toggle machinery as before — this
+ * extends it with one more rung rather than replacing it, so "nothing is
+ * hidden, only folded" still holds: every value is still reachable, now in
+ * two clicks instead of one.
+ */
+const FIELDS_ONLY = 'fields';
+const ALL_VALUES = 'all';
 
 // row.id -> expanded. Per row, so opening one card's filters does not open
 // every card's.
 const openFilters = reactive({});
 
-function toggleFilters(row) { openFilters[row.id] = !openFilters[row.id]; }
+function toggleFilters(row) {
+  openFilters[row.id] = openFilters[row.id] ? false : FIELDS_ONLY;
+}
+function toggleFilterValues(row) {
+  openFilters[row.id] = openFilters[row.id] === ALL_VALUES ? FIELDS_ONLY : ALL_VALUES;
+}
 
 /**
  * The anchor as a flat list of {key, label, values}.
@@ -940,32 +1120,50 @@ const anchors = computed(() => {
   const m = new Map();
   all.value.forEach((r) => {
     const chips = filterChips(r);
-    const hiddenChips = Math.max(0, chips.length - FILTER_CHIPS_SHOWN);
-    const hiddenValues = chips.slice(0, FILTER_CHIPS_SHOWN)
-      .reduce((n, c) => n + Math.max(0, c.values.length - FILTER_VALUES_SHOWN), 0);
-    m.set(r.id, { chips, overflow: hiddenChips + hiddenValues });
+    // Hidden VALUES only. Fields are no longer folded away once the run is
+    // open — the disclosure line above it is what folds those — so counting
+    // them here would be counting the same thing twice under two labels,
+    // which is the "+1 more" ambiguity this pass exists to remove.
+    const overflow = chips.reduce(
+      (n, c) => n + Math.max(0, c.values.length - FILTER_VALUES_SHOWN), 0);
+    // The resting line, built HERE and not in the template: it is per-row
+    // work read on every render and every 5-second feed poll, which is the
+    // exact shape of the defect that took this page down.
+    const named = chips.slice(0, FILTER_FIELDS_NAMED).map((c) => c.label);
+    const rest = chips.length - named.length;
+    const summary = chips.length
+      ? `Under filters: ${named.join(', ')}${rest ? ` +${rest} more field${rest === 1 ? '' : 's'}` : ''}`
+      : '';
+    m.set(r.id, { chips, overflow, summary });
   });
   return m;
 });
 
-const EMPTY_ANCHOR = { chips: [], overflow: 0 };
+const EMPTY_ANCHOR = { chips: [], overflow: 0, summary: '' };
 function anchorOf(row) { return anchors.value.get(row.id) || EMPTY_ANCHOR; }
 
 function hasFilters(row) { return anchorOf(row).chips.length > 0; }
 
-function shownChips(row) {
-  const { chips } = anchorOf(row);
-  return openFilters[row.id] ? chips : chips.slice(0, FILTER_CHIPS_SHOWN);
-}
+/**
+ * Every field, once the run is open at all. The folding that remains at this
+ * level is of VALUES, inside a field — one dimension holding 144 months is
+ * the case that matters, and it is not helped by hiding the field next to it.
+ */
+function shownChips(row) { return anchorOf(row).chips; }
 
-/** One chip: "year: 2015, 2016, 2017 +9 more" collapsed, all of it expanded. */
+/**
+ * One chip: "year: 2015, 2016, 2017 +9 more values" trimmed, all of it at
+ * 'all'. The tail says "values" in words: the line above this run counts
+ * FIELDS, and two counters reading "+1 more" on one card — sometimes both at
+ * once — is what made the anchor unreadable.
+ */
 function chipText(row, chip) {
   const vals = chip.values;
-  if (openFilters[row.id] || vals.length <= FILTER_VALUES_SHOWN) {
+  if (openFilters[row.id] === ALL_VALUES || vals.length <= FILTER_VALUES_SHOWN) {
     return `${chip.label}: ${vals.join(', ')}`;
   }
   const head = vals.slice(0, FILTER_VALUES_SHOWN).join(', ');
-  return `${chip.label}: ${head} +${vals.length - FILTER_VALUES_SHOWN} more`;
+  return `${chip.label}: ${head} +${vals.length - FILTER_VALUES_SHOWN} more values`;
 }
 
 /**
@@ -990,10 +1188,157 @@ function money(v) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * When, said the way a reader of a queue actually reads it.
+ *
+ * A full locale timestamp on 121 cards is 121 pieces of chrome competing with
+ * the sentence beside it; "3 days ago" is the fact being asked for. The exact
+ * stamp survives as the element's title, so nothing is lost.
+ */
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
 function formatWhen(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
+  if (Number.isNaN(d.getTime())) return '';
+  const delta = Date.now() - d.getTime();
+  // A stamp in the future is a clock skew, not a fact about the register;
+  // say the date rather than "in -3 days".
+  if (delta < 0) return d.toLocaleDateString();
+  if (delta < MINUTE) return 'just now';
+  if (delta < HOUR) {
+    const n = Math.floor(delta / MINUTE);
+    return `${n} minute${n === 1 ? '' : 's'} ago`;
+  }
+  if (delta < DAY) {
+    const n = Math.floor(delta / HOUR);
+    return `${n} hour${n === 1 ? '' : 's'} ago`;
+  }
+  if (delta < 30 * DAY) {
+    const n = Math.floor(delta / DAY);
+    return `${n} day${n === 1 ? '' : 's'} ago`;
+  }
+  return d.toLocaleDateString();
+}
+
+// ── Editing the text ────────────────────────────────────────────────────────
+//
+// POST /xero/data/journals/pivot/comments/<id>/text/  {comment}
+//
+// The one thing on a comment that may be rewritten is its WORDS. The anchor
+// and the author are not editable — the server 400s if either is sent — and
+// that constraint is the feature, not a limitation of it: the register is an
+// audit trail, and a note whose figure or whose author could be swapped after
+// the fact would not be one.
+//
+// So the console never conflates the two. An admin fixing the wording of an
+// agent's comment leaves it the agent's comment; the card states both facts
+// separately ("written by claude:year-end-audit", "text edited by mc"), and
+// the edit form says so before you type.
+//
+// ONE editor at a time, held in ONE object rather than a per-row map: the
+// register is 121 rows deep and per-row state on a page this size is how it
+// was taken down before. A second Edit click just moves the editor.
+const editing = ref({ id: null, text: '', saving: false, error: '' });
+
+// Only ever populated for a row whose history has actually been ASKED for.
+// A resting card carries none of this.
+const history = reactive({});
+
+function startEdit(row) {
+  editing.value = { id: row.id, text: String(row.comment || ''), saving: false, error: '' };
+}
+function cancelEdit() {
+  editing.value = { id: null, text: '', saving: false, error: '' };
+}
+
+/**
+ * Save the text.
+ *
+ * The server's 400 is shown VERBATIM and next to the editor rather than
+ * replaced with a house message: "comment may not be empty" and "the anchor
+ * cannot be changed" tell the writer what to do, and "could not save" does
+ * not. Same rule the assign path already follows.
+ *
+ * A no-op is NOT short-circuited here. The server answers `edited: false` and
+ * writes no history row, and it is the server's normalisation that decides
+ * what counts as a change — guessing at that in the console would eventually
+ * disagree with the trail.
+ */
+async function saveEdit(row) {
+  if (editing.value.saving || editing.value.id !== row.id) return;
+  const text = String(editing.value.text || '');
+  if (!text.trim()) {
+    editing.value.error = 'A comment cannot be empty.';
+    return;
+  }
+  editing.value.saving = true;
+  editing.value.error = '';
+  actionError.value = null;
+  try {
+    const result = await setCubeCommentText(row.id, text);
+    // Prefer the server's stored text over what was typed — it owns any
+    // trimming or normalisation, and showing the typed string would leave the
+    // card disagreeing with the register on the next load.
+    row.comment = typeof result?.comment === 'string' ? result.comment : text;
+    if (result?.edited) {
+      row.text_edited = true;
+      row.text_edited_by = result.edited_by || currentUser.value;
+      // A recorded edit invalidates any history already on screen.
+      if (history[row.id]?.open) await loadHistory(row, { force: true });
+    } else {
+      // Said out loud. Silently closing on a no-op reads as "saved", and the
+      // trail would then have no row to back that up.
+      actionError.value = 'No change to save — the text is as it was.';
+    }
+    cancelEdit();
+  } catch (e) {
+    editing.value.error = e?.response?.data?.error
+      || e?.response?.data?.detail
+      || e?.message
+      || 'Could not save that text.';
+  } finally {
+    editing.value.saving = false;
+  }
+}
+
+/**
+ * The edit trail — fetched on demand, never on load.
+ *
+ * It is the answer to "was this always what it said", which is a question
+ * asked of a handful of comments and never of the register, so it must not
+ * add a byte to the 121 resting cards.
+ */
+async function loadHistory(row, { force = false } = {}) {
+  const entry = history[row.id];
+  if (!entry || (entry.loaded && !force)) return;
+  entry.loading = true;
+  entry.error = '';
+  try {
+    const envelope = await getCubeCommentTextHistory(row.id);
+    const list = envelope?.history || envelope?.edits || envelope?.results || [];
+    entry.entries = Array.isArray(list) ? list : [];
+    entry.loaded = true;
+  } catch (e) {
+    entry.error = e?.response?.data?.error || e?.message || 'Could not load the edit history.';
+  } finally {
+    entry.loading = false;
+  }
+}
+
+function toggleHistory(row) {
+  const entry = history[row.id];
+  if (entry?.open) {
+    entry.open = false;
+    return;
+  }
+  if (!entry) {
+    history[row.id] = { open: true, loading: false, loaded: false, error: '', entries: [] };
+  } else {
+    entry.open = true;
+  }
+  loadHistory(row);
 }
 
 const undo = ref(null);
@@ -1252,16 +1597,27 @@ onMounted(() => { directory.load(); load(); });
 </script>
 
 <style scoped>
+/* Everything here composes from the --kdl-* token map in css/klikk.css.
+ * No new tokens were needed: the card wanted an 8/12 vertical rhythm on an
+ * 11/12/14 type ramp, and both already exist. What it did NOT have was any
+ * consistency about using them — margins ran 5/6/8/10px against a 4/8/12/16
+ * scale, type ran 10.5/11/11.5/12/13 against 11/12/13/14, and de-emphasis was
+ * done with raw `opacity` instead of the three text tokens that exist for
+ * exactly that. Opacity-for-hierarchy is gone from this file: it dims the
+ * BACKGROUND through the glyph as well as the ink, so .65 on one surface and
+ * .65 on another are two different greys, and neither is one the design
+ * system knows about. */
+
 .cc-undo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  margin-bottom: 12px;
-  border: 1px solid var(--kdl-border);
-  border-radius: 6px;
+  gap: var(--kdl-space-2);
+  padding: var(--kdl-space-2) var(--kdl-space-3);
+  margin-bottom: var(--kdl-space-3);
+  border: var(--kdl-border-width) solid var(--kdl-border);
+  border-radius: var(--kdl-radius-sm);
   background: var(--kdl-border-subtle);
-  font-size: 12.5px;
+  font-size: var(--kdl-font-size-caption);
 }
 .cc-undo > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1272,16 +1628,16 @@ onMounted(() => { directory.load(); load(); });
 .cc-bulk-result {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  margin-bottom: 12px;
-  border: 1px solid var(--kdl-border);
+  gap: var(--kdl-space-2);
+  padding: var(--kdl-space-2) var(--kdl-space-3);
+  margin-bottom: var(--kdl-space-3);
+  border: var(--kdl-border-width) solid var(--kdl-border);
   border-radius: var(--kdl-radius-sm);
   background: var(--kdl-border-subtle);
-  font-size: 12.5px;
+  font-size: var(--kdl-font-size-caption);
 }
-.cc-bulk__field { display: flex; align-items: center; gap: 6px; }
-.cc-bulk__field > span { opacity: .65; font-size: var(--kdl-font-size-overline); }
+.cc-bulk__field { display: flex; align-items: center; gap: var(--kdl-space-1); }
+.cc-bulk__field > span { color: var(--kdl-text-muted); font-size: var(--kdl-font-size-overline); }
 
 .cc-bulk-result { flex-wrap: wrap; align-items: flex-start; }
 /* A run with refusals in it is not a success, and must not read as one. */
@@ -1289,37 +1645,239 @@ onMounted(() => { directory.load(); load(); });
 .cc-bulk-result__head { margin: 0; flex: 1; min-width: 0; }
 .cc-bulk-result__list {
   flex-basis: 100%;
-  margin: 4px 0 0;
+  margin: var(--kdl-space-1) 0 0;
   padding-left: var(--kdl-space-4);
   font-size: var(--kdl-font-size-overline);
 }
 .cc-bulk-result__note {
   flex-basis: 100%;
-  margin: 4px 0 0;
+  margin: var(--kdl-space-1) 0 0;
   font-size: var(--kdl-font-size-overline);
-  opacity: .65;
+  color: var(--kdl-text-muted);
 }
 
-.cc-selectall { margin-bottom: 8px; font-size: var(--kdl-font-size-overline); opacity: .75; }
-.cc-selectall label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cc-selectall {
+  margin-bottom: var(--kdl-space-2);
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-muted);
+}
+.cc-selectall label { display: inline-flex; align-items: center; gap: var(--kdl-space-1); cursor: pointer; }
 
-.cc__pick { flex: 0 0 auto; cursor: pointer; }
-.cc__assign { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.cc__assign label { font-size: var(--kdl-font-size-overline); opacity: .65; }
-
-.cc-list { display: flex; flex-direction: column; gap: 10px; }
+/* ── The row ──────────────────────────────────────────────────────────────
+   NOT a card. It was a bordered, rounded box inside a bordered SectionCard,
+   with a bordered table inside it when expanded — three nested frames, which
+   is what "widget in widget" describes and why 121 of them read as clutter.
+   One SectionCard edge; hairline-separated rows inside it. That removes a
+   whole nesting level with nothing but CSS. */
+.cc-list { display: flex; flex-direction: column; }
 .cc {
-  border: 1px solid var(--kdl-border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  padding: var(--kdl-space-3) 0;
+  border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
 }
-.cc__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.cc__who { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.cc__author { font-size: 13px; }
-.cc__when { font-size: 11px; opacity: .6; }
-/* The assignment chip. Reads as metadata, not as an action — there is no
-   assign control on this page yet (see the script's note), so anything that
-   looked pressable would be a lie. */
+.cc:last-child { border-bottom: none; padding-bottom: 0; }
+.cc:first-child { padding-top: 0; }
+
+/* 1. Identity — the quietest line on the card. */
+.cc__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--kdl-space-2);
+  min-width: 0;
+}
+.cc__pick { flex: 0 0 auto; cursor: pointer; }
+.cc__author { font-size: var(--kdl-font-size-caption); color: var(--kdl-text-muted); }
+.cc__when { font-size: var(--kdl-font-size-overline); color: var(--kdl-text-hint); }
+
+/* 2. The anchor headline and its figure — one focal line, the label left and
+      the number right, so a column of cards scans down the amounts. */
+.cc__anchor {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--kdl-space-3);
+  margin-top: var(--kdl-space-2);
+}
+.cc__subject {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--kdl-font-size-body);
+  font-weight: 600;
+  line-height: var(--kdl-line-height-tight);
+  color: var(--kdl-text-primary);
+}
+.cc__amount {
+  flex: 0 0 auto;
+  font-size: var(--kdl-font-size-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--kdl-text-primary);
+  white-space: nowrap;
+}
+.cc__amount-cur { color: var(--kdl-text-muted); margin-right: var(--kdl-space-1); }
+
+/* 3. The comment. The most-spaced, full-contrast block on the card — it is
+      the only thing here a person wrote, and it used to read quieter than the
+      chrome around it. */
+.cc__body { margin: var(--kdl-space-3) 0; }
+.cc__text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: var(--kdl-font-size-body);
+  line-height: var(--kdl-line-height-body);
+  color: var(--kdl-text-primary);
+}
+
+/* The inline editor. It replaces the paragraph in place rather than opening a
+   dialog: the anchor above it is the thing this endpoint will NOT let you
+   change, and it should stay in view while you type. */
+.cc__edit { display: flex; flex-direction: column; gap: var(--kdl-space-2); }
+.cc__edit-label {
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-hint);
+}
+.cc__edit-input {
+  width: 100%;
+  padding: var(--kdl-space-2);
+  border: var(--kdl-border-width) solid var(--kdl-border);
+  border-radius: var(--kdl-radius-sm);
+  background: var(--kdl-card-bg);
+  color: var(--kdl-text-primary);
+  font-family: inherit;
+  font-size: var(--kdl-font-size-body);
+  line-height: var(--kdl-line-height-body);
+  resize: vertical;
+}
+.cc__edit-input:focus { border-color: var(--kdl-accent); }
+.cc__edit-note { margin: 0; font-size: var(--kdl-font-size-overline); color: var(--kdl-text-hint); }
+.cc__edit-error { margin: 0; font-size: var(--kdl-font-size-caption); color: var(--kdl-status-danger); }
+.cc__edit-actions { display: flex; align-items: center; gap: var(--kdl-space-2); flex-wrap: wrap; }
+
+.cc__byline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--kdl-space-2);
+  margin: var(--kdl-space-2) 0 0;
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-hint);
+}
+/* Two facts, never one: whose comment this is, and who last changed its
+   wording. Merging them would be re-attribution by typography. */
+.cc__edited { color: var(--kdl-text-muted); }
+/* A text affordance, not a button-shaped one: these sit beside prose and a
+   bordered control there would out-weigh the prose.
+   No :focus-visible rule — klikk.css authors the ring globally and overrides
+   it to navy in light mode; restating the `outline` shorthand here would
+   silently defeat that. */
+.cc__linkbtn {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cc__linkbtn:hover { color: var(--kdl-text-primary); }
+
+/* 4. Anchor detail — one wrapped, muted run. */
+.cc__coords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kdl-space-1);
+  align-items: center;
+  font-size: var(--kdl-font-size-caption);
+  color: var(--kdl-text-muted);
+}
+/* Plain spans, deliberately NOT KChip/KBadge instances: 121 rows times ~8
+   chips is a thousand component instances for a run of static text. They are
+   on tokens now; they are not components. */
+.cc__coord {
+  background: var(--kdl-border-subtle);
+  border-radius: var(--kdl-radius-sm);
+  padding: 2px var(--kdl-space-1);
+}
+.cc__dim { color: var(--kdl-text-hint); margin-right: var(--kdl-space-1); }
+.cc__measure { color: var(--kdl-text-hint); }
+
+.cc__verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--kdl-space-2);
+  margin-top: var(--kdl-space-2);
+  flex-wrap: wrap;
+}
+.cc__tags { display: flex; gap: var(--kdl-space-1); flex-wrap: wrap; }
+.cc__tag {
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-muted);
+  background: var(--kdl-border-subtle);
+  border-radius: var(--kdl-radius-sm);
+  padding: 2px var(--kdl-space-1);
+}
+
+/* 5. Filter context — one line at rest, with a ROLE LABEL on it. Without the
+      "Under filters:" prefix this run reads as the anchor itself, which is
+      the confusion that put it here. */
+.cc__context { margin-top: var(--kdl-space-2); }
+.cc__context-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-hint);
+  text-align: left;
+  cursor: pointer;
+}
+.cc__context-toggle:hover { color: var(--kdl-text-muted); }
+.cc__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kdl-space-1);
+  margin-top: var(--kdl-space-2);
+}
+.cc__filter {
+  font-size: var(--kdl-font-size-overline);
+  color: var(--kdl-text-muted);
+  border: var(--kdl-border-width) dashed var(--kdl-border);
+  border-radius: var(--kdl-radius-sm);
+  padding: 2px var(--kdl-space-1);
+}
+/* The values toggle wears the chip's clothes so the run still reads as one
+   line of context, but it is a real <button> — operable by keyboard and
+   announced as expandable, which a clickable <span> would not be. Solid
+   border rather than the chips' dashed one is the "actionable" tell; the
+   label carries the affordance in words, so it never rests on style alone.
+
+   Longhands, NOT `font: inherit`: the shorthand resets font-size and would
+   force this rule to restate the size .cc__filter already owns. */
+.cc__filter--more {
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  background: none;
+  border-style: solid;
+  cursor: pointer;
+}
+.cc__filter--more:hover { color: var(--kdl-text-primary); }
+
+/* 6. One row of "what do I do with this". */
+.cc__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--kdl-space-2);
+  margin-top: var(--kdl-space-3);
+}
+.cc__assign { display: flex; align-items: center; gap: var(--kdl-space-2); flex-wrap: wrap; min-width: 0; }
+.cc__assign label { font-size: var(--kdl-font-size-overline); color: var(--kdl-text-hint); }
+/* The read-only assignment chip an auditor sees. Reads as metadata, not as an
+   action — that role cannot reassign, so anything pressable would be a lie. */
 .cc__assignee {
   font-size: var(--kdl-font-size-overline);
   color: var(--kdl-text-secondary);
@@ -1328,79 +1886,74 @@ onMounted(() => { directory.load(); load(); });
   padding: 2px var(--kdl-space-1);
   white-space: nowrap;
 }
-.cc__assignee-tag { opacity: .6; margin-right: var(--kdl-space-1); }
+.cc__assignee-tag { color: var(--kdl-text-hint); margin-right: var(--kdl-space-1); }
 /* A seat that has been stood down. Colour is the tell, but the chip also SAYS
    "no longer active" in words, so it never rests on colour alone. */
 .cc__assignee--stale { color: var(--kdl-status-warning); }
-.cc__actions { display: flex; gap: 4px; flex: 0 0 auto; }
-.cc__text { margin: 8px 0; white-space: pre-wrap; }
-.cc__subject { margin: 6px 0 0; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.cc__verdict { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.cc__verdict label { font-size: 11px; opacity: .65; }
-.cc__tags { display: flex; gap: 4px; flex-wrap: wrap; }
-.cc__tag { font-size: 10.5px; background: var(--kdl-border-subtle); border-radius: 3px; padding: 1px 5px; }
-.cc__coords { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.cc__coord {
-  font-size: 11px;
-  background: var(--kdl-border-subtle);
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-.cc__dim { opacity: .6; margin-right: 4px; }
-.cc__measure { font-size: 11px; opacity: .6; }
-.cc__value { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.cc__filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
-.cc__filter { font-size: 10.5px; opacity: .65; border: 1px dashed var(--kdl-border); border-radius: 4px; padding: 1px 5px; }
-/* The expand toggle wears the chip's clothes so the row still reads as one
-   line of context, but it is a real <button> — operable by keyboard and
-   announced as expandable, which a clickable <span> would not be.
-   Solid border rather than the chips' dashed one is the "actionable" tell; the
-   label ("+N more" / "Show less") carries the affordance in words, so it never
-   rests on style alone.
+.cc__actions { display: flex; align-items: center; gap: var(--kdl-space-1); flex-wrap: wrap; }
+.cc__drill { display: inline-flex; }
 
-   Longhands, NOT `font: inherit`: the shorthand resets font-size and would
-   force this rule to restate the 10.5px that .cc__filter already owns — a
-   duplicated literal born from a reset, and one that silently drifts the day
-   someone changes the chip.
-
-   No :focus-visible rule here on purpose. klikk.css authors the ring globally
-   and overrides it to navy in light mode; restating the `outline` shorthand
-   locally re-sets outline-color and quietly defeats that, which is exactly the
-   defect this file would have inherited by copying the six K-components that
-   do it. Override the property, never the shorthand. */
-.cc__filter--more {
-  font-family: inherit;
-  font-weight: inherit;
-  line-height: inherit;
-  color: inherit;
-  background: none;
-  border-style: solid;
-  cursor: pointer;
-  opacity: .8;
+/* 7-8. The drawers — a LAYER under the row, not another box on top of it.
+        Sunken surface, full row bleed, no border and no radius: the moment
+        this gets an edge it becomes the third nested frame again. */
+.cc__drawer {
+  margin-top: var(--kdl-space-3);
+  padding: var(--kdl-space-3);
+  background: var(--kdl-surface-sunken);
 }
-.cc__filter--more:hover { opacity: 1; }
-.cc__drill { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
-.cc__recon { font-size: 11.5px; }
+.cc__drawer-lead {
+  margin: 0 0 var(--kdl-space-2);
+  font-size: var(--kdl-font-size-caption);
+  color: var(--kdl-text-muted);
+}
+.cc__recon--plain { color: var(--kdl-text-muted); }
 .cc__recon--ok { color: var(--kdl-status-success); }
 .cc__recon--bad { color: var(--kdl-status-danger); font-weight: 600; }
-.cc__lines { margin-top: 8px; overflow-x: auto; }
-.cc__table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+
+.cc__lines { overflow-x: auto; }
+.cc__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--kdl-font-size-caption);
+  color: var(--kdl-text-secondary);
+}
 .cc__table th, .cc__table td {
   text-align: left;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--kdl-border-subtle);
+  padding: var(--kdl-space-1) var(--kdl-space-2);
+  border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
   white-space: nowrap;
 }
-.cc__table th { opacity: .65; font-weight: 500; }
+.cc__table tr:last-child td { border-bottom: none; }
+.cc__table th {
+  color: var(--kdl-text-hint);
+  font-weight: 500;
+  font-size: var(--kdl-font-size-overline);
+}
 .ta-r { text-align: right; font-variant-numeric: tabular-nums; }
-.cc__note { font-size: 11px; opacity: .65; margin-top: 4px; }
-.cc__thread { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--kdl-border-subtle); }
+.cc__note { font-size: var(--kdl-font-size-overline); color: var(--kdl-text-hint); margin-top: var(--kdl-space-1); }
+
+.cc__history { margin: 0; padding: 0; list-style: none; }
+.cc__history-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kdl-space-1);
+  padding: var(--kdl-space-2) 0;
+  border-bottom: var(--kdl-border-width) solid var(--kdl-border-subtle);
+}
+.cc__history-item:last-child { border-bottom: none; }
+.cc__history-meta { font-size: var(--kdl-font-size-overline); color: var(--kdl-text-hint); }
+.cc__history-text {
+  font-size: var(--kdl-font-size-caption);
+  color: var(--kdl-text-muted);
+  white-space: pre-wrap;
+}
+
 .cc__thread-heading {
-  margin: 0 0 6px;
-  font-size: 11px;
+  margin: 0 0 var(--kdl-space-2);
+  font-size: var(--kdl-font-size-overline);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .04em;
-  opacity: .65;
+  color: var(--kdl-text-hint);
 }
 </style>

@@ -198,33 +198,134 @@ describe('AuditComments — the whole register at production scale', () => {
     expect(parseCalls.n).toBe(0);
   });
 
-  it('parses nothing when a card is expanded', async () => {
+  it('parses nothing when a card is expanded — either rung of the disclosure', async () => {
     const page = await mountPage();
     parseCalls.n = 0;
+    // Rung one: the filter run opens.
+    await page.find('.cc__context-toggle').trigger('click');
+    await flushPromises();
+    expect(parseCalls.n).toBe(0);
+    // Rung two: every value in it.
     await page.find('.cc__filter--more').trigger('click');
     await flushPromises();
     expect(parseCalls.n).toBe(0);
   });
 
+  it('rests as ONE summary line per card — the register is 113 lines, not 113 runs', async () => {
+    const page = await mountPage();
+    // The resting card renders NO chips at all. This is the assertion that
+    // makes the collapse real rather than a CSS promise: 113 open runs is the
+    // clutter MC named, and hiding them with display:none would still build
+    // every node.
+    expect(page.findAll('.cc__filter')).toHaveLength(0);
+    const lines = page.findAll('.cc__context-toggle').map((b) => b.text());
+    expect(lines).toHaveLength(REGISTER_SIZE);
+    lines.forEach((t) => {
+      expect(t).toBe('Under filters: tenant, journal_type, year +3 more fields');
+      expect(t).not.toContain('{"year"');
+    });
+  });
+
   it('still folds correctly at scale — every card, not just the first', async () => {
     const page = await mountPage();
-    const texts = page.findAll('article.cc').map((c) => c.find('.cc__filters').text());
+    const cards = page.findAll('article.cc');
+    // Open every one of the 113 runs: folding that only works on card one is
+    // the aggregate defect this file exists for, in a new place.
+    //
+    // Clicked synchronously and flushed ONCE, not awaited per card: 113
+    // awaited triggers is 113 full re-renders of a 1.4 MB register, which
+    // took this file past a minute and destabilised whatever shared its
+    // worker. Vue batches them into one render, which is also what a real
+    // burst of clicks would do.
+    cards.forEach((c) => { (c.find('.cc__context-toggle').element as HTMLElement).click(); });
+    await flushPromises();
+    const texts = cards.map((c) => c.find('.cc__filters').text());
     expect(texts).toHaveLength(REGISTER_SIZE);
     texts.forEach((t) => {
       expect(t).not.toContain('{"year"');
       expect(t).toContain('tenant: Klikk');
-      expect(t).toContain('+');
+      expect(t).toContain('more values');
     });
   });
 
   it('expanding one card at scale leaves the other 112 folded', async () => {
     const page = await mountPage();
     const cards = page.findAll('article.cc');
+    await cards[0].find('.cc__context-toggle').trigger('click');
     await cards[0].find('.cc__filter--more').trigger('click');
     expect(cards[0].find('.cc__filters').text()).toContain('2026-12');
-    const others = cards.slice(1)
-      .filter((c) => c.find('.cc__filters').text().includes('2026-12'));
+    const others = cards.slice(1).filter((c) => c.find('.cc__filters').exists());
     expect(others).toHaveLength(0);
+  });
+
+  /**
+   * The CDO restyle added three things a template could have been tempted to
+   * compute per row: the anchor headline, the figure beside it, and the
+   * "Under filters: …" summary line. All three are read off the SAME `anchors`
+   * / row properties the page already had — a `primaryAnchor(row)` or a
+   * `filterSummary(row)` called from the template would re-run on every render
+   * and every 5-second feed poll, which is the exact shape of the defect that
+   * took this page down.
+   */
+  it('renders the new headline, figure and summary line without re-reading anything', async () => {
+    const page = await mountPage();
+
+    // What the reader SEES. A badge on this page once rendered EMPTY in
+    // production while 75 mount specs passed, because none asserted the text.
+    const subjects = page.findAll('.cc__subject').map((n) => n.text());
+    expect(subjects).toHaveLength(REGISTER_SIZE);
+    expect(subjects[0]).toBe('cell 0');
+    const amounts = page.findAll('.cc__amount').map((n) => n.text());
+    expect(amounts).toHaveLength(REGISTER_SIZE);
+    amounts.forEach((a) => expect(a).toContain('21,600.00'));
+    amounts.forEach((a) => expect(a.startsWith('R')).toBe(true));
+    // The comment itself is on the card, full text, once per row.
+    const texts = page.findAll('[data-test^="cc-text-"]').map((n) => n.text());
+    expect(texts).toHaveLength(REGISTER_SIZE);
+    expect(texts[0]).toBe('note 0');
+
+    // And drawing all of that cost nothing beyond the one parse per row.
+    expect(parseCalls.n).toBeLessThanOrEqual(REGISTER_SIZE);
+
+    // A keystroke re-renders every card, headline and summary line included.
+    parseCalls.n = 0;
+    seatReads.n = 0;
+    (page.vm as unknown as { filters: { q: string } }).filters.q = 'note';
+    await flushPromises();
+    expect(page.findAll('.cc__subject').length).toBeGreaterThan(0);
+    expect(page.findAll('.cc__context-toggle')[0].text())
+      .toBe('Under filters: tenant, journal_type, year +3 more fields');
+    expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBe(0);
+  });
+
+  /**
+   * The edit affordance, at register scale.
+   *
+   * It is ONE editor for the whole page, not per-row state: 113 rows each
+   * holding a draft, a saving flag and an error string is per-row allocation
+   * on a page that has already been taken down by exactly that.
+   */
+  it('offers the edit affordance on every row and holds state for none of them', async () => {
+    const page = await mountPage();
+    const editors = page.findAll('[data-test^="cc-edit-"]')
+      .filter((b) => /cc-edit-\d+$/.test(b.attributes('data-test') || ''));
+    expect(editors).toHaveLength(REGISTER_SIZE);
+    expect(editors[0].text()).toBe('Edit text');
+    // Nothing is in edit mode, and no history has been fetched.
+    expect(page.findAll('[data-test^="cc-editor-"]')).toHaveLength(0);
+    expect(page.findAll('[data-test^="cc-history-panel-"]')).toHaveLength(0);
+    const vm = page.vm as unknown as { history: Record<string, unknown> };
+    expect(Object.keys(vm.history)).toHaveLength(0);
+
+    // Opening ONE editor re-renders the register and re-reads nothing.
+    parseCalls.n = 0;
+    seatReads.n = 0;
+    await editors[7].trigger('click');
+    await flushPromises();
+    expect(page.findAll('[data-test^="cc-editor-"]')).toHaveLength(1);
+    expect(parseCalls.n).toBe(0);
+    expect(seatReads.n).toBe(0);
   });
 });
 
@@ -339,7 +440,9 @@ describe('AuditComments — assignment at register scale', () => {
     expect(page.findAll('article.cc').length).toBeGreaterThan(0);
     expect(seatReads.n).toBe(0);
 
-    // Expanding one card's anchor.
+    // Expanding one card's anchor — both rungs of the disclosure.
+    await page.find('.cc__context-toggle').trigger('click');
+    await flushPromises();
     await page.find('.cc__filter--more').trigger('click');
     await flushPromises();
     expect(seatReads.n).toBe(0);
