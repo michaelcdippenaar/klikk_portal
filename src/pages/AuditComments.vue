@@ -278,7 +278,7 @@
                     <span class="cc__history-meta">
                       {{ h.edited_by || h.author || 'unknown' }} · {{ formatWhen(h.edited_at || h.created_at) }}
                     </span>
-                    <span class="cc__history-text">{{ h.previous_text ?? h.previous ?? h.text ?? '' }}</span>
+                    <span class="cc__history-text">{{ h.from_text ?? h.previous_text ?? h.text ?? '' }}</span>
                   </li>
                 </ol>
               </template>
